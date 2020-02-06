@@ -1,4 +1,4 @@
-module github.com/google/cel-policy
+module github.com/google/cel-policy-templates-go
 
 go 1.12
 
