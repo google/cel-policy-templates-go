@@ -216,10 +216,13 @@ var (
 			name:   "restricted_destinations_valid_location",
 			policy: "restricted_destinations",
 			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.1",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
+				"destination.ip":      "10.0.0.1",
+				"origin.ip":           "10.0.0.1",
+				"request.auth.claims": map[string]string{},
+				"resource.name":       "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{
+					"location": "us",
+				},
 			},
 			outputs: []interface{}{},
 		},
@@ -313,7 +316,7 @@ func TestEnforcer(t *testing.T) {
 			}
 			decisions, err := enforcer.Evaluate(tst.input)
 			if err != nil {
-				tt.Error(err)
+				t.Error(err)
 			}
 			found := false
 			for _, dec := range decisions {

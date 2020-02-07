@@ -25,8 +25,8 @@ spec:
   terms:
     different_locations: locationCode(origin.ip) != locationCode(destination.ip)
     is_sensitive_prefix: spec.resource_prefixes.exists(prefix, resource.name.startsWith(prefix))
-    is_sensistive_label: >
+    is_sensitive_label: >
       spec.labels.exists(l, l in resource.labels && resource.labels[l] in spec.labels[l])
   rules:
-    - match: different_locations && (is_sensitive_prefix || is_sensistive_label)
+    - match: different_locations && (is_sensitive_prefix || is_sensitive_label)
       output: "{'deny': true}"

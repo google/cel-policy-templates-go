@@ -29,7 +29,7 @@ import (
 // Engine evaluates context against policy instances to produce decisions.
 type Engine struct {
 	files      map[fileType][]*file
-	env        cel.Env
+	env        *cel.Env
 	evalOpts   []cel.ProgramOption
 	evaluators map[string]*evaluator
 	instances  []*instance
@@ -37,7 +37,7 @@ type Engine struct {
 }
 
 // NewEngine instantiates a policy.Engine using an environment and a set of options.
-func NewEngine(env cel.Env, opts ...EngineOption) (*Engine, error) {
+func NewEngine(env *cel.Env, opts ...EngineOption) (*Engine, error) {
 	e := &Engine{
 		files:      map[fileType][]*file{},
 		env:        env,

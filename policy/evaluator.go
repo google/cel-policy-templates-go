@@ -16,6 +16,7 @@ package policy
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/golang/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -76,7 +77,7 @@ func unmarshalEvaluatorModel(f *file) (*evaluatorModel, error) {
 	}, nil
 }
 
-func (e *evaluatorModel) bind(env cel.Env, opts ...cel.ProgramOption) (*evaluator, error) {
+func (e *evaluatorModel) bind(env *cel.Env, opts ...cel.ProgramOption) (*evaluator, error) {
 	// Compute the dependencies between terms and compile them.
 	err := e.computeDeps(env)
 	if err != nil {
@@ -118,7 +119,7 @@ func (e *evaluatorModel) templateName() string {
 	return e.template
 }
 
-func (e *evaluatorModel) computeDeps(env cel.Env) error {
+func (e *evaluatorModel) computeDeps(env *cel.Env) error {
 	// Check for cycles within the term definitions.
 	i := 0
 	termDecls := make([]*exprpb.Decl, len(e.termSrcs), len(e.termSrcs))
@@ -171,7 +172,7 @@ func (e *evaluatorModel) isCyclic(ts *termSrc,
 	return false
 }
 
-func (e *evaluatorModel) compileTerms(env cel.Env,
+func (e *evaluatorModel) compileTerms(env *cel.Env,
 	opts []cel.ProgramOption) (map[string]*evalTerm, error) {
 	terms := map[string]*evalTerm{}
 	for _, ts := range e.termSrcs {
@@ -184,7 +185,7 @@ func (e *evaluatorModel) compileTerms(env cel.Env,
 	return terms, e.issues.Err()
 }
 
-func (e *evaluatorModel) compileTerm(ts *termSrc, env cel.Env,
+func (e *evaluatorModel) compileTerm(ts *termSrc, env *cel.Env,
 	opts []cel.ProgramOption, terms map[string]*evalTerm) (*evalTerm, error) {
 	if t, found := terms[ts.name]; found {
 		return t, nil
@@ -233,7 +234,7 @@ func (e *evaluatorModel) compileTerm(ts *termSrc, env cel.Env,
 	}, nil
 }
 
-func (e *evaluatorModel) compileRules(env cel.Env,
+func (e *evaluatorModel) compileRules(env *cel.Env,
 	opts []cel.ProgramOption) ([]*evalRule, error) {
 	i := 0
 	rules := make([]*evalRule, len(e.ruleSrcs), len(e.ruleSrcs))
@@ -297,21 +298,35 @@ func (eval *evaluator) Eval(vars interface{}) ([]ref.Val, error) {
 	}
 	decisions := []ref.Val{}
 	terms := eval.activation.terms
-	activation := &evaluatorActivation{
-		input:     varActivation,
-		terms:     terms,
-		memoTerms: make(map[string]ref.Val),
+	activation := evalActivationPool.Get().(*evaluatorActivation)
+	activation.input = varActivation
+	activation.terms = terms
+	for k := range activation.memoTerms {
+		delete(activation.memoTerms, k)
 	}
+	errors := []error{}
 	for _, rule := range eval.rules {
 		matches, _, err := rule.match.program.Eval(activation)
 		if err != nil {
-			return nil, err
+			errors = append(errors, err)
+			continue
 		}
 		if matches != types.True {
 			continue
 		}
 		output, _, err := rule.output.program.Eval(activation)
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
 		decisions = append(decisions, output)
+	}
+	evalActivationPool.Put(activation)
+	if len(decisions) != 0 {
+		return decisions, nil
+	}
+	if len(errors) != 0 {
+		return nil, errors[0]
 	}
 	return decisions, nil
 }
@@ -322,7 +337,7 @@ type evaluatorActivation struct {
 	memoTerms map[string]ref.Val
 }
 
-func (ctx *evaluatorActivation) ResolveName(name string) (ref.Val, bool) {
+func (ctx *evaluatorActivation) ResolveName(name string) (interface{}, bool) {
 	val, found := ctx.input.ResolveName(name)
 	if found {
 		return val, true
@@ -335,12 +350,12 @@ func (ctx *evaluatorActivation) ResolveName(name string) (ref.Val, bool) {
 	if !found {
 		return nil, false
 	}
-	val, _, err := term.program.Eval(ctx)
+	cval, _, err := term.program.Eval(ctx)
 	if err != nil {
 		return types.NewErr("%s", err), true
 	}
-	ctx.memoTerms[name] = val
-	return val, true
+	ctx.memoTerms[name] = cval
+	return cval, true
 }
 
 func (ctx *evaluatorActivation) Parent() interpreter.Activation {
@@ -375,8 +390,8 @@ type evalRule struct {
 
 type evalNode struct {
 	expr    *localExpr
-	env     cel.Env
-	ast     cel.Ast
+	env     *cel.Env
+	ast     *cel.Ast
 	program cel.Program
 }
 
@@ -397,7 +412,7 @@ func newDeps() *deps {
 	}
 }
 
-func findDeps(src common.Source, env cel.Env) *deps {
+func findDeps(src common.Source, env *cel.Env) *deps {
 	ast, iss := compile(src, env)
 	if iss != nil {
 		return newDeps()
@@ -419,7 +434,7 @@ func findDeps(src common.Source, env cel.Env) *deps {
 	return depSet
 }
 
-func compile(src common.Source, env cel.Env) (cel.Ast, *cel.Issues) {
+func compile(src common.Source, env *cel.Env) (*cel.Ast, *cel.Issues) {
 	parsed, iss := env.ParseSource(src)
 	if iss != nil {
 		return nil, iss
@@ -449,4 +464,12 @@ type evalSpecYaml struct {
 type evalRuleYaml struct {
 	Match  yaml.Node `yaml:"match"`
 	Output yaml.Node `yaml:"output"`
+}
+
+var evalActivationPool = sync.Pool{
+	New: func() interface{} {
+		return &evaluatorActivation{
+			memoTerms: make(map[string]ref.Val),
+		}
+	},
 }
