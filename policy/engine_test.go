@@ -316,7 +316,7 @@ func TestEnforcer(t *testing.T) {
 			}
 			decisions, err := enforcer.Evaluate(tst.input)
 			if err != nil {
-				t.Error(err)
+				tt.Error(err)
 			}
 			found := false
 			for _, dec := range decisions {
@@ -339,5 +339,29 @@ func TestEnforcer(t *testing.T) {
 			}
 		})
 	}
+}
 
+func BenchmarkEnforcer(b *testing.B) {
+	for _, tstVal := range testCases {
+		tst := tstVal
+		env, _ := cel.NewEnv(stdDecls)
+		b.Run(tst.name, func(bb *testing.B) {
+			enfOpts := []EngineOption{
+				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
+				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
+				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
+				stdFuncs,
+			}
+			enforcer, err := NewEngine(env, enfOpts...)
+			if err != nil {
+				bb.Fatal(err)
+			}
+			for i := 0; i < bb.N; i++ {
+				_, err := enforcer.Evaluate(tst.input)
+				if err != nil {
+					bb.Fatal(err)
+				}
+			}
+		})
+	}
 }
