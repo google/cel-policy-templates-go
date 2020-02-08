@@ -292,18 +292,11 @@ type evaluator struct {
 }
 
 func (eval *evaluator) Eval(vars interface{}) ([]ref.Val, error) {
-	varActivation, err := interpreter.NewActivation(vars)
+	activation, err := evalActivationPool.Setup(vars, eval.activation.terms)
 	if err != nil {
 		return nil, err
 	}
 	decisions := []ref.Val{}
-	terms := eval.activation.terms
-	activation := evalActivationPool.Get().(*evaluatorActivation)
-	activation.input = varActivation
-	activation.terms = terms
-	for k := range activation.memoTerms {
-		delete(activation.memoTerms, k)
-	}
 	errors := []error{}
 	for _, rule := range eval.rules {
 		matches, _, err := rule.match.program.Eval(activation)
@@ -322,9 +315,15 @@ func (eval *evaluator) Eval(vars interface{}) ([]ref.Val, error) {
 		decisions = append(decisions, output)
 	}
 	evalActivationPool.Put(activation)
+	// TODO: this needs a real error handling strategy. There will be cases where errors will occur
+	// and even though some portion of the evaluation may be completed, the error should be
+	// observable to the caller.
+	// If there is at least one decision, then return it.
 	if len(decisions) != 0 {
 		return decisions, nil
 	}
+	// Otherwise if there are errors, return the errors since the errors are implicitly ORed with
+	// the decisions.
 	if len(errors) != 0 {
 		return nil, errors[0]
 	}
@@ -337,6 +336,15 @@ type evaluatorActivation struct {
 	memoTerms map[string]ref.Val
 }
 
+// ResolveName implements the interpreter.Activation interface for CEL.
+//
+// The interface contract is such that CEL requests variables by name, and if present the raw value
+// should be returned to the CEL runtime. If conversion to a CEL ref.Val is necessary to comlpete
+// the evaluation, this is done just in time rather than eagerly.
+//
+// This activation also spawns additional CEL evaluations based on whether the variable name being
+// requested refers to a 'term' in the CEL Policy Template. For the duration of the evaluation the
+// term value is only computed once and then subsequently memoized.
 func (ctx *evaluatorActivation) ResolveName(name string) (interface{}, bool) {
 	val, found := ctx.input.ResolveName(name)
 	if found {
@@ -466,10 +474,31 @@ type evalRuleYaml struct {
 	Output yaml.Node `yaml:"output"`
 }
 
-var evalActivationPool = sync.Pool{
-	New: func() interface{} {
-		return &evaluatorActivation{
-			memoTerms: make(map[string]ref.Val),
-		}
+type evaluatorActivationPool struct {
+	sync.Pool
+}
+
+func (pool *evaluatorActivationPool) Setup(vars interface{},
+	terms map[string]*evalNode) (*evaluatorActivation, error) {
+	varActivation, err := interpreter.NewActivation(vars)
+	if err != nil {
+		return nil, err
+	}
+	activation := pool.Pool.Get().(*evaluatorActivation)
+	activation.input = varActivation
+	activation.terms = terms
+	for k := range activation.memoTerms {
+		delete(activation.memoTerms, k)
+	}
+	return activation, nil
+}
+
+var evalActivationPool = &evaluatorActivationPool{
+	Pool: sync.Pool{
+		New: func() interface{} {
+			return &evaluatorActivation{
+				memoTerms: make(map[string]ref.Val),
+			}
+		},
 	},
 }
