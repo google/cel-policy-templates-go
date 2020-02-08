@@ -216,10 +216,13 @@ var (
 			name:   "restricted_destinations_valid_location",
 			policy: "restricted_destinations",
 			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.1",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
+				"destination.ip":      "10.0.0.1",
+				"origin.ip":           "10.0.0.1",
+				"request.auth.claims": map[string]string{},
+				"resource.name":       "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{
+					"location": "us",
+				},
 			},
 			outputs: []interface{}{},
 		},
@@ -336,5 +339,29 @@ func TestEnforcer(t *testing.T) {
 			}
 		})
 	}
+}
 
+func BenchmarkEnforcer(b *testing.B) {
+	for _, tstVal := range testCases {
+		tst := tstVal
+		env, _ := cel.NewEnv(stdDecls)
+		b.Run(tst.name, func(bb *testing.B) {
+			enfOpts := []EngineOption{
+				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
+				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
+				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
+				stdFuncs,
+			}
+			enforcer, err := NewEngine(env, enfOpts...)
+			if err != nil {
+				bb.Fatal(err)
+			}
+			for i := 0; i < bb.N; i++ {
+				_, err := enforcer.Evaluate(tst.input)
+				if err != nil {
+					bb.Fatal(err)
+				}
+			}
+		})
+	}
 }
