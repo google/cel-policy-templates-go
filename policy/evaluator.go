@@ -15,6 +15,7 @@
 package policy
 
 import (
+	"log"
 	"strings"
 	"sync"
 
@@ -320,11 +321,17 @@ func (eval *evaluator) Eval(vars interface{}) ([]ref.Val, error) {
 	// observable to the caller.
 	// If there is at least one decision, then return it.
 	if len(decisions) != 0 {
+		if len(errors) != 0 {
+			log.Printf("decisions found, but errors encountered: %v\n", errors)
+		}
 		return decisions, nil
 	}
 	// Otherwise if there are errors, return the errors since the errors are implicitly ORed with
 	// the decisions.
 	if len(errors) != 0 {
+		if len(errors) != 0 {
+			log.Printf("evaluation encountered errors: %v\n", errors)
+		}
 		return nil, errors[0]
 	}
 	return decisions, nil
