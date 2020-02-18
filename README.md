@@ -55,3 +55,5 @@ milliseconds. OPA offers support for Kubernetes, Istio, and Envoy as plugins.
 This is a great choice for admission control. CEL on the other hand is a core
 component of the Google Cloud IAM, Istio Mixer, and Envoy security policies
 where it is used in latency critical, high throughput operations.
+
+_Disclaimer_: This is not an officially supported Google product
