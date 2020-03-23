@@ -1,0 +1,46 @@
+type: object
+properties:
+  version:
+    type: string
+    required: true
+  kind:
+    type: string
+    required: true
+  metadata:
+    type: object
+    required: true
+    properties:
+      name:
+        type: string
+        required: true
+    additionalProperties:
+      type: string
+  description:
+    type: string
+  selector:
+    type: object
+    properties:
+      matchLabels:
+        type: object
+        additionalProperties:
+          type: string
+      matchExpressions:
+        type: array
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              required: true
+            operator:
+              type: string
+              enums: ["Exists", "In", "NotIn"]
+              required: true
+            values:
+              type: array
+              items:
+                type: string
+  rules:
+    type: array
+    items:
+      type: dyn
