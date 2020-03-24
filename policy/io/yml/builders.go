@@ -17,7 +17,7 @@ package yml
 import (
 	"fmt"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
 // objRef defines a series of methods used to build an object model from the YAML decode step.
@@ -70,8 +70,8 @@ func (b *baseBuilder) propAt(idx interface{}) (objRef, error) {
 	return nil, typeNotAssignableToType(b.typeName, "list")
 }
 
-// newInstanceBuilder produces a builder for a model.Instance object.
-func newInstanceBuilder(inst *model.Instance) *instanceBuilder {
+// newInstanceBuilder produces a builder for a config.Instance object.
+func newInstanceBuilder(inst *config.Instance) *instanceBuilder {
 	return &instanceBuilder{
 		baseBuilder: newBaseBuilder("instance"),
 		instance:    inst,
@@ -80,7 +80,7 @@ func newInstanceBuilder(inst *model.Instance) *instanceBuilder {
 
 type instanceBuilder struct {
 	*baseBuilder
-	instance *model.Instance
+	instance *config.Instance
 }
 
 // id is an implementation of the objRef interface method.
@@ -88,37 +88,37 @@ func (b *instanceBuilder) id(id int64) {
 	b.instance.ID = id
 }
 
-// prop returns a builder for the model.Instance fields as appropriate.
+// prop returns a builder for the config.Instance fields as appropriate.
 func (b *instanceBuilder) prop(id int64, name string) (objRef, error) {
 	switch name {
 	case "version":
-		field := &model.StructField{
+		field := &config.StructField{
 			ID:  id,
-			Ref: &model.DynValue{},
+			Ref: &config.DynValue{},
 		}
 		b.instance.Version = field
 		return newDynValueBuilder(field.Ref), nil
 	case "description":
-		field := &model.StructField{
+		field := &config.StructField{
 			ID:  id,
-			Ref: &model.DynValue{},
+			Ref: &config.DynValue{},
 		}
 		b.instance.Description = field
 		return newDynValueBuilder(field.Ref), nil
 	case "kind":
-		field := &model.StructField{
+		field := &config.StructField{
 			ID:  id,
-			Ref: &model.DynValue{},
+			Ref: &config.DynValue{},
 		}
 		b.instance.Kind = field
 		return newDynValueBuilder(field.Ref), nil
 	case "metadata":
-		sv := &model.StructValue{
-			Fields: []*model.StructField{},
+		sv := &config.StructValue{
+			Fields: []*config.StructField{},
 		}
-		field := &model.StructField{
+		field := &config.StructField{
 			ID: id,
-			Ref: &model.DynValue{
+			Ref: &config.DynValue{
 				Value: sv,
 			},
 		}
@@ -127,12 +127,12 @@ func (b *instanceBuilder) prop(id int64, name string) (objRef, error) {
 		db.sb = newStructBuilder(sv)
 		return db, nil
 	case "rules":
-		lv := &model.ListValue{
-			Entries: []*model.DynValue{},
+		lv := &config.ListValue{
+			Entries: []*config.DynValue{},
 		}
-		field := &model.StructField{
+		field := &config.StructField{
 			ID: id,
-			Ref: &model.DynValue{
+			Ref: &config.DynValue{
 				Value: lv,
 			},
 		}
@@ -141,14 +141,14 @@ func (b *instanceBuilder) prop(id int64, name string) (objRef, error) {
 		db.lb = newListBuilder(lv)
 		return db, nil
 	case "selector":
-		b.instance.Selector = &model.Selector{ID: id}
+		b.instance.Selector = &config.Selector{ID: id}
 		return newSelectorBuilder(b.instance.Selector), nil
 	}
 	return nil, noSuchProperty("instance", name)
 }
 
-// newSelectorBuilder returns a builder for model.Selector instances.
-func newSelectorBuilder(sel *model.Selector) *selectorBuilder {
+// newSelectorBuilder returns a builder for config.Selector instances.
+func newSelectorBuilder(sel *config.Selector) *selectorBuilder {
 	return &selectorBuilder{
 		baseBuilder: newBaseBuilder("selector"),
 		sel:         sel,
@@ -157,22 +157,22 @@ func newSelectorBuilder(sel *model.Selector) *selectorBuilder {
 
 type selectorBuilder struct {
 	*baseBuilder
-	sel *model.Selector
+	sel *config.Selector
 }
 
 // prop returns builders for selector matcher fields.
 func (b *selectorBuilder) prop(id int64, name string) (objRef, error) {
 	switch name {
 	case "matchLabels":
-		b.sel.MatchLabels = &model.MatchLabels{
+		b.sel.MatchLabels = &config.MatchLabels{
 			ID:       id,
-			Matchers: []*model.LabelMatcher{},
+			Matchers: []*config.LabelMatcher{},
 		}
 		return newMatchLabelsBuilder(b.sel.MatchLabels), nil
 	case "matchExpressions":
-		b.sel.MatchExpressions = &model.MatchExpressions{
+		b.sel.MatchExpressions = &config.MatchExpressions{
 			ID:       id,
-			Matchers: []*model.ExprMatcher{},
+			Matchers: []*config.ExprMatcher{},
 		}
 		return newMatchExpressionsBuilder(b.sel.MatchExpressions), nil
 	default:
@@ -181,7 +181,7 @@ func (b *selectorBuilder) prop(id int64, name string) (objRef, error) {
 }
 
 // newMatchLabelsBuilder returns a builder for matchLabels.
-func newMatchLabelsBuilder(labels *model.MatchLabels) *matchLabelsBuilder {
+func newMatchLabelsBuilder(labels *config.MatchLabels) *matchLabelsBuilder {
 	return &matchLabelsBuilder{
 		baseBuilder: newBaseBuilder("matchLabels"),
 		labels:      labels,
@@ -190,21 +190,21 @@ func newMatchLabelsBuilder(labels *model.MatchLabels) *matchLabelsBuilder {
 
 type matchLabelsBuilder struct {
 	*baseBuilder
-	labels *model.MatchLabels
+	labels *config.MatchLabels
 }
 
 // prop returns a builder for the key, value pairs expected by the matchLabels object.
 func (b *matchLabelsBuilder) prop(id int64, name string) (objRef, error) {
-	kv := &model.DynValue{ID: id, Value: model.StringValue(name)}
-	val := &model.DynValue{}
-	lbl := &model.LabelMatcher{Key: kv, Value: val}
+	kv := &config.DynValue{ID: id, Value: config.StringValue(name)}
+	val := &config.DynValue{}
+	lbl := &config.LabelMatcher{Key: kv, Value: val}
 	b.labels.Matchers = append(b.labels.Matchers, lbl)
 	return newDynValueBuilder(val), nil
 }
 
 // newMatchExpressionsBuilder returns a builder for the list of match expressions which
 // perform set-like tests on key values.
-func newMatchExpressionsBuilder(exprs *model.MatchExpressions) *matchExpressionsBuilder {
+func newMatchExpressionsBuilder(exprs *config.MatchExpressions) *matchExpressionsBuilder {
 	return &matchExpressionsBuilder{
 		baseBuilder: newBaseBuilder("matchExpressions"),
 		exprs:       exprs,
@@ -213,7 +213,7 @@ func newMatchExpressionsBuilder(exprs *model.MatchExpressions) *matchExpressions
 
 type matchExpressionsBuilder struct {
 	*baseBuilder
-	exprs *model.MatchExpressions
+	exprs *config.MatchExpressions
 }
 
 // propAt returns a builder for a single expression matcher within the matchExpressions list.
@@ -225,13 +225,13 @@ func (b *matchExpressionsBuilder) propAt(idx interface{}) (objRef, error) {
 	if i < 0 || i > len(b.exprs.Matchers) {
 		return nil, indexOutOfRange(idx, len(b.exprs.Matchers))
 	}
-	m := &model.ExprMatcher{}
+	m := &config.ExprMatcher{}
 	b.exprs.Matchers = append(b.exprs.Matchers, m)
 	return newExprMatcherBuilder(m), nil
 }
 
 // newExprMatcher returns a builder for a matchExpressions set-like operation.
-func newExprMatcherBuilder(m *model.ExprMatcher) *exprMatcherBuilder {
+func newExprMatcherBuilder(m *config.ExprMatcher) *exprMatcherBuilder {
 	return &exprMatcherBuilder{
 		baseBuilder: newBaseBuilder("exprMatcher"),
 		match:       m,
@@ -240,7 +240,7 @@ func newExprMatcherBuilder(m *model.ExprMatcher) *exprMatcherBuilder {
 
 type exprMatcherBuilder struct {
 	*baseBuilder
-	match *model.ExprMatcher
+	match *config.ExprMatcher
 }
 
 // prop implements the objRef interface method and sets the values supported by the
@@ -248,14 +248,14 @@ type exprMatcherBuilder struct {
 func (b *exprMatcherBuilder) prop(id int64, name string) (objRef, error) {
 	switch name {
 	case "key":
-		b.match.Key = &model.DynValue{ID: id}
+		b.match.Key = &config.DynValue{ID: id}
 		return newDynValueBuilder(b.match.Key), nil
 	case "operator":
-		b.match.Operator = &model.DynValue{ID: id}
+		b.match.Operator = &config.DynValue{ID: id}
 		return newDynValueBuilder(b.match.Operator), nil
 	case "values":
-		lv := &model.ListValue{Entries: []*model.DynValue{}}
-		b.match.Values = &model.DynValue{ID: id, Value: lv}
+		lv := &config.ListValue{Entries: []*config.DynValue{}}
+		b.match.Values = &config.DynValue{ID: id, Value: lv}
 		db := newDynValueBuilder(b.match.Values)
 		db.lb = newListBuilder(lv)
 		return db, nil
@@ -265,7 +265,7 @@ func (b *exprMatcherBuilder) prop(id int64, name string) (objRef, error) {
 }
 
 // newStructBuilder returns a builder for dynamic values of struct type.
-func newStructBuilder(sv *model.StructValue) *structBuilder {
+func newStructBuilder(sv *config.StructValue) *structBuilder {
 	return &structBuilder{
 		baseBuilder: newBaseBuilder("struct"),
 		structVal:   sv,
@@ -274,22 +274,22 @@ func newStructBuilder(sv *model.StructValue) *structBuilder {
 
 type structBuilder struct {
 	*baseBuilder
-	structVal *model.StructValue
+	structVal *config.StructValue
 }
 
 // prop returns a builder for a struct property.
 func (b *structBuilder) prop(id int64, name string) (objRef, error) {
-	field := &model.StructField{
+	field := &config.StructField{
 		ID:   id,
 		Name: name,
-		Ref:  &model.DynValue{},
+		Ref:  &config.DynValue{},
 	}
 	b.structVal.Fields = append(b.structVal.Fields, field)
 	return newDynValueBuilder(field.Ref), nil
 }
 
 // newListBuilder returns a builder for a dynamic value of list type.
-func newListBuilder(lv *model.ListValue) *listBuilder {
+func newListBuilder(lv *config.ListValue) *listBuilder {
 	return &listBuilder{
 		baseBuilder: newBaseBuilder("list"),
 		listVal:     lv,
@@ -298,25 +298,25 @@ func newListBuilder(lv *model.ListValue) *listBuilder {
 
 type listBuilder struct {
 	*baseBuilder
-	listVal *model.ListValue
+	listVal *config.ListValue
 }
 
 // propAt returns a builder for a list element at the given index.
 func (b *listBuilder) propAt(idx interface{}) (objRef, error) {
-	dyn := &model.DynValue{}
+	dyn := &config.DynValue{}
 	b.listVal.Entries = append(b.listVal.Entries, dyn)
 	return newDynValueBuilder(dyn), nil
 }
 
-// newDynValueBuilder returns a builder for a model.DynValue.
-func newDynValueBuilder(dyn *model.DynValue) *dynValueBuilder {
+// newDynValueBuilder returns a builder for a config.DynValue.
+func newDynValueBuilder(dyn *config.DynValue) *dynValueBuilder {
 	return &dynValueBuilder{
 		dyn: dyn,
 	}
 }
 
 type dynValueBuilder struct {
-	dyn *model.DynValue
+	dyn *config.DynValue
 	lb  *listBuilder
 	sb  *structBuilder
 }
@@ -326,7 +326,7 @@ func (b *dynValueBuilder) id(id int64) {
 	b.dyn.ID = id
 }
 
-// assign will set the value of the model.DynValue.
+// assign will set the value of the config.DynValue.
 //
 // If the builder had previously been configured to produce list or struct values, the function
 // returns an error.
@@ -337,21 +337,21 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 	if b.lb != nil {
 		return valueNotAssignableToType("list", val)
 	}
-	var vn model.ValueNode
+	var vn config.ValueNode
 	switch v := val.(type) {
 	case bool:
-		vn = model.BoolValue(v)
+		vn = config.BoolValue(v)
 	case []byte:
-		vn = model.BytesValue(v)
+		vn = config.BytesValue(v)
 	case float64:
-		vn = model.DoubleValue(v)
+		vn = config.DoubleValue(v)
 	case int64:
-		vn = model.IntValue(v)
+		vn = config.IntValue(v)
 	case string:
-		vn = model.StringValue(v)
+		vn = config.StringValue(v)
 	case uint64:
-		vn = model.UintValue(v)
-	case model.NullValue:
+		vn = config.UintValue(v)
+	case config.NullValue:
 		vn = v
 	default:
 		return valueNotAssignableToType("dyn", v)
@@ -368,8 +368,8 @@ func (b *dynValueBuilder) prop(id int64, name string) (objRef, error) {
 		return nil, typeNotAssignableToType("list", "struct")
 	}
 	if b.sb == nil {
-		sv := &model.StructValue{
-			Fields: []*model.StructField{},
+		sv := &config.StructValue{
+			Fields: []*config.StructField{},
 		}
 		b.dyn.Value = sv
 		b.sb = newStructBuilder(sv)
@@ -385,8 +385,8 @@ func (b *dynValueBuilder) propAt(idx interface{}) (objRef, error) {
 		return nil, typeNotAssignableToType("struct", "list")
 	}
 	if b.lb == nil {
-		lv := &model.ListValue{
-			Entries: []*model.DynValue{},
+		lv := &config.ListValue{
+			Entries: []*config.DynValue{},
 		}
 		b.dyn.Value = lv
 		b.lb = newListBuilder(lv)

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
 func TestDecoder(t *testing.T) {
@@ -237,7 +237,7 @@ rules:
 	for _, tst := range tests {
 		tc := tst
 		t.Run(tc.ID, func(tt *testing.T) {
-			src := model.StringSource(tc.In, "instance")
+			src := config.StringSource(tc.In, "instance")
 			inst, errs := DecodeInstance(src)
 			dbgErr := errs.ToDisplayString()
 			if !cmp(tc.Err, dbgErr) {

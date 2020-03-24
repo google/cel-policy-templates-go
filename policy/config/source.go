@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package config
 
 import (
 	celsrc "github.com/google/cel-go/common"
 )
 
-// ByteSource converts a byte sequence and location description to a model.Source.
+// ByteSource converts a byte sequence and location description to a config.Source.
 func ByteSource(contents []byte, location string) *Source {
 	return StringSource(string(contents), location)
 }
 
-// StringSource converts a string and location description to a model.Source.
+// StringSource converts a string and location description to a config.Source.
 func StringSource(contents, location string) *Source {
 	return &Source{
 		Source: celsrc.NewStringSource(contents, location),

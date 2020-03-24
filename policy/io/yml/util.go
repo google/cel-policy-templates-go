@@ -16,18 +16,18 @@ package yml
 
 import (
 	"github.com/google/cel-go/common"
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
-// YamlToInstance decodes a YAML source to a model.Instance.
+// YamlToInstance decodes a YAML source to a config.Instance.
 //
 // If errors are encountered during decode, they are returned via the CEL Errors object.
-func YamlToInstance(src *model.Source) (*model.Instance, *common.Errors) {
+func YamlToInstance(src *config.Source) (*config.Instance, *common.Errors) {
 	return DecodeInstance(src)
 }
 
-// InstanceToYaml encodes a model.Instance to a YAML source string.
-func InstanceToYaml(instance *model.Instance) *model.Source {
+// InstanceToYaml encodes a config.Instance to a YAML source string.
+func InstanceToYaml(instance *config.Instance) *config.Source {
 	yml := EncodeInstance(instance)
-	return model.StringSource(yml, instance.SourceInfo.Description)
+	return config.StringSource(yml, instance.SourceInfo.Description)
 }

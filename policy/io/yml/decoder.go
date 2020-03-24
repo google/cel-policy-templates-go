@@ -20,16 +20,16 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/common"
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
-// DecodeInstance decodes a YAML source object to a model.Instance.
+// DecodeInstance decodes a YAML source object to a config.Instance.
 //
 // The decoding step relies on the use of YAML tags to determine the type of each element.
 // Specially, the tags used must align with the ones produced by the Go YAML v3 library.
 //
-// Errors in the decoding will result in a nil model.Instance.
-func DecodeInstance(src *model.Source) (*model.Instance, *common.Errors) {
+// Errors in the decoding will result in a nil config.Instance.
+func DecodeInstance(src *config.Source) (*config.Instance, *common.Errors) {
 	errs := common.NewErrors(src)
 	var docNode yaml.Node
 	err := yaml.Unmarshal([]byte(src.Content()), &docNode)
@@ -43,8 +43,8 @@ func DecodeInstance(src *model.Source) (*model.Instance, *common.Errors) {
 			docNode.Kind)
 		return nil, errs
 	}
-	info := model.NewSourceInfo(src)
-	inst := &model.Instance{SourceInfo: info}
+	info := config.NewSourceInfo(src)
+	inst := &config.Instance{SourceInfo: info}
 	ib := newInstanceBuilder(inst)
 	dec := &decoder{
 		info: info,
@@ -60,7 +60,7 @@ func DecodeInstance(src *model.Source) (*model.Instance, *common.Errors) {
 
 type decoder struct {
 	id   int64
-	info *model.SourceInfo
+	info *config.SourceInfo
 	errs *common.Errors
 }
 
@@ -70,15 +70,15 @@ func (d *decoder) nextID() int64 {
 }
 
 func (d *decoder) collectMetadata(id int64, node *yaml.Node) {
-	var comments []*model.Comment
+	var comments []*config.Comment
 	if txt := node.HeadComment; txt != "" {
-		comments = append(comments, model.NewHeadComment(txt))
+		comments = append(comments, config.NewHeadComment(txt))
 	}
 	if txt := node.LineComment; txt != "" {
-		comments = append(comments, model.NewLineComment(txt))
+		comments = append(comments, config.NewLineComment(txt))
 	}
 	if txt := node.FootComment; txt != "" {
-		comments = append(comments, model.NewFootComment(txt))
+		comments = append(comments, config.NewFootComment(txt))
 	}
 	if len(comments) > 0 {
 		d.info.Comments[id] = comments
@@ -128,7 +128,7 @@ func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
 		}
 		err = ref.assign(val)
 	case "null":
-		err = ref.assign(model.Null)
+		err = ref.assign(config.Null)
 	case "string":
 		err = ref.assign(node.Value)
 	default:

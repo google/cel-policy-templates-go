@@ -19,14 +19,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
-// EncodeInstance serializes a model.Instance to a string according to an optional set of encoding
+// EncodeInstance serializes a config.Instance to a string according to an optional set of encoding
 // options.
 //
 // The instance does not necessarily need to be well-formed in order to be encoded.
-func EncodeInstance(instance *model.Instance, opts ...EncodeOption) string {
+func EncodeInstance(instance *config.Instance, opts ...EncodeOption) string {
 	enc := &encoder{
 		indents:   [][]string{},
 		lineStart: true,
@@ -52,7 +52,7 @@ type encoder struct {
 	indents   [][]string
 	lineStart bool
 	renderIDs bool
-	comments  map[int64][]*model.Comment
+	comments  map[int64][]*config.Comment
 }
 
 // String implements the fmt.Stringer interface.
@@ -60,9 +60,9 @@ func (enc *encoder) String() string {
 	return enc.buf.String()
 }
 
-func (enc *encoder) writeInstance(inst *model.Instance) *encoder {
+func (enc *encoder) writeInstance(inst *config.Instance) *encoder {
 	enc.renderID(inst.ID)
-	if enc.writeComment(inst.ID, model.HeadComment) {
+	if enc.writeComment(inst.ID, config.HeadComment) {
 		enc.eol().eol()
 	}
 	if inst.Version != nil {
@@ -86,7 +86,7 @@ func (enc *encoder) writeInstance(inst *model.Instance) *encoder {
 	return enc.writeFootComment(inst.ID)
 }
 
-func (enc *encoder) writeSelector(sel *model.Selector) *encoder {
+func (enc *encoder) writeSelector(sel *config.Selector) *encoder {
 	enc.writeField(sel.ID, "selector").eol().
 		indent()
 	if sel.MatchLabels != nil {
@@ -94,7 +94,7 @@ func (enc *encoder) writeSelector(sel *model.Selector) *encoder {
 			indent()
 		for _, m := range sel.MatchLabels.Matchers {
 			if m.Key != nil {
-				keyName := m.Key.Value.(model.StringValue)
+				keyName := m.Key.Value.(config.StringValue)
 				enc.writeFieldValue(m.Key.ID, string(keyName), m.Value)
 			}
 		}
@@ -126,7 +126,7 @@ func (enc *encoder) writeSelector(sel *model.Selector) *encoder {
 					enc.write(", ")
 				}
 				enc.write("values: [")
-				lv := m.Values.Value.(*model.ListValue)
+				lv := m.Values.Value.(*config.ListValue)
 				for i, v := range lv.Entries {
 					enc.writeInlineValue(v)
 					if i < len(lv.Entries)-1 {
@@ -144,7 +144,7 @@ func (enc *encoder) writeSelector(sel *model.Selector) *encoder {
 	return enc.dedent()
 }
 
-func (enc *encoder) writeStruct(sv *model.StructValue) *encoder {
+func (enc *encoder) writeStruct(sv *config.StructValue) *encoder {
 	inList := enc.inList()
 	for i, f := range sv.Fields {
 		enc.writeFieldValue(f.ID, f.Name, f.Ref)
@@ -158,7 +158,7 @@ func (enc *encoder) writeStruct(sv *model.StructValue) *encoder {
 	return enc
 }
 
-func (enc *encoder) writeList(lv *model.ListValue) *encoder {
+func (enc *encoder) writeList(lv *config.ListValue) *encoder {
 	enc.indentList()
 	for _, e := range lv.Entries {
 		enc.writeValue(e)
@@ -166,26 +166,26 @@ func (enc *encoder) writeList(lv *model.ListValue) *encoder {
 	return enc.dedent()
 }
 
-func (enc *encoder) writeNestedValue(v *model.DynValue) *encoder {
+func (enc *encoder) writeNestedValue(v *config.DynValue) *encoder {
 	return enc.writeValueInternal(v, true, true)
 }
 
-func (enc *encoder) writeInlineValue(v *model.DynValue) *encoder {
+func (enc *encoder) writeInlineValue(v *config.DynValue) *encoder {
 	return enc.writeValueInternal(v, false, false)
 }
 
-func (enc *encoder) writeValue(v *model.DynValue) *encoder {
+func (enc *encoder) writeValue(v *config.DynValue) *encoder {
 	return enc.writeValueInternal(v, false, true)
 }
 
-func (enc *encoder) writeValueInternal(v *model.DynValue, eolStart, eolEnd bool) *encoder {
+func (enc *encoder) writeValueInternal(v *config.DynValue, eolStart, eolEnd bool) *encoder {
 	if v == nil {
 		return enc.eol()
 	}
 	enc.renderID(v.ID).writeHeadComment(v.ID)
 	isPrimitive := false
 	switch dyn := v.Value.(type) {
-	case *model.ListValue:
+	case *config.ListValue:
 		if eolStart {
 			enc.eol()
 			enc.indent()
@@ -194,7 +194,7 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eolStart, eolEnd bool)
 		if eolStart {
 			enc.dedent()
 		}
-	case *model.StructValue:
+	case *config.StructValue:
 		if eolStart {
 			enc.eol()
 			enc.indent()
@@ -203,11 +203,11 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eolStart, eolEnd bool)
 		if eolStart {
 			enc.dedent()
 		}
-	case model.StringValue:
+	case config.StringValue:
 		isPrimitive = true
 		str := strconv.Quote(string(dyn))
-		enc.write(`"`).write(str).write(`"`).writeLineComment(v.ID)
-	case model.NullValue:
+		enc.write(str).writeLineComment(v.ID)
+	case config.NullValue:
 		isPrimitive = true
 		enc.write("null").writeLineComment(v.ID)
 	default:
@@ -228,10 +228,10 @@ func (enc *encoder) writeField(id int64, field string) *encoder {
 	return enc
 }
 
-func (enc *encoder) writeFieldValue(id int64, field string, val *model.DynValue) *encoder {
+func (enc *encoder) writeFieldValue(id int64, field string, val *config.DynValue) *encoder {
 	enc.writeField(id, field)
 	switch val.Value.(type) {
-	case *model.ListValue, *model.StructValue:
+	case *config.ListValue, *config.StructValue:
 		enc.writeNestedValue(val)
 	default:
 		enc.write(" ").writeValue(val)
@@ -240,25 +240,25 @@ func (enc *encoder) writeFieldValue(id int64, field string, val *model.DynValue)
 }
 
 func (enc *encoder) writeHeadComment(id int64) *encoder {
-	if enc.writeComment(id, model.HeadComment) {
+	if enc.writeComment(id, config.HeadComment) {
 		enc.eol()
 	}
 	return enc
 }
 
 func (enc *encoder) writeLineComment(id int64) *encoder {
-	enc.writeComment(id, model.LineComment)
+	enc.writeComment(id, config.LineComment)
 	return enc
 }
 
 func (enc *encoder) writeFootComment(id int64) *encoder {
-	if enc.writeComment(id, model.FootComment) {
+	if enc.writeComment(id, config.FootComment) {
 		enc.eol().eol()
 	}
 	return enc
 }
 
-func (enc *encoder) writeComment(id int64, style model.CommentStyle) bool {
+func (enc *encoder) writeComment(id int64, style config.CommentStyle) bool {
 	cmts, hasComments := enc.comments[id]
 	if !hasComments {
 		return false
@@ -266,7 +266,7 @@ func (enc *encoder) writeComment(id int64, style model.CommentStyle) bool {
 	hasComments = false
 	for _, cmt := range cmts {
 		if cmt.Style == style {
-			if style == model.LineComment {
+			if style == config.LineComment {
 				enc.write(" ")
 			}
 			lines := strings.Split(cmt.Text, "\n")

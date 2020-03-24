@@ -17,16 +17,16 @@ package io
 import (
 	"io/ioutil"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
-// ReadFile reads a model.Source from a file location.
+// ReadFile reads a config.Source from a file location.
 //
 // Errors in reading the source will result in an error and a nil source.
-func ReadFile(location string) (*model.Source, error) {
+func ReadFile(location string) (*config.Source, error) {
 	content, err := ioutil.ReadFile(location)
 	if err != nil {
 		return nil, err
 	}
-	return model.ByteSource(content, location), nil
+	return config.ByteSource(content, location), nil
 }

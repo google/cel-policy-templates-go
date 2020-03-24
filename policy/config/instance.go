@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package model contains abstract representations of policy template and instance objects.
-package model
+// Package config contains abstract representations of policy template and instance config objects.
+package config
 
 // Instance declares the properties common to all policy instances.
 //
@@ -57,7 +57,7 @@ type Instance struct {
 	// Type: list
 	Rules *StructField
 
-	// ID specifying the source element id fo the instance within a model.Source.
+	// ID specifying the source element id fo the instance within a config.Source.
 	ID int64
 
 	// SourceInfo contains metadata about source positions, line offsets, and comments.

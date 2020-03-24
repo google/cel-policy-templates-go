@@ -18,11 +18,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/config"
 )
 
 func TestBuilders_ModelStructValue(t *testing.T) {
-	sv := &model.StructValue{Fields: []*model.StructField{}}
+	sv := &config.StructValue{Fields: []*config.StructField{}}
 	sb := &structBuilder{
 		baseBuilder: &baseBuilder{typeName: "struct"},
 		structVal:   sv,
@@ -39,26 +39,26 @@ func TestBuilders_ModelStructValue(t *testing.T) {
 	m0.id(6)
 	m0.assign("user:wiley@acme.co")
 
-	want := &model.StructValue{
-		Fields: []*model.StructField{
+	want := &config.StructValue{
+		Fields: []*config.StructField{
 			{
 				ID:   2,
 				Name: "role",
-				Ref: &model.DynValue{
+				Ref: &config.DynValue{
 					ID:    3,
-					Value: model.StringValue("role/storage.bucket.admin"),
+					Value: config.StringValue("role/storage.bucket.admin"),
 				},
 			},
 			{
 				ID:   4,
 				Name: "members",
-				Ref: &model.DynValue{
+				Ref: &config.DynValue{
 					ID: 5,
-					Value: &model.ListValue{
-						Entries: []*model.DynValue{
+					Value: &config.ListValue{
+						Entries: []*config.DynValue{
 							{
 								ID:    6,
-								Value: model.StringValue("user:wiley@acme.co"),
+								Value: config.StringValue("user:wiley@acme.co"),
 							},
 						},
 					},
