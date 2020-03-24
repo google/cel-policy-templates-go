@@ -16,11 +16,16 @@ package yml
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// EncodeInstance serializes a model.Instance to a string according to an optional set of encoding
+// options.
+//
+// The instance does not necessarily need to be well-formed in order to be encoded.
 func EncodeInstance(instance *model.Instance, opts ...EncodeOption) string {
 	enc := &encoder{
 		indents:   [][]string{},
@@ -33,8 +38,10 @@ func EncodeInstance(instance *model.Instance, opts ...EncodeOption) string {
 	return enc.writeInstance(instance).String()
 }
 
+// EncodeOption describes a functional argument for configuring the behavior of the encoder.
 type EncodeOption func(*encoder) *encoder
 
+// RenderDebugIDs modifies the encoding to print out source element ids into the encoded string.
 func RenderDebugIDs(enc *encoder) *encoder {
 	enc.renderIDs = true
 	return enc
@@ -48,6 +55,7 @@ type encoder struct {
 	comments  map[int64][]*model.Comment
 }
 
+// String implements the fmt.Stringer interface.
 func (enc *encoder) String() string {
 	return enc.buf.String()
 }
@@ -197,8 +205,8 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eolStart, eolEnd bool)
 		}
 	case model.StringValue:
 		isPrimitive = true
-		// TODO: this is most definitely not correct.
-		enc.write(`"`).write(string(dyn)).write(`"`).writeLineComment(v.ID)
+		str := strconv.Quote(string(dyn))
+		enc.write(`"`).write(str).write(`"`).writeLineComment(v.ID)
 	case model.NullValue:
 		isPrimitive = true
 		enc.write("null").writeLineComment(v.ID)

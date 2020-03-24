@@ -23,6 +23,12 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// DecodeInstance decodes a YAML source object to a model.Instance.
+//
+// The decoding step relies on the use of YAML tags to determine the type of each element.
+// Specially, the tags used must align with the ones produced by the Go YAML v3 library.
+//
+// Errors in the decoding will result in a nil model.Instance.
 func DecodeInstance(src *model.Source) (*model.Instance, *common.Errors) {
 	errs := common.NewErrors(src)
 	var docNode yaml.Node
@@ -46,7 +52,10 @@ func DecodeInstance(src *model.Source) (*model.Instance, *common.Errors) {
 	}
 	dec.collectMetadata(1, &docNode)
 	dec.decode(docNode.Content[0], ib)
-	return inst, errs
+	if len(errs.GetErrors()) == 0 {
+		return inst, errs
+	}
+	return nil, errs
 }
 
 type decoder struct {
@@ -172,16 +181,7 @@ func (d *decoder) reportErrorAtID(id int64, format string, args ...interface{}) 
 }
 
 var (
-	openAPISchemaTypes map[string]string = map[string]string{
-		"boolean": "bool",
-		"null":    "null",
-		"string":  "string",
-		"integer": "int",
-		"number":  "double",
-		"array":   "list",
-		"object":  "map",
-		"dyn":     "dyn",
-	}
+	// yamlTypes map of the long tag names supported by the Go YAML v3 library.
 	yamlTypes = map[string]string{
 		"tag:yaml.org,2002:bool":  "bool",
 		"tag:yaml.org,2002:null":  "null",

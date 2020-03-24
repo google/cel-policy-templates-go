@@ -20,6 +20,9 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// ReadFile reads a model.Source from a file location.
+//
+// Errors in reading the source will result in an error and a nil source.
 func ReadFile(location string) (*model.Source, error) {
 	content, err := ioutil.ReadFile(location)
 	if err != nil {
@@ -27,4 +30,3 @@ func ReadFile(location string) (*model.Source, error) {
 	}
 	return model.ByteSource(content, location), nil
 }
-

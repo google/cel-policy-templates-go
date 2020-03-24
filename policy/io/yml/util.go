@@ -19,10 +19,14 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// YamlToInstance decodes a YAML source to a model.Instance.
+//
+// If errors are encountered during decode, they are returned via the CEL Errors object.
 func YamlToInstance(src *model.Source) (*model.Instance, *common.Errors) {
 	return DecodeInstance(src)
 }
 
+// InstanceToYaml encodes a model.Instance to a YAML source string.
 func InstanceToYaml(instance *model.Instance) *model.Source {
 	yml := EncodeInstance(instance)
 	return model.StringSource(yml, instance.SourceInfo.Description)
