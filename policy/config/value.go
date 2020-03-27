@@ -18,6 +18,17 @@ import (
 	structpb "github.com/golang/protobuf/ptypes/struct"
 )
 
+// NewEmptyDynValue returns the zero-valued DynValue.
+func NewEmptyDynValue() *DynValue {
+	// note: 0 is not a valid parse node identifier.
+	return NewDynValue(0, nil)
+}
+
+// NewDynValue returns a DynValue that corresponds to a parse node id and value.
+func NewDynValue(id int64, val ValueNode) *DynValue {
+	return &DynValue{ID: id, Value: val}
+}
+
 // DynValue is a dynamically typed value used to describe unstructured content.
 // Whether the value has the desired type is determined by where it is used within the Instance or
 // Template, and whether there are schemas which might enforce a more rigid type definition.
@@ -32,6 +43,13 @@ type ValueNode interface {
 	isValueNode()
 }
 
+// NewStructValue returns an empty StructValue.
+func NewStructValue() *StructValue {
+	return &StructValue{
+		Fields: []*StructField{},
+	}
+}
+
 // StructValue declares an object with a set of named fields whose values are dynamically typed.
 type StructValue struct {
 	Fields []*StructField
@@ -39,11 +57,28 @@ type StructValue struct {
 
 func (*StructValue) isValueNode() {}
 
+// NewStructField returns a StructField instance with an empty DynValue that refers to the
+// specified parse node id and field name.
+func NewStructField(id int64, name string) *StructField {
+	return &StructField{
+		ID:   id,
+		Name: name,
+		Ref:  NewEmptyDynValue(),
+	}
+}
+
 // StructField specifies a field name and a reference to a dynamic value.
 type StructField struct {
 	ID   int64
 	Name string
 	Ref  *DynValue
+}
+
+// NewListValue returns an empty ListValue instance.
+func NewListValue() *ListValue {
+	return &ListValue{
+		Entries: []*DynValue{},
+	}
 }
 
 // ListValue contains a list of dynamically typed entries.

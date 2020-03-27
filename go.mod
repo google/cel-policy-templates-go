@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/golang/protobuf v1.3.4
-	github.com/google/cel-go v0.4.0
+	github.com/google/cel-go v0.4.1
 	github.com/google/go-cmp v0.4.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a // indirect

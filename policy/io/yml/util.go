@@ -31,3 +31,16 @@ func InstanceToYaml(instance *config.Instance) *config.Source {
 	yml := EncodeInstance(instance)
 	return config.StringSource(yml, instance.SourceInfo.Description)
 }
+
+// YamlToTemplate decodes a YAML source to a config.Template.
+//
+// If errors are encountered during decode, they are returned via the CEL Errors object.
+func YamlToTemplate(src *config.Source) (*config.Template, *common.Errors) {
+	return DecodeTemplate(src)
+}
+
+// TemplateToYaml encodes a config.Instance to a YAML source string.
+func TemplateToYaml(template *config.Template) *config.Source {
+	yml := EncodeTemplate(template)
+	return config.StringSource(yml, template.SourceInfo.Description)
+}

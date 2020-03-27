@@ -29,9 +29,9 @@ package config
 // Kubernetes resources; however, the Instance is not intended to be Kubernetes specific:
 // https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#resources
 type Instance struct {
-	// Version indicates the version of the Policy Template that backs the instance.
+	// APIVersion indicates the version of the Policy Template that backs the instance.
 	// Type: string
-	Version *StructField
+	APIVersion *StructField
 
 	// Kind identifies the Policy Template used to validate and evaluate this instance.
 	// Type: string
