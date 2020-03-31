@@ -27,6 +27,9 @@ import (
 //
 // The instance does not necessarily need to be well-formed in order to be encoded.
 func EncodeInstance(instance *config.Instance, opts ...EncodeOption) string {
+	if instance == nil {
+		return ""
+	}
 	enc := &encoder{
 		indents:   [][]string{},
 		lineStart: true,
@@ -36,6 +39,21 @@ func EncodeInstance(instance *config.Instance, opts ...EncodeOption) string {
 		enc = opt(enc)
 	}
 	return enc.writeInstance(instance).String()
+}
+
+func EncodeTemplate(template *config.Template, opts ...EncodeOption) string {
+	if template == nil {
+		return ""
+	}
+	enc := &encoder{
+		indents:   [][]string{},
+		lineStart: true,
+		comments:  template.SourceInfo.Comments,
+	}
+	for _, opt := range opts {
+		enc = opt(enc)
+	}
+	return enc.writeTemplate(template).String()
 }
 
 // EncodeOption describes a functional argument for configuring the behavior of the encoder.
@@ -60,48 +78,145 @@ func (enc *encoder) String() string {
 	return enc.buf.String()
 }
 
+func (enc *encoder) writeTemplate(tmpl *config.Template) *encoder {
+	enc.renderID(tmpl.ID)
+	if enc.writeComment(tmpl.ID, config.HeadComment) {
+		enc.eol().eol()
+	}
+	return enc.
+		writeField(tmpl.APIVersion).
+		writeField(tmpl.Kind).
+		writeField(tmpl.Metadata).
+		writeField(tmpl.Description).
+		writeField(tmpl.RuleSchema).
+		writeValidator(tmpl.Validator).
+		writeEvaluator(tmpl.Evaluator).
+		writeFootComment(tmpl.ID)
+}
+
+func (enc *encoder) writeValidator(val *config.Validator) *encoder {
+	if val == nil {
+		return enc
+	}
+	return enc.
+		writeFieldName(val.ID, "validator").eol().
+		indent().
+		writeField(val.Environment).
+		writeField(val.Terms).
+		writeValidatorProductions(val.Productions).
+		dedent().
+		writeFootComment(val.ID)
+}
+
+func (enc *encoder) writeValidatorProductions(p *config.ValidatorProductions) *encoder {
+	if p == nil {
+		return enc
+	}
+	enc.writeFieldName(p.ID, "productions").eol().
+		indent().
+		indentList()
+	for _, prod := range p.Values {
+		// TODO: start struct position will be wrong with poorly-formed input
+		enc.writeField(prod.Match).startStruct().
+			writeField(prod.Message).
+			writeField(prod.Details).
+			endStruct()
+	}
+	return enc.
+		dedent().
+		dedent().
+		writeFootComment(p.ID)
+}
+
+func (enc *encoder) writeEvaluator(eval *config.Evaluator) *encoder {
+	if eval == nil {
+		return enc
+	}
+	return enc.
+		writeFieldName(eval.ID, "evaluator").eol().
+		indent().
+		writeField(eval.Environment).
+		writeField(eval.Terms).
+		writeEvaluatorProductions(eval.Productions).
+		dedent().
+		writeFootComment(eval.ID)
+}
+
+func (enc *encoder) writeEvaluatorProductions(p *config.EvaluatorProductions) *encoder {
+	if p == nil {
+		return enc
+	}
+	enc.writeFieldName(p.ID, "productions").eol().
+		indent().
+		indentList()
+	for _, prod := range p.Values {
+		// TODO: start struct position will be wrong with poorly-formed input
+		enc.writeField(prod.Match).startStruct()
+		if prod.OutputDecision != nil {
+			out := prod.OutputDecision
+			enc.writeField(out.Decision).
+				writeField(out.Reference).
+				writeField(out.Output)
+		}
+		if prod.OutputDecisions != nil {
+			outs := prod.OutputDecisions
+			enc.writeFieldName(outs.ID, "decisions").eol().
+				indent().
+				indentList()
+			for _, outDec := range outs.Values {
+				enc.writeField(outDec.Decision).startStruct().
+					writeField(outDec.Reference).
+					writeField(outDec.Output).
+					endStruct()
+			}
+			enc.dedent().
+				dedent().
+				writeFootComment(outs.ID)
+		}
+		enc.endStruct()
+	}
+	return enc.
+		dedent().
+		dedent().
+		writeFootComment(p.ID)
+}
+
 func (enc *encoder) writeInstance(inst *config.Instance) *encoder {
 	enc.renderID(inst.ID)
 	if enc.writeComment(inst.ID, config.HeadComment) {
 		enc.eol().eol()
 	}
-	if inst.Version != nil {
-		enc.writeFieldValue(inst.Version.ID, "version", inst.Version.Ref)
-	}
-	if inst.Kind != nil {
-		enc.writeFieldValue(inst.Kind.ID, "kind", inst.Kind.Ref)
-	}
-	if inst.Metadata != nil {
-		enc.writeFieldValue(inst.Metadata.ID, "metadata", inst.Metadata.Ref)
-	}
-	if inst.Description != nil {
-		enc.writeFieldValue(inst.Description.ID, "description", inst.Description.Ref)
-	}
-	if inst.Selector != nil {
-		enc.writeSelector(inst.Selector)
-	}
-	if inst.Rules != nil {
-		enc.writeFieldValue(inst.Rules.ID, "rules", inst.Rules.Ref)
-	}
-	return enc.writeFootComment(inst.ID)
+	return enc.
+		writeField(inst.APIVersion).
+		writeField(inst.Kind).
+		writeField(inst.Metadata).
+		writeField(inst.Description).
+		writeSelector(inst.Selector).
+		writeField(inst.Rules).
+		writeFootComment(inst.ID)
 }
 
 func (enc *encoder) writeSelector(sel *config.Selector) *encoder {
-	enc.writeField(sel.ID, "selector").eol().
+	if sel == nil {
+		return enc
+	}
+	enc.writeFieldName(sel.ID, "selector").eol().
 		indent()
 	if sel.MatchLabels != nil {
-		enc.writeField(sel.MatchLabels.ID, "matchLabels").eol().
+		enc.writeFieldName(sel.MatchLabels.ID, "matchLabels").eol().
 			indent()
 		for _, m := range sel.MatchLabels.Matchers {
 			if m.Key != nil {
 				keyName := m.Key.Value.(config.StringValue)
-				enc.writeFieldValue(m.Key.ID, string(keyName), m.Value)
+				enc.writeFieldName(m.Key.ID, string(keyName))
+				enc.writeFieldValue(m.Value)
+				enc.writeFootComment(m.Key.ID)
 			}
 		}
 		enc.dedent()
 	}
 	if sel.MatchExpressions != nil {
-		enc.writeField(sel.MatchExpressions.ID, "matchExpressions").eol().
+		enc.writeFieldName(sel.MatchExpressions.ID, "matchExpressions").eol().
 			indent()
 		for _, m := range sel.MatchExpressions.Matchers {
 			if m.Key != nil {
@@ -147,7 +262,7 @@ func (enc *encoder) writeSelector(sel *config.Selector) *encoder {
 func (enc *encoder) writeStruct(sv *config.StructValue) *encoder {
 	inList := enc.inList()
 	for i, f := range sv.Fields {
-		enc.writeFieldValue(f.ID, f.Name, f.Ref)
+		enc.writeField(f)
 		if i == 0 && inList {
 			enc.startStruct()
 		}
@@ -221,22 +336,31 @@ func (enc *encoder) writeValueInternal(v *config.DynValue, eolStart, eolEnd bool
 	return enc
 }
 
-func (enc *encoder) writeField(id int64, field string) *encoder {
-	enc.renderID(id).
-		writeHeadComment(id).
-		write(field).write(":").writeLineComment(id)
-	return enc
+func (enc *encoder) writeField(field *config.StructField) *encoder {
+	if field == nil {
+		return enc
+	}
+	return enc.
+		writeFieldName(field.ID, field.Name).
+		writeFieldValue(field.Ref).
+		writeFootComment(field.ID)
 }
 
-func (enc *encoder) writeFieldValue(id int64, field string, val *config.DynValue) *encoder {
-	enc.writeField(id, field)
+func (enc *encoder) writeFieldName(id int64, field string) *encoder {
+	return enc.
+		renderID(id).
+		writeHeadComment(id).
+		write(field).write(":").writeLineComment(id)
+}
+
+func (enc *encoder) writeFieldValue(val *config.DynValue) *encoder {
 	switch val.Value.(type) {
 	case *config.ListValue, *config.StructValue:
 		enc.writeNestedValue(val)
 	default:
 		enc.write(" ").writeValue(val)
 	}
-	return enc.writeFootComment(id)
+	return enc
 }
 
 func (enc *encoder) writeHeadComment(id int64) *encoder {

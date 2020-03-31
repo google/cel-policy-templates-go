@@ -15,6 +15,7 @@
 package yml
 
 import (
+	"fmt"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -30,32 +31,70 @@ import (
 //
 // Errors in the decoding will result in a nil config.Instance.
 func DecodeInstance(src *config.Source) (*config.Instance, *common.Errors) {
+	// Common objects for decoding an instance.
 	errs := common.NewErrors(src)
-	var docNode yaml.Node
-	err := yaml.Unmarshal([]byte(src.Content()), &docNode)
-	if err != nil {
-		errs.ReportError(common.NoLocation, err.Error())
-		return nil, errs
-	}
-	if docNode.Kind != yaml.DocumentNode {
-		errs.ReportError(common.NoLocation,
-			"got yaml node of kind %v, wanted mapping node",
-			docNode.Kind)
-		return nil, errs
-	}
 	info := config.NewSourceInfo(src)
 	inst := &config.Instance{SourceInfo: info}
-	ib := newInstanceBuilder(inst)
-	dec := &decoder{
+	builder := newInstanceBuilder(inst)
+	dec := newDecoder(info, errs)
+	dec.decodeYaml(src, builder)
+	// If there are errors, return a nil instance and the error set.
+	if len(errs.GetErrors()) != 0 {
+		return nil, errs
+	}
+	// Otherwise, return the instance.
+	return inst, errs
+}
+
+// DecodeTemplate decodes a YAML source object to a config.Template.
+//
+// The decoding step relies on the use of YAML tags to determine the type of each element.
+// Specially, the tags used must align with the ones produced by the Go YAML v3 library.
+//
+// Errors in the decoding will result in a nil config.Template.
+func DecodeTemplate(src *config.Source) (*config.Template, *common.Errors) {
+	errs := common.NewErrors(src)
+	info := config.NewSourceInfo(src)
+	tmpl := &config.Template{SourceInfo: info}
+	builder := newTemplateBuilder(tmpl)
+	dec := newDecoder(info, errs)
+	dec.decodeYaml(src, builder)
+	// If there are errors, return a nil instance and the error set.
+	if len(errs.GetErrors()) != 0 {
+		return nil, errs
+	}
+	// Otherwise, return the instance.
+	return tmpl, errs
+}
+
+func (d *decoder) decodeYaml(src *config.Source, builder objRef) {
+	// Parse yaml representation from the source to an object model.
+	var docNode yaml.Node
+	err := sourceToYaml(src, &docNode)
+	if err != nil {
+		d.errs.ReportError(common.NoLocation, err.Error())
+		return
+	}
+	d.collectMetadata(1, &docNode)
+	d.decode(docNode.Content[0], builder)
+}
+
+func sourceToYaml(src *config.Source, docNode *yaml.Node) error {
+	err := yaml.Unmarshal([]byte(src.Content()), docNode)
+	if err != nil {
+		return err
+	}
+	if docNode.Kind != yaml.DocumentNode {
+		return fmt.Errorf("got yaml node of kind %v, wanted mapping node", docNode.Kind)
+	}
+	return nil
+}
+
+func newDecoder(info *config.SourceInfo, errs *common.Errors) *decoder {
+	return &decoder{
 		info: info,
 		errs: errs,
 	}
-	dec.collectMetadata(1, &docNode)
-	dec.decode(docNode.Content[0], ib)
-	if len(errs.GetErrors()) == 0 {
-		return inst, errs
-	}
-	return nil, errs
 }
 
 type decoder struct {
@@ -117,16 +156,25 @@ func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
 		ref.assign(node.Value == "true")
 	case "double":
 		val, convErr := strconv.ParseFloat(node.Value, 64)
-		if err != nil {
+		if convErr != nil {
 			d.reportErrorAtID(d.id, convErr.Error())
+		} else {
+			err = ref.assign(val)
 		}
-		err = ref.assign(val)
 	case "int":
+		var val interface{} = nil
 		val, convErr := strconv.ParseInt(node.Value, 10, 64)
-		if err != nil {
-			d.reportErrorAtID(d.id, convErr.Error())
+		if convErr != nil {
+			var convErr2 error
+			val, convErr2 = strconv.ParseUint(node.Value, 10, 64)
+			if convErr2 != nil {
+				d.reportErrorAtID(d.id, convErr.Error())
+			} else {
+				err = ref.assign(val)
+			}
+		} else {
+			err = ref.assign(val)
 		}
-		err = ref.assign(val)
 	case "null":
 		err = ref.assign(config.Null)
 	case "string":

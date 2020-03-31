@@ -70,6 +70,312 @@ func (b *baseBuilder) propAt(idx interface{}) (objRef, error) {
 	return nil, typeNotAssignableToType(b.typeName, "list")
 }
 
+// newTemplateBuilder returns a builder for a config.Template instance.
+func newTemplateBuilder(tmpl *config.Template) *templateBuilder {
+	return &templateBuilder{
+		baseBuilder: newBaseBuilder("template"),
+		template:    tmpl,
+	}
+}
+
+type templateBuilder struct {
+	*baseBuilder
+	template *config.Template
+}
+
+// id is an implementation of the objRef interface method.
+func (b *templateBuilder) id(id int64) {
+	b.template.ID = id
+}
+
+func (b *templateBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "apiVersion":
+		b.template.APIVersion = field
+		return builder, nil
+	case "description":
+		b.template.Description = field
+		return builder, nil
+	case "kind":
+		b.template.Kind = field
+		return builder, nil
+	case "metadata":
+		sv := config.NewStructValue()
+		field.Ref.Value = sv
+		builder.sb = newStructBuilder(sv)
+		b.template.Metadata = field
+		return builder, nil
+	case "schema":
+		sv := config.NewStructValue()
+		field.Ref.Value = sv
+		builder.sb = newStructBuilder(sv)
+		b.template.RuleSchema = field
+		return builder, nil
+	case "validator":
+		validator := &config.Validator{ID: id}
+		b.template.Validator = validator
+		return newValidatorBuilder(validator), nil
+	case "evaluator":
+		evaluator := &config.Evaluator{ID: id}
+		b.template.Evaluator = evaluator
+		return newEvaluatorBuilder(evaluator), nil
+	}
+	return nil, noSuchProperty("template", name)
+}
+
+// newValidatorBuilder returns a builder for a config.Validator instance.
+func newValidatorBuilder(val *config.Validator) *validatorBuilder {
+	return &validatorBuilder{
+		baseBuilder: newBaseBuilder("validator"),
+		validator:   val,
+	}
+}
+
+type validatorBuilder struct {
+	*baseBuilder
+	validator *config.Validator
+}
+
+func (b *validatorBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "environment":
+		b.validator.Environment = field
+		return builder, nil
+	case "terms":
+		sv := config.NewStructValue()
+		field.Ref.Value = sv
+		builder.sb = newStructBuilder(sv)
+		b.validator.Terms = field
+		return builder, nil
+	case "productions":
+		p := &config.ValidatorProductions{
+			ID:     id,
+			Values: []*config.ValidatorProduction{},
+		}
+		b.validator.Productions = p
+		return newValidatorProductionsBuilder(p), nil
+	}
+	return nil, noSuchProperty("validator", name)
+}
+
+// newValidationProductionsBuilder returns a builder for the validator production rules list.
+func newValidatorProductionsBuilder(p *config.ValidatorProductions) *validatorProductionsBuilder {
+	return &validatorProductionsBuilder{
+		baseBuilder: newBaseBuilder("productions"),
+		productions: p,
+	}
+}
+
+type validatorProductionsBuilder struct {
+	*baseBuilder
+	productions *config.ValidatorProductions
+}
+
+func (b *validatorProductionsBuilder) propAt(idx interface{}) (objRef, error) {
+	err := checkIndexRange(idx, len(b.productions.Values))
+	if err != nil {
+		return nil, err
+	}
+	p := &config.ValidatorProduction{}
+	b.productions.Values = append(b.productions.Values, p)
+	return newValidatorProductionBuilder(p), nil
+}
+
+// newValidationProductionBuilder returns a builder for a single config.ValidatorProduction.
+func newValidatorProductionBuilder(p *config.ValidatorProduction) *validatorProductionBuilder {
+	return &validatorProductionBuilder{
+		baseBuilder: newBaseBuilder("production"),
+		production:  p,
+	}
+}
+
+type validatorProductionBuilder struct {
+	*baseBuilder
+	production *config.ValidatorProduction
+}
+
+func (b *validatorProductionBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "match":
+		b.production.Match = field
+		return builder, nil
+	case "message":
+		b.production.Message = field
+		return builder, nil
+	case "details":
+		b.production.Details = field
+		return builder, nil
+	}
+	return nil, noSuchProperty("production", name)
+}
+
+// newEvaluatorBuilder returns a builder for a config.Evaluator.
+func newEvaluatorBuilder(eval *config.Evaluator) *evaluatorBuilder {
+	return &evaluatorBuilder{
+		baseBuilder: newBaseBuilder("evaluator"),
+		evaluator:   eval,
+	}
+}
+
+type evaluatorBuilder struct {
+	*baseBuilder
+	evaluator *config.Evaluator
+}
+
+func (b *evaluatorBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "environment":
+		b.evaluator.Environment = field
+		return builder, nil
+	case "terms":
+		sv := config.NewStructValue()
+		field.Ref.Value = sv
+		builder.sb = newStructBuilder(sv)
+		b.evaluator.Terms = field
+		return builder, nil
+	case "productions":
+		p := &config.EvaluatorProductions{
+			ID:     id,
+			Values: []*config.EvaluatorProduction{},
+		}
+		b.evaluator.Productions = p
+		return newEvaluatorProductionsBuilder(p), nil
+	}
+	return nil, noSuchProperty("evaluator", name)
+}
+
+// newEvaluatorProductionsBuilder returns a builder for an evaluator productions list.
+func newEvaluatorProductionsBuilder(p *config.EvaluatorProductions) *evaluatorProductionsBuilder {
+	return &evaluatorProductionsBuilder{
+		baseBuilder: newBaseBuilder("productions"),
+		productions: p,
+	}
+}
+
+type evaluatorProductionsBuilder struct {
+	*baseBuilder
+	productions *config.EvaluatorProductions
+}
+
+func (b *evaluatorProductionsBuilder) propAt(idx interface{}) (objRef, error) {
+	err := checkIndexRange(idx, len(b.productions.Values))
+	if err != nil {
+		return nil, err
+	}
+	p := &config.EvaluatorProduction{}
+	b.productions.Values = append(b.productions.Values, p)
+	return newEvaluatorProductionBuilder(p), nil
+}
+
+// newEvaluatorProductionBuilder returns a builder for single config.EvaluatorProduction instance.
+func newEvaluatorProductionBuilder(p *config.EvaluatorProduction) *evaluatorProductionBuilder {
+	return &evaluatorProductionBuilder{
+		baseBuilder: newBaseBuilder("production"),
+		production:  p,
+	}
+}
+
+type evaluatorProductionBuilder struct {
+	*baseBuilder
+	production *config.EvaluatorProduction
+}
+
+func (b *evaluatorProductionBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "match":
+		b.production.Match = field
+		return builder, nil
+	// allow for a singleton decision
+	case "decision", "decisionRef", "output":
+		outDec := b.production.OutputDecision
+		if outDec == nil {
+			outDec = &config.OutputDecision{}
+			b.production.OutputDecision = outDec
+		}
+		switch name {
+		case "decision":
+			outDec.Decision = field
+		case "decisionRef":
+			outDec.Reference = field
+		case "output":
+			outDec.Output = field
+		}
+		return builder, nil
+	// or a list of decisions
+	case "decisions":
+		b.production.OutputDecisions = &config.OutputDecisions{
+			ID:     id,
+			Values: []*config.OutputDecision{},
+		}
+		return newOutputDecisionsBuilder(b.production.OutputDecisions), nil
+	}
+	return nil, noSuchProperty("production", name)
+}
+
+// newOutputDecisionsBuilder returns a builder for a list of output decisions to be emitted once
+// a match prediate returns true.
+func newOutputDecisionsBuilder(d *config.OutputDecisions) *outputDecisionsBuilder {
+	return &outputDecisionsBuilder{
+		baseBuilder:     newBaseBuilder("decisions"),
+		outputDecisions: d,
+	}
+}
+
+type outputDecisionsBuilder struct {
+	*baseBuilder
+	outputDecisions *config.OutputDecisions
+}
+
+func (b *outputDecisionsBuilder) propAt(idx interface{}) (objRef, error) {
+	err := checkIndexRange(idx, len(b.outputDecisions.Values))
+	if err != nil {
+		return nil, err
+	}
+	outDec := &config.OutputDecision{}
+	b.outputDecisions.Values = append(b.outputDecisions.Values, outDec)
+	return newOutputDecisionBuilder(outDec), nil
+}
+
+// newOutputDecisionBuilder returns a builder for a single config.OutputDecision.
+func newOutputDecisionBuilder(outDec *config.OutputDecision) *outputDecisionBuilder {
+	return &outputDecisionBuilder{
+		baseBuilder:    newBaseBuilder("outputDecision"),
+		outputDecision: outDec,
+	}
+}
+
+type outputDecisionBuilder struct {
+	*baseBuilder
+	outputDecision *config.OutputDecision
+}
+
+func (b *outputDecisionBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
+	switch name {
+	case "decision":
+		b.outputDecision.Decision = field
+		return builder, nil
+	case "decisionRef":
+		b.outputDecision.Reference = field
+		return builder, nil
+	case "output":
+		b.outputDecision.Output = field
+		return builder, nil
+	}
+	return nil, noSuchProperty("outputDecision", name)
+}
+
 // newInstanceBuilder produces a builder for a config.Instance object.
 func newInstanceBuilder(inst *config.Instance) *instanceBuilder {
 	return &instanceBuilder{
@@ -90,56 +396,30 @@ func (b *instanceBuilder) id(id int64) {
 
 // prop returns a builder for the config.Instance fields as appropriate.
 func (b *instanceBuilder) prop(id int64, name string) (objRef, error) {
+	field := config.NewStructField(id, name)
+	builder := newDynValueBuilder(field.Ref)
 	switch name {
-	case "version":
-		field := &config.StructField{
-			ID:  id,
-			Ref: &config.DynValue{},
-		}
-		b.instance.Version = field
-		return newDynValueBuilder(field.Ref), nil
+	case "apiVersion":
+		b.instance.APIVersion = field
+		return builder, nil
 	case "description":
-		field := &config.StructField{
-			ID:  id,
-			Ref: &config.DynValue{},
-		}
 		b.instance.Description = field
-		return newDynValueBuilder(field.Ref), nil
+		return builder, nil
 	case "kind":
-		field := &config.StructField{
-			ID:  id,
-			Ref: &config.DynValue{},
-		}
 		b.instance.Kind = field
-		return newDynValueBuilder(field.Ref), nil
+		return builder, nil
 	case "metadata":
-		sv := &config.StructValue{
-			Fields: []*config.StructField{},
-		}
-		field := &config.StructField{
-			ID: id,
-			Ref: &config.DynValue{
-				Value: sv,
-			},
-		}
+		sv := config.NewStructValue()
+		field.Ref.Value = sv
 		b.instance.Metadata = field
-		db := newDynValueBuilder(field.Ref)
-		db.sb = newStructBuilder(sv)
-		return db, nil
+		builder.sb = newStructBuilder(sv)
+		return builder, nil
 	case "rules":
-		lv := &config.ListValue{
-			Entries: []*config.DynValue{},
-		}
-		field := &config.StructField{
-			ID: id,
-			Ref: &config.DynValue{
-				Value: lv,
-			},
-		}
+		lv := config.NewListValue()
+		field.Ref.Value = lv
 		b.instance.Rules = field
-		db := newDynValueBuilder(field.Ref)
-		db.lb = newListBuilder(lv)
-		return db, nil
+		builder.lb = newListBuilder(lv)
+		return builder, nil
 	case "selector":
 		b.instance.Selector = &config.Selector{ID: id}
 		return newSelectorBuilder(b.instance.Selector), nil
@@ -195,8 +475,8 @@ type matchLabelsBuilder struct {
 
 // prop returns a builder for the key, value pairs expected by the matchLabels object.
 func (b *matchLabelsBuilder) prop(id int64, name string) (objRef, error) {
-	kv := &config.DynValue{ID: id, Value: config.StringValue(name)}
-	val := &config.DynValue{}
+	kv := config.NewDynValue(id, config.StringValue(name))
+	val := config.NewEmptyDynValue()
 	lbl := &config.LabelMatcher{Key: kv, Value: val}
 	b.labels.Matchers = append(b.labels.Matchers, lbl)
 	return newDynValueBuilder(val), nil
@@ -218,12 +498,9 @@ type matchExpressionsBuilder struct {
 
 // propAt returns a builder for a single expression matcher within the matchExpressions list.
 func (b *matchExpressionsBuilder) propAt(idx interface{}) (objRef, error) {
-	i, ok := idx.(int)
-	if !ok {
-		return nil, invalidIndexType("int", idx)
-	}
-	if i < 0 || i > len(b.exprs.Matchers) {
-		return nil, indexOutOfRange(idx, len(b.exprs.Matchers))
+	err := checkIndexRange(idx, len(b.exprs.Matchers))
+	if err != nil {
+		return nil, err
 	}
 	m := &config.ExprMatcher{}
 	b.exprs.Matchers = append(b.exprs.Matchers, m)
@@ -248,14 +525,14 @@ type exprMatcherBuilder struct {
 func (b *exprMatcherBuilder) prop(id int64, name string) (objRef, error) {
 	switch name {
 	case "key":
-		b.match.Key = &config.DynValue{ID: id}
+		b.match.Key = config.NewDynValue(id, nil)
 		return newDynValueBuilder(b.match.Key), nil
 	case "operator":
-		b.match.Operator = &config.DynValue{ID: id}
+		b.match.Operator = config.NewDynValue(id, nil)
 		return newDynValueBuilder(b.match.Operator), nil
 	case "values":
-		lv := &config.ListValue{Entries: []*config.DynValue{}}
-		b.match.Values = &config.DynValue{ID: id, Value: lv}
+		lv := config.NewListValue()
+		b.match.Values = config.NewDynValue(id, lv)
 		db := newDynValueBuilder(b.match.Values)
 		db.lb = newListBuilder(lv)
 		return db, nil
@@ -279,11 +556,7 @@ type structBuilder struct {
 
 // prop returns a builder for a struct property.
 func (b *structBuilder) prop(id int64, name string) (objRef, error) {
-	field := &config.StructField{
-		ID:   id,
-		Name: name,
-		Ref:  &config.DynValue{},
-	}
+	field := config.NewStructField(id, name)
 	b.structVal.Fields = append(b.structVal.Fields, field)
 	return newDynValueBuilder(field.Ref), nil
 }
@@ -303,7 +576,11 @@ type listBuilder struct {
 
 // propAt returns a builder for a list element at the given index.
 func (b *listBuilder) propAt(idx interface{}) (objRef, error) {
-	dyn := &config.DynValue{}
+	err := checkIndexRange(idx, len(b.listVal.Entries))
+	if err != nil {
+		return nil, err
+	}
+	dyn := config.NewEmptyDynValue()
 	b.listVal.Entries = append(b.listVal.Entries, dyn)
 	return newDynValueBuilder(dyn), nil
 }
@@ -341,8 +618,6 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 	switch v := val.(type) {
 	case bool:
 		vn = config.BoolValue(v)
-	case []byte:
-		vn = config.BytesValue(v)
 	case float64:
 		vn = config.DoubleValue(v)
 	case int64:
@@ -368,9 +643,7 @@ func (b *dynValueBuilder) prop(id int64, name string) (objRef, error) {
 		return nil, typeNotAssignableToType("list", "struct")
 	}
 	if b.sb == nil {
-		sv := &config.StructValue{
-			Fields: []*config.StructField{},
-		}
+		sv := config.NewStructValue()
 		b.dyn.Value = sv
 		b.sb = newStructBuilder(sv)
 	}
@@ -385,9 +658,7 @@ func (b *dynValueBuilder) propAt(idx interface{}) (objRef, error) {
 		return nil, typeNotAssignableToType("struct", "list")
 	}
 	if b.lb == nil {
-		lv := &config.ListValue{
-			Entries: []*config.DynValue{},
-		}
+		lv := config.NewListValue()
 		b.dyn.Value = lv
 		b.lb = newListBuilder(lv)
 	}
@@ -395,6 +666,17 @@ func (b *dynValueBuilder) propAt(idx interface{}) (objRef, error) {
 }
 
 // helper methods for formatting builder-related error messages.
+
+func checkIndexRange(idx interface{}, sz int) error {
+	i, ok := idx.(int)
+	if !ok {
+		return invalidIndexType("int", idx)
+	}
+	if i < 0 || i > sz {
+		return indexOutOfRange(idx, sz)
+	}
+	return nil
+}
 
 func typeNotAssignableToType(typeName, valType string) error {
 	return fmt.Errorf("type not assignable to target: target=%v, type=%s", typeName, valType)
