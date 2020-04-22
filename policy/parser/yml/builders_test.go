@@ -18,47 +18,48 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/cel-policy-templates-go/policy/config"
+	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
-func TestBuilders_ModelStructValue(t *testing.T) {
-	sv := &config.StructValue{Fields: []*config.StructField{}}
-	sb := &structBuilder{
-		baseBuilder: &baseBuilder{typeName: "struct"},
-		structVal:   sv,
+func TestBuilders_ModelMapValue(t *testing.T) {
+	sv := &model.MapValue{Fields: []*model.MapField{}}
+	sb := &mapBuilder{
+		baseBuilder: &baseBuilder{typeName: "map"},
+		mapVal:      sv,
 	}
 
 	// Simulate setting a role binding on an IAM grant policy
 	sb.id(1)
-	r, _ := sb.prop(2, "role")
+	r, _ := sb.field(2, "role")
 	r.assign("role/storage.bucket.admin")
 	r.id(3)
-	m, _ := sb.prop(4, "members")
+	m, _ := sb.field(4, "members")
 	m.id(5)
-	m0, _ := m.propAt(0)
+	m.initList()
+	m0, _ := m.entry(0)
 	m0.id(6)
 	m0.assign("user:wiley@acme.co")
 
-	want := &config.StructValue{
-		Fields: []*config.StructField{
+	want := &model.MapValue{
+		Fields: []*model.MapField{
 			{
 				ID:   2,
 				Name: "role",
-				Ref: &config.DynValue{
+				Ref: &model.DynValue{
 					ID:    3,
-					Value: config.StringValue("role/storage.bucket.admin"),
+					Value: model.StringValue("role/storage.bucket.admin"),
 				},
 			},
 			{
 				ID:   4,
 				Name: "members",
-				Ref: &config.DynValue{
+				Ref: &model.DynValue{
 					ID: 5,
-					Value: &config.ListValue{
-						Entries: []*config.DynValue{
+					Value: &model.ListValue{
+						Entries: []*model.DynValue{
 							{
 								ID:    6,
-								Value: config.StringValue("user:wiley@acme.co"),
+								Value: model.StringValue("user:wiley@acme.co"),
 							},
 						},
 					},

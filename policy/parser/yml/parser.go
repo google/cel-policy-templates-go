@@ -21,23 +21,23 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/common"
-	"github.com/google/cel-policy-templates-go/policy/config"
+	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
-// DecodeInstance decodes a YAML source object to a config.Instance.
+// Parse decodes a YAML source object to a model.ParsedValue.
 //
 // The decoding step relies on the use of YAML tags to determine the type of each element.
 // Specially, the tags used must align with the ones produced by the Go YAML v3 library.
 //
-// Errors in the decoding will result in a nil config.Instance.
-func DecodeInstance(src *config.Source) (*config.Instance, *common.Errors) {
+// Errors in the decoding will result in a nil model.ParsedValue.
+func Parse(src *model.Source) (*model.ParsedValue, *common.Errors) {
 	// Common objects for decoding an instance.
 	errs := common.NewErrors(src)
-	info := config.NewSourceInfo(src)
-	inst := &config.Instance{SourceInfo: info}
-	builder := newInstanceBuilder(inst)
-	dec := newDecoder(info, errs)
-	dec.decodeYaml(src, builder)
+	info := model.NewSourceInfo(src)
+	inst := &model.ParsedValue{Info: info}
+	builder := newParsedValueBuilder(inst)
+	parser := newParser(info, errs)
+	parser.parseYaml(src, builder)
 	// If there are errors, return a nil instance and the error set.
 	if len(errs.GetErrors()) != 0 {
 		return nil, errs
@@ -46,40 +46,19 @@ func DecodeInstance(src *config.Source) (*config.Instance, *common.Errors) {
 	return inst, errs
 }
 
-// DecodeTemplate decodes a YAML source object to a config.Template.
-//
-// The decoding step relies on the use of YAML tags to determine the type of each element.
-// Specially, the tags used must align with the ones produced by the Go YAML v3 library.
-//
-// Errors in the decoding will result in a nil config.Template.
-func DecodeTemplate(src *config.Source) (*config.Template, *common.Errors) {
-	errs := common.NewErrors(src)
-	info := config.NewSourceInfo(src)
-	tmpl := &config.Template{SourceInfo: info}
-	builder := newTemplateBuilder(tmpl)
-	dec := newDecoder(info, errs)
-	dec.decodeYaml(src, builder)
-	// If there are errors, return a nil instance and the error set.
-	if len(errs.GetErrors()) != 0 {
-		return nil, errs
-	}
-	// Otherwise, return the instance.
-	return tmpl, errs
-}
-
-func (d *decoder) decodeYaml(src *config.Source, builder objRef) {
+func (p *parser) parseYaml(src *model.Source, builder objRef) {
 	// Parse yaml representation from the source to an object model.
 	var docNode yaml.Node
 	err := sourceToYaml(src, &docNode)
 	if err != nil {
-		d.errs.ReportError(common.NoLocation, err.Error())
+		p.errs.ReportError(common.NoLocation, err.Error())
 		return
 	}
-	d.collectMetadata(1, &docNode)
-	d.decode(docNode.Content[0], builder)
+	p.collectMetadata(1, &docNode)
+	p.parse(docNode.Content[0], builder)
 }
 
-func sourceToYaml(src *config.Source, docNode *yaml.Node) error {
+func sourceToYaml(src *model.Source, docNode *yaml.Node) error {
 	err := yaml.Unmarshal([]byte(src.Content()), docNode)
 	if err != nil {
 		return err
@@ -90,65 +69,68 @@ func sourceToYaml(src *config.Source, docNode *yaml.Node) error {
 	return nil
 }
 
-func newDecoder(info *config.SourceInfo, errs *common.Errors) *decoder {
-	return &decoder{
+func newParser(info *model.SourceInfo, errs *common.Errors) *parser {
+	return &parser{
 		info: info,
 		errs: errs,
 	}
 }
 
-type decoder struct {
+type parser struct {
 	id   int64
-	info *config.SourceInfo
+	info *model.SourceInfo
 	errs *common.Errors
 }
 
-func (d *decoder) nextID() int64 {
-	d.id++
-	return d.id
+func (p *parser) nextID() int64 {
+	p.id++
+	return p.id
 }
 
-func (d *decoder) collectMetadata(id int64, node *yaml.Node) {
-	var comments []*config.Comment
+func (p *parser) collectMetadata(id int64, node *yaml.Node) {
+	var comments []*model.Comment
 	if txt := node.HeadComment; txt != "" {
-		comments = append(comments, config.NewHeadComment(txt))
+		comments = append(comments, model.NewHeadComment(txt))
 	}
 	if txt := node.LineComment; txt != "" {
-		comments = append(comments, config.NewLineComment(txt))
+		comments = append(comments, model.NewLineComment(txt))
 	}
 	if txt := node.FootComment; txt != "" {
-		comments = append(comments, config.NewFootComment(txt))
+		comments = append(comments, model.NewFootComment(txt))
 	}
 	if len(comments) > 0 {
-		d.info.Comments[id] = comments
+		p.info.Comments[id] = comments
 	}
 	offset := int32(0)
 	if node.Line > 1 {
-		offset = d.info.LineOffsets[node.Line-2]
+		offset = p.info.LineOffsets[node.Line-2]
 	}
-	d.info.Offsets[id] = offset + int32(node.Column) - 1
+	p.info.Offsets[id] = offset + int32(node.Column) - 1
 }
 
-func (d *decoder) decode(node *yaml.Node, ref objRef) {
-	id := d.nextID()
-	d.collectMetadata(id, node)
+func (p *parser) parse(node *yaml.Node, ref objRef) {
+	id := p.nextID()
+	p.collectMetadata(id, node)
 	ref.id(id)
 	celType, found := yamlTypes[node.LongTag()]
 	if !found {
-		d.reportErrorAtID(id, "unsupported yaml type: %s", node.LongTag())
+		p.reportErrorAtID(id, "unsupported yaml type: %s", node.LongTag())
 		return
 	}
 	switch celType {
 	case "list":
-		d.decodeSeq(node, ref)
+		ref.initList()
+		p.parseList(node, ref)
 	case "map":
-		d.decodeMap(node, ref)
+		ref.initMap()
+		p.parseMap(node, ref)
 	default:
-		d.decodePrimitive(node, ref)
+		p.parsePrimitive(node, ref)
 	}
+	ref.encodeStyle(getEncodeStyle(node.Style))
 }
 
-func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
+func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 	var err error
 	celType := yamlTypes[node.LongTag()]
 	switch celType {
@@ -157,7 +139,7 @@ func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
 	case "double":
 		val, convErr := strconv.ParseFloat(node.Value, 64)
 		if convErr != nil {
-			d.reportErrorAtID(d.id, convErr.Error())
+			p.reportErrorAtID(p.id, convErr.Error())
 		} else {
 			err = ref.assign(val)
 		}
@@ -168,7 +150,7 @@ func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
 			var convErr2 error
 			val, convErr2 = strconv.ParseUint(node.Value, 10, 64)
 			if convErr2 != nil {
-				d.reportErrorAtID(d.id, convErr.Error())
+				p.reportErrorAtID(p.id, convErr.Error())
 			} else {
 				err = ref.assign(val)
 			}
@@ -176,56 +158,56 @@ func (d *decoder) decodePrimitive(node *yaml.Node, ref objRef) {
 			err = ref.assign(val)
 		}
 	case "null":
-		err = ref.assign(config.Null)
+		err = ref.assign(model.Null)
 	case "string":
 		err = ref.assign(node.Value)
 	default:
-		d.reportErrorAtID(d.id, "unsupported cel type: %s", celType)
+		p.reportErrorAtID(p.id, "unsupported cel type: %s", celType)
 	}
 	if err != nil {
-		d.reportErrorAtID(d.id, err.Error())
+		p.reportErrorAtID(p.id, err.Error())
 	}
 }
 
-func (d *decoder) decodeSeq(node *yaml.Node, ref objRef) {
+func (p *parser) parseList(node *yaml.Node, ref objRef) {
 	for i, val := range node.Content {
-		elem, err := ref.propAt(i)
+		elem, err := ref.entry(i)
 		if err != nil {
-			d.reportErrorAtID(d.id, err.Error())
+			p.reportErrorAtID(p.id, err.Error())
 		} else {
-			d.decode(val, elem)
+			p.parse(val, elem)
 		}
 	}
 }
 
-func (d *decoder) decodeMap(node *yaml.Node, ref objRef) {
+func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i]
-		id := d.nextID()
-		d.collectMetadata(id, key)
+		id := p.nextID()
+		p.collectMetadata(id, key)
 
 		val := node.Content[i+1]
 		keyType, found := yamlTypes[key.LongTag()]
 		if !found || keyType != "string" {
-			d.reportErrorAtID(id, "invalid map key type: %v", key.LongTag())
+			p.reportErrorAtID(id, "invalid map key type: %v", key.LongTag())
 			continue
 		}
 		prop := key.Value
-		propRef, err := ref.prop(id, prop)
+		propRef, err := ref.field(id, prop)
 		if err != nil {
-			d.reportErrorAtID(id, err.Error())
+			p.reportErrorAtID(id, err.Error())
 			continue
 		}
-		d.decode(val, propRef)
+		p.parse(val, propRef)
 	}
 }
 
-func (d *decoder) reportErrorAtID(id int64, format string, args ...interface{}) {
-	loc, found := d.info.LocationByID(id)
+func (p *parser) reportErrorAtID(id int64, format string, args ...interface{}) {
+	loc, found := p.info.LocationByID(id)
 	if !found {
 		loc = common.NoLocation
 	}
-	d.errs.ReportError(loc, format, args...)
+	p.errs.ReportError(loc, format, args...)
 }
 
 var (
@@ -240,3 +222,14 @@ var (
 		"tag:yaml.org,2002:map":   "map",
 	}
 )
+
+func getEncodeStyle(style yaml.Style) model.EncodeStyle {
+	switch style {
+	case yaml.FlowStyle:
+		return model.FlowValueStyle
+	case yaml.FoldedStyle:
+		return model.FoldedValueStyle
+	default:
+		return model.BlockValueStyle
+	}
+}

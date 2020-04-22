@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//    https://www.apache.org/licenses/LICENSE-2.0
+//    https://www.apache.org/licenses/LICENSE2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io
+package compiler
 
 import (
-	"io/ioutil"
+	"github.com/google/cel-go/cel"
 
-	"github.com/google/cel-policy-templates-go/policy/config"
+	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
-// ReadFile reads a config.Source from a file location.
-//
-// Errors in reading the source will result in an error and a nil source.
-func ReadFile(location string) (*config.Source, error) {
-	content, err := ioutil.ReadFile(location)
-	if err != nil {
-		return nil, err
-	}
-	return config.ByteSource(content, location), nil
+type Registry interface {
+	FindSchema(name string) (*model.OpenAPISchema, bool)
+
+	RegisterSchema(name string, s *model.OpenAPISchema) error
+
+	FindEnv(name string) (*cel.Env, bool)
+
+	RegisterEnv(name string, env *cel.Env) error
 }
