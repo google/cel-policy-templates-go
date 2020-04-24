@@ -54,12 +54,12 @@ type schemaType struct {
 	metadata map[string]string
 }
 
-func (st *schemaType) CommonType() string {
-	return st.schema.CommonType()
+func (st *schemaType) ModelType() string {
+	return st.schema.ModelType()
 }
 
 func (st *schemaType) ExprType() *exprpb.Type {
-	ct := st.CommonType()
+	ct := st.ModelType()
 	val, found := simpleExprTypes[ct]
 	if found {
 		return val
@@ -67,10 +67,10 @@ func (st *schemaType) ExprType() *exprpb.Type {
 	if ct == "any" {
 		return decls.Dyn
 	}
-	if ct == "list" {
+	if ct == ListType {
 		return decls.NewListType(st.elemType.ExprType())
 	}
-	if ct == "map" && st.schema.AdditionalProperties != nil {
+	if ct == MapType && st.schema.AdditionalProperties != nil {
 		return decls.NewMapType(st.keyType.ExprType(), st.elemType.ExprType())
 	}
 	// This is a hack around the fact that field types are resolved relative to a type name.
@@ -81,15 +81,15 @@ func (st *schemaType) ExprType() *exprpb.Type {
 }
 
 func (st *schemaType) HasTrait(trait int) bool {
-	return typeTraits[st.CommonType()]&trait == trait
+	return typeTraits[st.ModelType()]&trait == trait
 }
 
 func (st *schemaType) TypeName() string {
-	ct := st.CommonType()
+	ct := st.ModelType()
 	switch ct {
 	case "any":
 		return st.objectPath
-	case "map":
+	case MapType:
 		// Hack for making sure field types can be resolved.
 		if len(st.schema.Properties) > 0 {
 			return st.objectPath
@@ -111,15 +111,15 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 			objectPath: fmt.Sprintf("%s.%s", t.objectPath, name),
 		}
 		t.fields[name] = fieldType
-		fieldCommonType := def.CommonType()
-		if fieldCommonType == "map" || fieldCommonType == "list" {
+		fieldModelType := def.ModelType()
+		if fieldModelType == MapType || fieldModelType == ListType {
 			buildSchemaTypes(fieldType, types)
 		}
 	}
 	// Additional map properties
 	if t.schema.AdditionalProperties != nil {
 		stringKey := NewOpenAPISchema()
-		stringKey.Type = "string"
+		stringKey.Type = StringType
 		t.keyType = &schemaType{
 			schema:     stringKey,
 			objectPath: fmt.Sprintf("%s.@key", t.objectPath),
@@ -128,8 +128,8 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 			schema:     t.schema.AdditionalProperties,
 			objectPath: fmt.Sprintf("%s.@prop", t.objectPath),
 		}
-		fieldCommonType := t.elemType.CommonType()
-		if fieldCommonType == "map" || fieldCommonType == "list" {
+		fieldModelType := t.elemType.ModelType()
+		if fieldModelType == MapType || fieldModelType == ListType {
 			buildSchemaTypes(t.elemType, types)
 		}
 	}
@@ -139,8 +139,8 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 			schema:     t.schema.Items,
 			objectPath: fmt.Sprintf("%s.@idx", t.objectPath),
 		}
-		elemCommonType := t.elemType.CommonType()
-		if elemCommonType == "map" || elemCommonType == "list" {
+		elemModelType := t.elemType.ModelType()
+		if elemModelType == MapType || elemModelType == ListType {
 			buildSchemaTypes(t.elemType, types)
 		}
 	}
@@ -387,7 +387,9 @@ func (m *baseMap) Find(key ref.Val) (ref.Val, bool) {
 	if found {
 		return v, true
 	}
-	// if the type is actually
+	// If the key type doesn't match what's expected and that's the reason for not finding the
+	// entry, then raise an error. Only applies to maps where the key type can be something
+	// other than a string.
 	if !m.sType.isObject() {
 		// key and elem types are only set if there are additional properties.
 		if key.Type().TypeName() != m.sType.keyType.TypeName() {
@@ -395,20 +397,23 @@ func (m *baseMap) Find(key ref.Val) (ref.Val, bool) {
 		}
 		return nil, false
 	}
+	// For object types the key type must be a string.
 	k, isStr := key.(types.String)
 	if !isStr {
 		return types.ValOrErr(key, "unsupported key: %v", key), true
 	}
+	// Preserve proto-like safe traversal for well-defined message types where if a field is
+	// defined, but not set, the field type's zero-value is returned.
 	fType, found := m.sType.fields[string(k)]
 	if !found {
 		return nil, false
 	}
+	if fType.isObject() {
+		return newEmptyObject(fType), true
+	}
 	defaultVal, found := typeDefaults[fType.TypeName()]
 	if found {
 		return defaultVal, true
-	}
-	if fType.isObject() {
-		return newEmptyObject(fType), true
 	}
 	return nil, false
 }
@@ -465,6 +470,21 @@ func (it *baseMapIterator) Type() ref.Type {
 	return types.IteratorType
 }
 
+const (
+	AnyType       = "any"
+	BoolType      = "bool"
+	BytesType     = "bytes"
+	DoubleType    = "double"
+	IntType       = "int"
+	NullType      = "null"
+	StringType    = "string"
+	PlainTextType = "string_lit"
+	TimestampType = "timestamp"
+	UintType      = "uint"
+	ListType      = "list"
+	MapType       = "map"
+)
+
 var (
 	numericTraits = traits.AdderType |
 		traits.ComparerType |
@@ -481,30 +501,30 @@ var (
 		traits.IterableType |
 		traits.SizerType
 	typeTraits = map[string]int{
-		"bool":   traits.ComparerType | traits.NegatorType,
-		"double": numericTraits,
-		"int":    numericTraits,
-		"string": bytesTraits,
-		"bytes":  bytesTraits,
-		"list":   containerTraits | traits.AdderType,
-		"map":    containerTraits | traits.FieldTesterType,
+		BoolType:   traits.ComparerType | traits.NegatorType,
+		BytesType:  bytesTraits,
+		DoubleType: numericTraits,
+		IntType:    numericTraits,
+		StringType: bytesTraits,
+		ListType:   containerTraits | traits.AdderType,
+		MapType:    containerTraits | traits.FieldTesterType,
 	}
 	typeDefaults = map[string]ref.Val{
-		"bool":   types.False,
-		"bytes":  types.Bytes([]byte{}),
-		"double": types.Double(0),
-		"int":    types.Int(0),
-		"string": types.String(""),
-		"list":   newEmptyList(),
-		"map":    newEmptyMap(),
+		BoolType:   types.False,
+		BytesType:  types.Bytes([]byte{}),
+		DoubleType: types.Double(0),
+		IntType:    types.Int(0),
+		StringType: types.String(""),
+		ListType:   newEmptyList(),
+		MapType:    newEmptyMap(),
 	}
 	simpleExprTypes = map[string]*exprpb.Type{
-		"bool":      decls.Bool,
-		"bytes":     decls.Bytes,
-		"double":    decls.Double,
-		"null":      decls.Null,
-		"int":       decls.Int,
-		"string":    decls.String,
-		"timestamp": decls.Timestamp,
+		BoolType:      decls.Bool,
+		BytesType:     decls.Bytes,
+		DoubleType:    decls.Double,
+		NullType:      decls.Null,
+		IntType:       decls.Int,
+		StringType:    decls.String,
+		TimestampType: decls.Timestamp,
 	}
 )

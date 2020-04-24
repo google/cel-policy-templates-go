@@ -60,7 +60,7 @@ type DynValue struct {
 type ValueNode interface {
 	isValueNode()
 
-	CommonType() string
+	ModelType() string
 
 	Equal(ValueNode) bool
 }
@@ -80,8 +80,8 @@ type MapValue struct {
 
 func (*MapValue) isValueNode() {}
 
-func (*MapValue) CommonType() string {
-	return "map"
+func (*MapValue) ModelType() string {
+	return MapType
 }
 
 func (sv *MapValue) Equal(other ValueNode) bool {
@@ -143,8 +143,8 @@ type ListValue struct {
 
 func (*ListValue) isValueNode() {}
 
-func (*ListValue) CommonType() string {
-	return "list"
+func (*ListValue) ModelType() string {
+	return ListType
 }
 
 func (lv *ListValue) Equal(other ValueNode) bool {
@@ -166,8 +166,8 @@ type BoolValue bool
 
 func (BoolValue) isValueNode() {}
 
-func (BoolValue) CommonType() string {
-	return "bool"
+func (BoolValue) ModelType() string {
+	return BoolType
 }
 
 func (v BoolValue) Equal(other ValueNode) bool {
@@ -180,8 +180,8 @@ type BytesValue []byte
 
 func (BytesValue) isValueNode() {}
 
-func (BytesValue) CommonType() string {
-	return "bytes"
+func (BytesValue) ModelType() string {
+	return BytesType
 }
 
 func (v BytesValue) Equal(other ValueNode) bool {
@@ -194,8 +194,8 @@ type DoubleValue float64
 
 func (DoubleValue) isValueNode() {}
 
-func (DoubleValue) CommonType() string {
-	return "double"
+func (DoubleValue) ModelType() string {
+	return DoubleType
 }
 
 func (v DoubleValue) Equal(other ValueNode) bool {
@@ -208,8 +208,8 @@ type IntValue int64
 
 func (IntValue) isValueNode() {}
 
-func (IntValue) CommonType() string {
-	return "int"
+func (IntValue) ModelType() string {
+	return IntType
 }
 
 func (v IntValue) Equal(other ValueNode) bool {
@@ -222,8 +222,8 @@ type NullValue structpb.NullValue
 
 func (NullValue) isValueNode() {}
 
-func (NullValue) CommonType() string {
-	return "null"
+func (NullValue) ModelType() string {
+	return NullType
 }
 
 func (NullValue) Equal(other ValueNode) bool {
@@ -236,8 +236,8 @@ type StringValue string
 
 func (StringValue) isValueNode() {}
 
-func (StringValue) CommonType() string {
-	return "string"
+func (StringValue) ModelType() string {
+	return StringType
 }
 
 func (v StringValue) Equal(other ValueNode) bool {
@@ -245,12 +245,26 @@ func (v StringValue) Equal(other ValueNode) bool {
 	return ok && v == otherV
 }
 
+// PlainTextValue is a text string literal which must not be treated as an expression.
+type PlainTextValue string
+
+func (PlainTextValue) isValueNode() {}
+
+func (PlainTextValue) ModelType() string {
+	return PlainTextType
+}
+
+func (v PlainTextValue) Equal(other ValueNode) bool {
+	otherV, ok := other.(PlainTextValue)
+	return ok && v == otherV
+}
+
 type TimestampValue time.Time
 
 func (TimestampValue) isValueNode() {}
 
-func (TimestampValue) CommonType() string {
-	return "timestamp"
+func (TimestampValue) ModelType() string {
+	return TimestampType
 }
 
 func (v TimestampValue) Equal(other ValueNode) bool {
@@ -263,8 +277,8 @@ type UintValue uint64
 
 func (UintValue) isValueNode() {}
 
-func (UintValue) CommonType() string {
-	return "uint"
+func (UintValue) ModelType() string {
+	return UintType
 }
 
 func (v UintValue) Equal(other ValueNode) bool {

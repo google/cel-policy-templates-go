@@ -112,16 +112,16 @@ func (p *parser) parse(node *yaml.Node, ref objRef) {
 	id := p.nextID()
 	p.collectMetadata(id, node)
 	ref.id(id)
-	celType, found := yamlTypes[node.LongTag()]
+	modelType, found := yamlTypes[node.LongTag()]
 	if !found {
 		p.reportErrorAtID(id, "unsupported yaml type: %s", node.LongTag())
 		return
 	}
-	switch celType {
-	case "list":
+	switch modelType {
+	case model.ListType:
 		ref.initList()
 		p.parseList(node, ref)
-	case "map":
+	case model.MapType:
 		ref.initMap()
 		p.parseMap(node, ref)
 	default:
@@ -132,18 +132,20 @@ func (p *parser) parse(node *yaml.Node, ref objRef) {
 
 func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 	var err error
-	celType := yamlTypes[node.LongTag()]
-	switch celType {
-	case "bool":
+	modelType := yamlTypes[node.LongTag()]
+	switch modelType {
+	case model.BoolType:
 		ref.assign(node.Value == "true")
-	case "double":
+	case model.DoubleType:
 		val, convErr := strconv.ParseFloat(node.Value, 64)
 		if convErr != nil {
 			p.reportErrorAtID(p.id, convErr.Error())
 		} else {
 			err = ref.assign(val)
 		}
-	case "int":
+	case model.PlainTextType:
+		err = ref.assign(model.PlainTextValue(node.Value))
+	case model.IntType:
 		var val interface{} = nil
 		val, convErr := strconv.ParseInt(node.Value, 10, 64)
 		if convErr != nil {
@@ -157,12 +159,12 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 		} else {
 			err = ref.assign(val)
 		}
-	case "null":
+	case model.NullType:
 		err = ref.assign(model.Null)
-	case "string":
+	case model.StringType:
 		err = ref.assign(node.Value)
 	default:
-		p.reportErrorAtID(p.id, "unsupported cel type: %s", celType)
+		p.reportErrorAtID(p.id, "unsupported cel type: %s", modelType)
 	}
 	if err != nil {
 		p.reportErrorAtID(p.id, err.Error())
@@ -213,13 +215,14 @@ func (p *parser) reportErrorAtID(id int64, format string, args ...interface{}) {
 var (
 	// yamlTypes map of the long tag names supported by the Go YAML v3 library.
 	yamlTypes = map[string]string{
-		"tag:yaml.org,2002:bool":  "bool",
-		"tag:yaml.org,2002:null":  "null",
-		"tag:yaml.org,2002:str":   "string",
-		"tag:yaml.org,2002:int":   "int",
-		"tag:yaml.org,2002:float": "double",
-		"tag:yaml.org,2002:seq":   "list",
-		"tag:yaml.org,2002:map":   "map",
+		"!txt":                    model.PlainTextType,
+		"tag:yaml.org,2002:bool":  model.BoolType,
+		"tag:yaml.org,2002:null":  model.NullType,
+		"tag:yaml.org,2002:str":   model.StringType,
+		"tag:yaml.org,2002:int":   model.IntType,
+		"tag:yaml.org,2002:float": model.DoubleType,
+		"tag:yaml.org,2002:seq":   model.ListType,
+		"tag:yaml.org,2002:map":   model.MapType,
 	}
 )
 

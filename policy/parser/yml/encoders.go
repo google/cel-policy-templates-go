@@ -156,6 +156,10 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 		if eol {
 			enc.dedent()
 		}
+	case model.PlainTextValue:
+		isPrimitive = true
+		str := strconv.Quote(string(dyn))
+		enc.write("!txt ").write(str).writeLineComment(v.ID)
 	case model.StringValue:
 		isPrimitive = true
 		str := strconv.Quote(string(dyn))

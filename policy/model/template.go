@@ -16,6 +16,7 @@ package model
 
 import (
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types/ref"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
@@ -24,7 +25,6 @@ import (
 func NewCompiledTemplate() *CompiledTemplate {
 	return &CompiledTemplate{
 		Metadata:  NewCompiledMetadata(),
-		Validator: NewCompiledEvaluator(),
 		Evaluator: NewCompiledEvaluator(),
 	}
 }
@@ -40,15 +40,34 @@ type CompiledTemplate struct {
 }
 
 func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
+	// Note, if the schema indicates that it's actually based on another proto
+	// then prefer the proto definition. For expressions in the proto, a new field
+	// annotation will be needed to indicate the expected environment and type of
+	// the expression.
 	return &RuleTypes{
-		typeProvider: newSchemaTypeProvider(kind, schema),
-		Schema:       schema,
+		ruleSchemaTypes: newSchemaTypeProvider(kind, schema),
+		Schema:          schema,
 	}
 }
 
 type RuleTypes struct {
-	Schema       *OpenAPISchema
-	typeProvider *schemaTypeProvider
+	ref.TypeProvider
+	Schema          *OpenAPISchema
+	ruleSchemaTypes *schemaTypeProvider
+}
+
+func (rt *RuleTypes) Declarations() cel.EnvOption {
+	return cel.Declarations(
+		decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
+	)
+}
+
+func (rt *RuleTypes) Types(tp ref.TypeProvider) cel.EnvOption {
+	return cel.CustomTypeProvider(&RuleTypes{
+		TypeProvider:    tp,
+		Schema:          rt.Schema,
+		ruleSchemaTypes: rt.ruleSchemaTypes,
+	})
 }
 
 func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
@@ -56,17 +75,17 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 	if found {
 		return simple, true
 	}
-	st, found := rt.typeProvider.types[typeName]
+	st, found := rt.ruleSchemaTypes.types[typeName]
 	if found {
 		return st.ExprType(), true
 	}
-	return nil, false
+	return rt.TypeProvider.FindType(typeName)
 }
 
 func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, bool) {
-	st, found := rt.typeProvider.types[typeName]
+	st, found := rt.ruleSchemaTypes.types[typeName]
 	if !found {
-		return nil, false
+		return rt.TypeProvider.FindFieldType(typeName, fieldName)
 	}
 	f, found := st.fields[fieldName]
 	if found {
@@ -75,7 +94,7 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 			Type: f.ExprType(),
 		}, true
 	}
-	if st.CommonType() == "map" {
+	if st.ModelType() == MapType {
 		return &ref.FieldType{
 			// TODO: Provide IsSet, GetFrom which build upon maps
 			Type: st.elemType.ExprType(),
@@ -83,8 +102,6 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 	}
 	return nil, false
 }
-
-// TODO: implement TypeAdapter interface.
 
 func NewCompiledMetadata() *CompiledMetadata {
 	return &CompiledMetadata{
@@ -113,8 +130,10 @@ type CompiledEvaluator struct {
 	Productions []*CompiledProduction
 }
 
-func NewCompiledTerm() *CompiledTerm {
+func NewCompiledTerm(name string, expr *cel.Ast) *CompiledTerm {
 	return &CompiledTerm{
+		Name:       name,
+		Expr:       expr,
 		InputTerms: make(map[string]*CompiledTerm),
 	}
 }
@@ -125,8 +144,9 @@ type CompiledTerm struct {
 	Expr       *cel.Ast
 }
 
-func NewCompiledProduction() *CompiledProduction {
+func NewCompiledProduction(match *cel.Ast) *CompiledProduction {
 	return &CompiledProduction{
+		Match:     match,
 		Decisions: []*CompiledDecision{},
 	}
 }
@@ -136,8 +156,10 @@ type CompiledProduction struct {
 	Decisions []*CompiledDecision
 }
 
-func NewCompiledDecision() *CompiledDecision {
-	return &CompiledDecision{}
+func NewCompiledDecision(name string) *CompiledDecision {
+	return &CompiledDecision{
+		Decision: name,
+	}
 }
 
 type CompiledDecision struct {

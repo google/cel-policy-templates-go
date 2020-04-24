@@ -17,13 +17,20 @@ package compiler
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"hash/maphash"
 	"sort"
+	"strconv"
 	"time"
 
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
+	"github.com/google/cel-go/common/types"
 
 	"github.com/google/cel-policy-templates-go/policy/model"
+
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type Compiler struct {
@@ -80,16 +87,16 @@ func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Co
 	}
 	val, found := m.GetField("validator")
 	if found {
-		tc.compileValidator(val.Ref, ctmpl.Validator)
+		tc.compileValidator(val.Ref, ctmpl)
 	}
 	eval, found := m.GetField("evaluator")
 	if found {
-		tc.compileEvaluator(eval.Ref, ctmpl.Evaluator)
+		tc.compileEvaluator(eval.Ref, ctmpl)
 	}
 }
 
 func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.CompiledMetadata) {
-
+	// TODO:
 }
 
 func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
@@ -163,16 +170,177 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	}
 }
 
-func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ceval *model.CompiledEvaluator) {
-
+func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
+	ctmpl *model.CompiledTemplate) {
+	val := dyn.Value.(*model.MapValue)
+	if len(val.Fields) == 0 {
+		// the validator block has not be configured.
+		return
+	}
+	validator, prodsEnv, err := tc.buildProductionsEnv(val, ctmpl)
+	if err != nil {
+		// report the error
+		return
+	}
+	prods, found := val.GetField("productions")
+	if found {
+		tc.compileValidatorOutputDecisions(prods.Ref, prodsEnv, validator)
+	}
+	ctmpl.Validator = validator
 }
 
-func (tc *templateCompiler) compileValidatorOutputDecisions(dyn *model.DynValue, ceval *model.CompiledEvaluator) {
-
+func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValue,
+	env *cel.Env, ceval *model.CompiledEvaluator) {
+	productions := prods.Value.(*model.ListValue)
+	rules := make([]*model.CompiledProduction, len(productions.Entries))
+	for i, p := range productions.Entries {
+		prod := p.Value.(*model.MapValue)
+		match, _ := prod.GetField("match")
+		matchAst := tc.compileExpr(match.Ref, env, true)
+		rule := model.NewCompiledProduction(matchAst)
+		// TODO: Add more structure checking here. For now, build a JSON object.
+		msg, found := prod.GetField("message")
+		if found {
+			tc.compileExpr(msg.Ref, env, false)
+			// create a json encoder for model.DynValue
+		}
+		det, found := prod.GetField("details")
+		if found {
+			tc.compileExpr(det.Ref, env, false)
+			// create a json encoder for model.DynValue
+		}
+		outDec := model.NewCompiledDecision("policy.invalid")
+		rule.Decisions = append(rule.Decisions, outDec)
+		rules[i] = rule
+	}
 }
 
-func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue, ceval *model.CompiledEvaluator) {
+func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
+	ctmpl *model.CompiledTemplate) {
+	eval := dyn.Value.(*model.MapValue)
+	if len(eval.Fields) == 0 {
+		// the validator block has not be configured.
+		return
+	}
+	evaluator, _, err := tc.buildProductionsEnv(eval, ctmpl)
+	if err != nil {
+		// report the error
+		return
+	}
+	_, found := eval.GetField("productions")
+	if found {
+		// tc.compileEvaluatorOutputDecisions(prods.Ref, rulesEnv, evaluator)
+	}
+	ctmpl.Evaluator = evaluator
+}
 
+func (tc *templateCompiler) buildProductionsEnv(eval *model.MapValue,
+	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env, error) {
+	evaluator := model.NewCompiledEvaluator()
+	evaluator.Environment = tc.mapFieldStringValueOrEmpty(eval, "environment")
+	env, err := tc.newEnv(evaluator.Environment, ctmpl)
+	if err != nil {
+		// report any environment creation errors.
+		return nil, nil, err
+	}
+	terms, found := eval.GetField("terms")
+	productionsEnv := env
+	if found {
+		productionsEnv, err = tc.compileTerms(terms.Ref, env, evaluator)
+		if err != nil {
+			// report the term compilation environment
+			return nil, nil, err
+		}
+	}
+	return evaluator, productionsEnv, nil
+}
+
+func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
+	env *cel.Env, ceval *model.CompiledEvaluator) (*cel.Env, error) {
+	terms := dyn.Value.(*model.MapValue)
+	var termMap map[string]*model.CompiledTerm
+	var termDecls []*exprpb.Decl
+	for _, t := range terms.Fields {
+		_, found := termMap[t.Name]
+		if found {
+			// report term redeclaration error
+			continue
+		}
+		termEnv, err := env.Extend(cel.Declarations(termDecls...))
+		if err != nil {
+			// report error
+			continue
+		}
+		termAst := tc.compileExpr(t.Ref, termEnv, true)
+		term := model.NewCompiledTerm(t.Name, termAst)
+		for _, varName := range getVars(termAst) {
+			input, found := termMap[varName]
+			if found {
+				term.InputTerms[varName] = input
+			}
+		}
+		ceval.Terms = append(ceval.Terms, term)
+		termDecls = append(termDecls, decls.NewIdent(t.Name, termAst.ResultType(), nil))
+	}
+	// Return the productions environment which contains all terms and inputs to the template.
+	return env.Extend(cel.Declarations(termDecls...))
+}
+
+func (tc *templateCompiler) compileExpr(
+	dyn *model.DynValue, env *cel.Env, strict bool) *cel.Ast {
+	loc, _ := tc.info.LocationByID(dyn.ID)
+	switch v := dyn.Value.(type) {
+	case model.BoolValue:
+		relSrc := tc.src.Relative(strconv.FormatBool(bool(v)), loc.Line(), loc.Column())
+		ast, _ := env.CompileSource(relSrc)
+		return ast
+	case model.PlainTextValue:
+		relSrc := tc.src.Relative(strconv.Quote(string(v)), loc.Line(), loc.Column())
+		ast, iss := env.CompileSource(relSrc)
+		if iss.Err() == nil {
+			return ast
+		}
+		tc.reportIssues(iss)
+		return nil
+	case model.StringValue:
+		relSrc := tc.src.Relative(string(v), loc.Line(), loc.Column())
+		ast, iss := env.CompileSource(relSrc)
+		if iss.Err() == nil {
+			return ast
+		}
+		if strict {
+			tc.reportIssues(iss)
+			return nil
+		}
+		// non-strict parse which falls back to a plain text literal.
+		txt := model.PlainTextValue(v)
+		dyn = model.NewDynValue(dyn.ID, txt)
+		return tc.compileExpr(dyn, env, true)
+	case *model.ListValue:
+	case *model.MapValue:
+	}
+	return nil
+}
+
+func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate) (*cel.Env, error) {
+	ruleTypes := ctmpl.RuleTypes
+	var env *cel.Env
+	if envName == "" {
+		return cel.NewEnv(
+			ruleTypes.Types(types.NewRegistry()),
+			ruleTypes.Declarations(),
+		)
+	}
+	var found bool
+	env, found = tc.reg.FindEnv(envName)
+	if !found {
+		// report error
+		return nil, fmt.Errorf("no such environment: %s", envName)
+	}
+	return env.Extend(
+		ruleTypes.Types(env.TypeProvider()),
+		ruleTypes.Declarations(),
+	)
 }
 
 func (tc *templateCompiler) mapFieldStringValue(m *model.MapValue, fieldName string) string {
@@ -214,20 +382,20 @@ func (tc *templateCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenA
 			return
 		}
 	}
-	schemaType := schema.CommonType()
-	valueType := dyn.Value.CommonType()
-	if !assignableToType(valueType, schemaType) {
+	modelType := schema.ModelType()
+	valueType := dyn.Value.ModelType()
+	if !assignableToType(valueType, modelType) {
 		tc.reportErrorAtID(dyn.ID,
 			"value not assignable to schema type: value=%s, schema=%s",
-			valueType, schemaType)
+			valueType, modelType)
 		return
 	}
-	switch schemaType {
-	case "map":
+	switch modelType {
+	case model.MapType:
 		tc.checkMapSchema(dyn, schema)
-	case "list":
+	case model.ListType:
 		tc.checkListSchema(dyn, schema)
-	case "any":
+	case model.AnyType:
 		return
 	default:
 		tc.checkPrimitiveSchema(dyn, schema)
@@ -330,8 +498,8 @@ func (tc *templateCompiler) convertToType(val interface{}, schema *model.OpenAPI
 				val, val, schema)
 		}
 	}
-	switch schema.CommonType() {
-	case "timestamp":
+	switch schema.ModelType() {
+	case model.TimestampType:
 		str, ok := vn.(model.StringValue)
 		if !ok {
 			tc.reportError(common.NoLocation,
@@ -346,7 +514,7 @@ func (tc *templateCompiler) convertToType(val interface{}, schema *model.OpenAPI
 			return vn
 		}
 		return model.TimestampValue(t)
-	case "bytes":
+	case model.BytesType:
 		str, ok := vn.(model.StringValue)
 		if !ok {
 			tc.reportError(common.NoLocation,
@@ -369,6 +537,10 @@ func (tc *templateCompiler) convertToType(val interface{}, schema *model.OpenAPI
 	return vn
 }
 
+func (tc *templateCompiler) reportIssues(iss *cel.Issues) {
+	tc.errors.Append(iss.Errors())
+}
+
 func (tc *templateCompiler) reportError(loc common.Location, msg string, args ...interface{}) {
 	tc.errors.ReportError(loc, msg, args...)
 }
@@ -382,14 +554,14 @@ func (tc *templateCompiler) reportErrorAtID(id int64, msg string, args ...interf
 }
 
 func assignableToType(valType, schemaType string) bool {
-	if valType == schemaType || schemaType == "any" {
+	if valType == schemaType || schemaType == model.AnyType {
 		return true
 	}
-	if valType == "string" &&
-		(schemaType == "bytes" || schemaType == "timestamp") {
+	if valType == model.StringType &&
+		(schemaType == model.BytesType || schemaType == model.TimestampType) {
 		return true
 	}
-	if valType == "uint" && schemaType == "int" {
+	if valType == model.UintType && schemaType == model.IntType {
 		return true
 	}
 	return false
@@ -397,15 +569,15 @@ func assignableToType(valType, schemaType string) bool {
 
 func hashSchema(s *model.OpenAPISchema) uint64 {
 	var hsh maphash.Hash
-	hsh.WriteString(s.CommonType())
-	switch s.CommonType() {
-	case "list":
+	hsh.WriteString(s.ModelType())
+	switch s.ModelType() {
+	case model.ListType:
 		nestedHash := hashSchema(s.Items)
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, nestedHash)
 		hsh.WriteByte(255)
 		hsh.Write(b)
-	case "map":
+	case model.MapType:
 		for field, nested := range s.Properties {
 			hsh.WriteByte(255)
 			hsh.WriteString(field)
@@ -424,4 +596,17 @@ func hashSchema(s *model.OpenAPISchema) uint64 {
 		}
 	}
 	return hsh.Sum64()
+}
+
+func getVars(ast *cel.Ast) []string {
+	ce, _ := cel.AstToCheckedExpr(ast)
+	refMap := ce.GetReferenceMap()
+	var vars []string
+	for _, ref := range refMap {
+		if ref.GetName() != "" && ref.GetValue() == nil {
+			// Variable
+			vars = append(vars, ref.GetName())
+		}
+	}
+	return vars
 }

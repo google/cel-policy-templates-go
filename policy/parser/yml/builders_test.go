@@ -24,7 +24,7 @@ import (
 func TestBuilders_ModelMapValue(t *testing.T) {
 	sv := &model.MapValue{Fields: []*model.MapField{}}
 	sb := &mapBuilder{
-		baseBuilder: &baseBuilder{typeName: "map"},
+		baseBuilder: &baseBuilder{typeName: model.MapType},
 		mapVal:      sv,
 	}
 

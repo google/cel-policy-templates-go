@@ -69,27 +69,27 @@ func (b *baseBuilder) assign(val interface{}) error {
 func (b *baseBuilder) encodeStyle(value model.EncodeStyle) {}
 
 func (b *baseBuilder) initMap() error {
-	return typeNotAssignableToType(b.typeName, "map")
+	return typeNotAssignableToType(b.typeName, model.MapType)
 }
 
 func (b *baseBuilder) initList() error {
-	return typeNotAssignableToType(b.typeName, "list")
+	return typeNotAssignableToType(b.typeName, model.ListType)
 }
 
 // field is an implementation of the objRef interface method.
 func (b *baseBuilder) field(id int64, name string) (objRef, error) {
-	return nil, typeNotAssignableToType(b.typeName, "map")
+	return nil, typeNotAssignableToType(b.typeName, model.MapType)
 }
 
 // entry is an implementation of the objRef interface method.
 func (b *baseBuilder) entry(idx interface{}) (objRef, error) {
-	return nil, typeNotAssignableToType(b.typeName, "list")
+	return nil, typeNotAssignableToType(b.typeName, model.ListType)
 }
 
 func newParsedValueBuilder(pv *model.ParsedValue) *parsedValueBuilder {
 	pv.Value = model.NewMapValue()
 	return &parsedValueBuilder{
-		baseBuilder: newBaseBuilder("map"),
+		baseBuilder: newBaseBuilder(model.MapType),
 		pv:          pv,
 		sv:          pv.Value,
 	}
@@ -114,7 +114,7 @@ func (b *parsedValueBuilder) field(id int64, name string) (objRef, error) {
 // newMapBuilder returns a builder for dynamic values of struct type.
 func newMapBuilder(mv *model.MapValue) *mapBuilder {
 	return &mapBuilder{
-		baseBuilder: newBaseBuilder("map"),
+		baseBuilder: newBaseBuilder(model.MapType),
 		mapVal:      mv,
 	}
 }
@@ -138,7 +138,7 @@ func (b *mapBuilder) field(id int64, name string) (objRef, error) {
 // newListBuilder returns a builder for a dynamic value of list type.
 func newListBuilder(lv *model.ListValue) *listBuilder {
 	return &listBuilder{
-		baseBuilder: newBaseBuilder("list"),
+		baseBuilder: newBaseBuilder(model.ListType),
 		listVal:     lv,
 	}
 }
@@ -187,10 +187,10 @@ func (b *dynValueBuilder) id(id int64) {
 // returns an error.
 func (b *dynValueBuilder) assign(val interface{}) error {
 	if b.mb != nil {
-		return valueNotAssignableToType("map", val)
+		return valueNotAssignableToType(model.MapType, val)
 	}
 	if b.lb != nil {
-		return valueNotAssignableToType("list", val)
+		return valueNotAssignableToType(model.ListType, val)
 	}
 	var vn model.ValueNode
 	switch v := val.(type) {
@@ -204,10 +204,12 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 		vn = model.StringValue(v)
 	case uint64:
 		vn = model.UintValue(v)
+	case model.PlainTextValue:
+		vn = v
 	case model.NullValue:
 		vn = v
 	default:
-		return valueNotAssignableToType("dyn", v)
+		return valueNotAssignableToType(model.AnyType, v)
 	}
 	b.dyn.Value = vn
 	return nil
@@ -219,7 +221,7 @@ func (b *dynValueBuilder) encodeStyle(value model.EncodeStyle) {
 
 func (b *dynValueBuilder) initMap() error {
 	if b.lb != nil {
-		return typeNotAssignableToType("list", "map")
+		return typeNotAssignableToType(model.ListType, model.MapType)
 	}
 	if b.mb == nil {
 		sv := model.NewMapValue()
@@ -234,14 +236,14 @@ func (b *dynValueBuilder) initMap() error {
 // If the dyn builder was previously configured as a list builder, the function will error.
 func (b *dynValueBuilder) field(id int64, name string) (objRef, error) {
 	if b.mb == nil {
-		return nil, noSuchProperty("dyn", name)
+		return nil, noSuchProperty(model.AnyType, name)
 	}
 	return b.mb.field(id, name)
 }
 
 func (b *dynValueBuilder) initList() error {
 	if b.mb != nil {
-		return typeNotAssignableToType("map", "list")
+		return typeNotAssignableToType(model.MapType, model.ListType)
 	}
 	if b.lb == nil {
 		lv := model.NewListValue()

@@ -379,7 +379,7 @@ validator:
 		- match: hi == '' && bye == ''
 			message: at least one property must be set on the rule.
 		- match: hi.startsWith("Goodbye")
-			message: greeting starts with a farewell word
+			message: !txt greeting starts with a farewell word
 			details: hi
 evaluator:
 	environment: default
@@ -421,7 +421,7 @@ evaluator:
 		- 40~41~match: 42~"hi == '' && bye == ''"
 			43~message: 44~"at least one property must be set on the rule."
 		- 45~46~match: 47~"hi.startsWith(\"Goodbye\")"
-			48~message: 49~"greeting starts with a farewell word"
+			48~message: 49~!txt "greeting starts with a farewell word"
 			50~details: 51~"hi"
 52~evaluator:53~
 	54~environment: 55~"default"

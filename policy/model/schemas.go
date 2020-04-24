@@ -39,29 +39,29 @@ type OpenAPISchema struct {
 	AdditionalProperties *OpenAPISchema            `yaml:"additionalProperties,omitempty"`
 }
 
-func (s *OpenAPISchema) CommonType() string {
+func (s *OpenAPISchema) ModelType() string {
 	commonType := openAPISchemaTypes[s.Type]
 	switch commonType {
 	case "string":
 		switch s.Format {
 		case "byte", "binary":
-			return "bytes"
+			return BytesType
 		case "date", "date-time":
-			return "timestamp"
+			return TimestampType
 		}
 	}
 	return commonType
 }
 
 func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
-	if s.CommonType() != other.CommonType() {
+	if s.ModelType() != other.ModelType() {
 		return false
 	}
 	// perform deep equality here.
-	switch s.CommonType() {
+	switch s.ModelType() {
 	case "any":
 		return false
-	case "map":
+	case MapType:
 		if len(s.Properties) != len(other.Properties) {
 			return false
 		}
@@ -80,7 +80,7 @@ func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
 			return false
 		}
 		return true
-	case "list":
+	case ListType:
 		return s.Items.Equal(other.Items)
 	default:
 		return true
@@ -88,7 +88,7 @@ func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
 }
 
 func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
-	if s.CommonType() == "any" {
+	if s.ModelType() == "any" {
 		return s, true
 	}
 	if s.Properties != nil {
@@ -109,14 +109,14 @@ var (
 	TemplateSchema *OpenAPISchema
 
 	openAPISchemaTypes map[string]string = map[string]string{
-		"boolean": "bool",
-		"number":  "double",
-		"integer": "int",
-		"null":    "null",
-		"string":  "string",
-		"date":    "timestamp",
-		"array":   "list",
-		"object":  "map",
+		"boolean": BoolType,
+		"number":  DoubleType,
+		"integer": IntType,
+		"null":    NullType,
+		"string":  StringType,
+		"date":    TimestampType,
+		"array":   ListType,
+		"object":  MapType,
 		"":        "any",
 	}
 )
@@ -223,7 +223,7 @@ properties:
           properties:
             match:
               type: string
-              default: true
+              default: "true"
             decision:
               type: string
             decisionRef:
