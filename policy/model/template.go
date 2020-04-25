@@ -156,10 +156,8 @@ type CompiledProduction struct {
 	Decisions []*CompiledDecision
 }
 
-func NewCompiledDecision(name string) *CompiledDecision {
-	return &CompiledDecision{
-		Decision: name,
-	}
+func NewCompiledDecision() *CompiledDecision {
+	return &CompiledDecision{}
 }
 
 type CompiledDecision struct {

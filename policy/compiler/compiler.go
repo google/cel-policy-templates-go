@@ -17,6 +17,7 @@ package compiler
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"sort"
@@ -82,8 +83,7 @@ func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Co
 		tc.compileOpenAPISchema(schemaDef.Ref, schema)
 		// TODO: attempt schema type unification post-compile
 		// hashSchema(ctmpl.RuleSchema)
-		// TODO: build the type registry
-		ctmpl.RuleTypes = model.NewRuleTypes(ctmpl.Kind, schema)
+		ctmpl.RuleTypes = model.NewRuleTypes(ctmpl.Metadata.Name, schema)
 	}
 	val, found := m.GetField("validator")
 	if found {
@@ -96,14 +96,39 @@ func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Co
 }
 
 func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.CompiledMetadata) {
-	// TODO:
+	// TODO: attach the template metadata.
+	m, ok := dyn.Value.(*model.MapValue)
+	if !ok {
+		tc.reportErrorAtID(dyn.ID,
+			"unexpected metadata type: got=%s, wanted=map",
+			dyn.Value.ModelType())
+		return
+	}
+	cmeta.Name = tc.mapFieldStringValueOrEmpty(m, "name")
+	cmeta.UID = tc.mapFieldStringValueOrEmpty(m, "uid")
+	ns, found := m.GetField("namespace")
+	if found {
+		cmeta.Namespace = string(ns.Ref.Value.(model.StringValue))
+	} else {
+		cmeta.Namespace = "default"
+	}
+	plural, found := m.GetField("pluralName")
+	if found {
+		cmeta.PluralName = string(plural.Ref.Value.(model.StringValue))
+	} else if len(cmeta.Name) > 0 {
+		cmeta.PluralName = cmeta.Name + "s"
+	} else {
+		// report error
+	}
 }
 
 func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	schema *model.OpenAPISchema) {
 	m, ok := dyn.Value.(*model.MapValue)
 	if !ok {
-		// report error
+		tc.reportErrorAtID(dyn.ID,
+			"unexpected rule schema type: got=%s, wanted=map",
+			dyn.Value.ModelType())
 		return
 	}
 	schema.Title = tc.mapFieldStringValueOrEmpty(m, "title")
@@ -121,7 +146,9 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	if found {
 		meta, ok := elem.Ref.Value.(*model.MapValue)
 		if !ok {
-			// report error, continue without error
+			tc.reportErrorAtID(elem.Ref.ID,
+				"unexpected metadata type: got=%s, wanted=map",
+				elem.Ref.Value.ModelType())
 			meta = model.NewMapValue()
 		}
 		for _, mf := range meta.Fields {
@@ -129,7 +156,9 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 			if ok {
 				schema.Metadata[mf.Name] = string(val)
 			} else {
-				// report error
+				tc.reportErrorAtID(mf.Ref.ID,
+					"unexpected metadata value type: got=%s, wanted=string",
+					mf.Ref.Value.ModelType())
 			}
 		}
 	}
@@ -174,17 +203,19 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) {
 	val := dyn.Value.(*model.MapValue)
 	if len(val.Fields) == 0 {
-		// the validator block has not be configured.
+		// TODO: maybe not intentional that the validator is empty.
 		return
 	}
-	validator, prodsEnv, err := tc.buildProductionsEnv(val, ctmpl)
-	if err != nil {
-		// report the error
+	validator, prodsEnv := tc.buildProductionsEnv(val, ctmpl)
+	if validator == nil {
+		// error occurred, will have been recorded elsewhere.
 		return
 	}
 	prods, found := val.GetField("productions")
 	if found {
 		tc.compileValidatorOutputDecisions(prods.Ref, prodsEnv, validator)
+	} else {
+		// TODO: generate a warning, but not an error.
 	}
 	ctmpl.Validator = validator
 }
@@ -192,7 +223,7 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValue,
 	env *cel.Env, ceval *model.CompiledEvaluator) {
 	productions := prods.Value.(*model.ListValue)
-	rules := make([]*model.CompiledProduction, len(productions.Entries))
+	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
 	for i, p := range productions.Entries {
 		prod := p.Value.(*model.MapValue)
 		match, _ := prod.GetField("match")
@@ -200,59 +231,131 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValu
 		rule := model.NewCompiledProduction(matchAst)
 		// TODO: Add more structure checking here. For now, build a JSON object.
 		msg, found := prod.GetField("message")
+		msgTxt := "''"
 		if found {
-			tc.compileExpr(msg.Ref, env, false)
-			// create a json encoder for model.DynValue
+			ast := tc.compileExpr(msg.Ref, env, false)
+			if ast != nil {
+				msgTxt, _ = cel.AstToString(ast)
+			}
 		}
 		det, found := prod.GetField("details")
+		detTxt := "null"
 		if found {
-			tc.compileExpr(det.Ref, env, false)
-			// create a json encoder for model.DynValue
+			ast := tc.compileExpr(det.Ref, env, false)
+			if ast != nil {
+				detTxt, _ = cel.AstToString(ast)
+			}
 		}
-		outDec := model.NewCompiledDecision("policy.invalid")
+		// Note: this format will not yet work with structured outputs for the validator.
+		outTxt := fmt.Sprintf("{'message': %s, 'details': %s}", msgTxt, detTxt)
+		outDyn := model.NewDynValue(p.ID, model.StringValue(outTxt))
+		ast := tc.compileExpr(outDyn, env, true)
+		outDec := model.NewCompiledDecision()
+		outDec.Decision = "policy.invalid"
+		outDec.Output = ast
 		rule.Decisions = append(rule.Decisions, outDec)
-		rules[i] = rule
+		prodRules[i] = rule
 	}
+	ceval.Productions = prodRules
 }
 
 func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) {
 	eval := dyn.Value.(*model.MapValue)
 	if len(eval.Fields) == 0 {
-		// the validator block has not be configured.
+
 		return
 	}
-	evaluator, _, err := tc.buildProductionsEnv(eval, ctmpl)
-	if err != nil {
-		// report the error
+	evaluator, prodsEnv := tc.buildProductionsEnv(eval, ctmpl)
+	if evaluator == nil {
+		// Error occurred, would have been reported elsewhere.
 		return
 	}
-	_, found := eval.GetField("productions")
+	prods, found := eval.GetField("productions")
 	if found {
-		// tc.compileEvaluatorOutputDecisions(prods.Ref, rulesEnv, evaluator)
+		tc.compileEvaluatorOutputDecisions(prods.Ref, prodsEnv, evaluator)
+	} else {
+		tc.reportErrorAtID(dyn.ID, "evaluator missing productions field")
 	}
 	ctmpl.Evaluator = evaluator
 }
 
+func (tc *templateCompiler) compileEvaluatorOutputDecisions(prods *model.DynValue,
+	env *cel.Env, ceval *model.CompiledEvaluator) {
+	productions := prods.Value.(*model.ListValue)
+	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
+	for i, p := range productions.Entries {
+		prod := p.Value.(*model.MapValue)
+		match, _ := prod.GetField("match")
+		matchAst := tc.compileExpr(match.Ref, env, true)
+		rule := model.NewCompiledProduction(matchAst)
+		// TODO: Add more structure checking here. For now, build a JSON object.
+		_, found := prod.GetField("decision")
+		if found {
+			outDec := tc.compileOutputDecision(prod, env)
+			if outDec != nil {
+				rule.Decisions = append(rule.Decisions, outDec)
+			}
+		}
+		decs, found := prod.GetField("decisions")
+		if found {
+			decsList := decs.Ref.Value.(*model.ListValue)
+			for _, elem := range decsList.Entries {
+				tuple := elem.Value.(*model.MapValue)
+				outDec := tc.compileOutputDecision(tuple, env)
+				if outDec != nil {
+					rule.Decisions = append(rule.Decisions, outDec)
+				}
+			}
+		}
+		prodRules[i] = rule
+	}
+	ceval.Productions = prodRules
+}
+
+func (tc *templateCompiler) compileOutputDecision(
+	prod *model.MapValue,
+	env *cel.Env) *model.CompiledDecision {
+	outDec := model.NewCompiledDecision()
+	dec, found := prod.GetField("decision")
+	if found {
+		decName := dec.Ref.Value.(model.StringValue)
+		outDec.Decision = string(decName)
+	}
+	ref, found := prod.GetField("reference")
+	if found {
+		outDec.Reference = tc.compileExpr(ref.Ref, env, true)
+	}
+	output, found := prod.GetField("output")
+	if !found {
+		// report error
+		return nil
+	}
+	outDec.Output = tc.compileExpr(output.Ref, env, false)
+	return outDec
+}
+
 func (tc *templateCompiler) buildProductionsEnv(eval *model.MapValue,
-	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env, error) {
+	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env) {
 	evaluator := model.NewCompiledEvaluator()
 	evaluator.Environment = tc.mapFieldStringValueOrEmpty(eval, "environment")
 	env, err := tc.newEnv(evaluator.Environment, ctmpl)
 	if err != nil {
 		// report any environment creation errors.
-		return nil, nil, err
+		envName, _ := eval.GetField("environment")
+		tc.reportErrorAtID(envName.Ref.ID, err.Error())
+		return nil, nil
 	}
 	terms, found := eval.GetField("terms")
 	productionsEnv := env
 	if found {
 		productionsEnv, err = tc.compileTerms(terms.Ref, env, evaluator)
 		if err != nil {
-			// report the term compilation environment
-			return nil, nil, err
+			tc.reportErrorAtID(terms.Ref.ID, err.Error())
+			return nil, nil
 		}
 	}
-	return evaluator, productionsEnv, nil
+	return evaluator, productionsEnv
 }
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
@@ -263,15 +366,18 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 	for _, t := range terms.Fields {
 		_, found := termMap[t.Name]
 		if found {
-			// report term redeclaration error
+			tc.reportErrorAtID(t.ID, "term redefinition error")
 			continue
 		}
 		termEnv, err := env.Extend(cel.Declarations(termDecls...))
 		if err != nil {
-			// report error
+			tc.reportErrorAtID(t.ID, err.Error())
 			continue
 		}
 		termAst := tc.compileExpr(t.Ref, termEnv, true)
+		if termAst == nil {
+			continue
+		}
 		term := model.NewCompiledTerm(t.Name, termAst)
 		for _, varName := range getVars(termAst) {
 			input, found := termMap[varName]
@@ -294,6 +400,22 @@ func (tc *templateCompiler) compileExpr(
 		relSrc := tc.src.Relative(strconv.FormatBool(bool(v)), loc.Line(), loc.Column())
 		ast, _ := env.CompileSource(relSrc)
 		return ast
+	case model.DoubleValue:
+		relSrc := tc.src.Relative(
+			strconv.FormatFloat(float64(v), 'f', -1, 64),
+			loc.Line(), loc.Column())
+		ast, _ := env.CompileSource(relSrc)
+		return ast
+	case model.IntValue:
+		relSrc := tc.src.Relative(
+			strconv.FormatInt(int64(v), 10),
+			loc.Line(), loc.Column())
+		ast, _ := env.CompileSource(relSrc)
+		return ast
+	case model.NullValue:
+		relSrc := tc.src.Relative("null", loc.Line(), loc.Column())
+		ast, _ := env.CompileSource(relSrc)
+		return ast
 	case model.PlainTextValue:
 		relSrc := tc.src.Relative(strconv.Quote(string(v)), loc.Line(), loc.Column())
 		ast, iss := env.CompileSource(relSrc)
@@ -304,8 +426,15 @@ func (tc *templateCompiler) compileExpr(
 		return nil
 	case model.StringValue:
 		relSrc := tc.src.Relative(string(v), loc.Line(), loc.Column())
-		ast, iss := env.CompileSource(relSrc)
+		ast, iss := env.ParseSource(relSrc)
 		if iss.Err() == nil {
+			// If the expression parses, then it's probably CEL.
+			// Report type-check issues if they are encountered.
+			ast, iss = env.Check(ast)
+			if iss.Err() != nil {
+				tc.reportIssues(iss)
+				return nil
+			}
 			return ast
 		}
 		if strict {
@@ -316,8 +445,14 @@ func (tc *templateCompiler) compileExpr(
 		txt := model.PlainTextValue(v)
 		dyn = model.NewDynValue(dyn.ID, txt)
 		return tc.compileExpr(dyn, env, true)
-	case *model.ListValue:
-	case *model.MapValue:
+	case model.UintValue:
+		relSrc := tc.src.Relative(
+			strconv.FormatUint(uint64(v), 10),
+			loc.Line(), loc.Column())
+		ast, _ := env.CompileSource(relSrc)
+		return ast
+	default:
+		// TODO: support bytes, list, map, timestamp
 	}
 	return nil
 }
@@ -334,8 +469,7 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate
 	var found bool
 	env, found = tc.reg.FindEnv(envName)
 	if !found {
-		// report error
-		return nil, fmt.Errorf("no such environment: %s", envName)
+		return nil, errors.New("no such environment")
 	}
 	return env.Extend(
 		ruleTypes.Types(env.TypeProvider()),
@@ -470,7 +604,7 @@ func (tc *templateCompiler) checkMapSchema(dyn *model.DynValue, schema *model.Op
 		field := model.NewMapField(0, prop)
 		field.Ref.Value = tc.convertToType(propSchema.DefaultValue, propSchema)
 		tc.checkSchema(field.Ref, propSchema)
-		mv.Fields = append(mv.Fields, field)
+		mv.AddField(field)
 	}
 }
 
@@ -538,7 +672,7 @@ func (tc *templateCompiler) convertToType(val interface{}, schema *model.OpenAPI
 }
 
 func (tc *templateCompiler) reportIssues(iss *cel.Issues) {
-	tc.errors.Append(iss.Errors())
+	tc.errors = tc.errors.Append(iss.Errors())
 }
 
 func (tc *templateCompiler) reportError(loc common.Location, msg string, args ...interface{}) {

@@ -44,7 +44,6 @@ schema:
     farewell:
       type: string
 validator:
-  environment: default
   terms:
     hi: rule.greeting
     bye: rule.farewell
@@ -56,7 +55,6 @@ validator:
       message: greeting starts with a farewell word
       details: hi
 evaluator:
-  environment: default
   terms:
     hi: rule.greeting
     bye: rule.farewell
@@ -85,10 +83,11 @@ evaluator:
 	for _, tst := range tests {
 		src := model.StringSource(tst.In, tst.ID)
 		pv, errs := parser.ParseYaml(src)
-		_, errs = comp.CompileTemplate(src, pv)
+		cpt, errs := comp.CompileTemplate(src, pv)
 		if len(errs.GetErrors()) > 0 {
 			t.Fatal(errs.ToDisplayString())
 		}
+		t.Logf("%v", cpt)
 	}
 }
 

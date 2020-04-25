@@ -31,7 +31,9 @@ func newSchemaTypeProvider(kind string, schema *OpenAPISchema) *schemaTypeProvid
 		objectPath: kind,
 		schema:     schema,
 	}
-	types := map[string]*schemaType{}
+	types := map[string]*schemaType{
+		kind: root,
+	}
 	buildSchemaTypes(root, types)
 	return &schemaTypeProvider{
 		root:  root,
@@ -114,6 +116,7 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 		fieldModelType := def.ModelType()
 		if fieldModelType == MapType || fieldModelType == ListType {
 			buildSchemaTypes(fieldType, types)
+			types[fieldType.objectPath] = fieldType
 		}
 	}
 	// Additional map properties
@@ -131,6 +134,7 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 		fieldModelType := t.elemType.ModelType()
 		if fieldModelType == MapType || fieldModelType == ListType {
 			buildSchemaTypes(t.elemType, types)
+			types[t.elemType.objectPath] = t.elemType
 		}
 	}
 	// List element properties
@@ -142,6 +146,7 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 		elemModelType := t.elemType.ModelType()
 		if elemModelType == MapType || elemModelType == ListType {
 			buildSchemaTypes(t.elemType, types)
+			types[t.elemType.objectPath] = t.elemType
 		}
 	}
 }

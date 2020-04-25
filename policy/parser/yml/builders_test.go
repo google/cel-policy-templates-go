@@ -25,7 +25,7 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 	sv := &model.MapValue{Fields: []*model.MapField{}}
 	sb := &mapBuilder{
 		baseBuilder: &baseBuilder{typeName: model.MapType},
-		mapVal:      sv,
+		mv:          sv,
 	}
 
 	// Simulate setting a role binding on an IAM grant policy

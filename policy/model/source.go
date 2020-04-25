@@ -15,6 +15,7 @@
 package model
 
 import (
+	"github.com/google/cel-go/common"
 	celsrc "github.com/google/cel-go/common"
 )
 
@@ -62,24 +63,6 @@ func (rel *RelativeSource) Content() string {
 	return rel.localSrc.Content()
 }
 
-// LineOffsets returns the character offsets within the relative source where newlines occur.
-func (rel *RelativeSource) LineOffsets() []int32 {
-	return rel.localSrc.LineOffsets()
-}
-
-// LocationOffset returns the relative offset where the location occurs, if found.
-func (rel *RelativeSource) LocationOffset(location celsrc.Location) (int32, bool) {
-	absOffset, found := rel.Source.LocationOffset(rel.absLoc)
-	if !found {
-		return -1, false
-	}
-	offset, found := rel.Source.LocationOffset(location)
-	if !found {
-		return -1, false
-	}
-	return offset - absOffset, true
-}
-
 // OffsetLocation returns the absolute location given the relative offset, if found.
 func (rel *RelativeSource) OffsetLocation(offset int32) (celsrc.Location, bool) {
 	absOffset, found := rel.Source.LocationOffset(rel.absLoc)
@@ -89,9 +72,15 @@ func (rel *RelativeSource) OffsetLocation(offset int32) (celsrc.Location, bool) 
 	return rel.Source.OffsetLocation(absOffset + offset)
 }
 
-// Snippet returns a line of source within the relative source.
-func (rel *RelativeSource) Snippet(line int) (string, bool) {
-	return rel.localSrc.Snippet(line)
+func (rel *RelativeSource) NewLocation(line, col int) common.Location {
+	localLoc := common.NewLocation(line, col)
+	relOffset, found := rel.localSrc.LocationOffset(localLoc)
+	if !found {
+		return common.NoLocation
+	}
+	offset, _ := rel.Source.LocationOffset(rel.absLoc)
+	absLoc, _ := rel.Source.OffsetLocation(offset + relOffset)
+	return absLoc
 }
 
 // NewSourceInfo creates SourceInfo metadata from a Source object.

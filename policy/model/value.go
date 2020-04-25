@@ -68,7 +68,8 @@ type ValueNode interface {
 // NewMapValue returns an empty MapValue.
 func NewMapValue() *MapValue {
 	return &MapValue{
-		Fields: []*MapField{},
+		Fields:   []*MapField{},
+		fieldMap: map[string]*MapField{},
 	}
 }
 

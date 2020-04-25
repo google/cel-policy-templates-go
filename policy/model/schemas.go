@@ -21,7 +21,12 @@ import (
 )
 
 func NewOpenAPISchema() *OpenAPISchema {
-	return &OpenAPISchema{}
+	return &OpenAPISchema{
+		Enum:       []interface{}{},
+		Metadata:   map[string]string{},
+		Properties: map[string]*OpenAPISchema{},
+		Required:   []string{},
+	}
 }
 
 type OpenAPISchema struct {
@@ -183,7 +188,6 @@ properties:
   validator:
     type: object
     required:
-      - environment
       - productions
     properties:
       environment:
@@ -207,7 +211,6 @@ properties:
   evaluator:
     type: object
     required:
-      - environment
       - productions
     properties:
       environment:

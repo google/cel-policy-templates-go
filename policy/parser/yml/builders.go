@@ -91,14 +91,14 @@ func newParsedValueBuilder(pv *model.ParsedValue) *parsedValueBuilder {
 	return &parsedValueBuilder{
 		baseBuilder: newBaseBuilder(model.MapType),
 		pv:          pv,
-		sv:          pv.Value,
+		mv:          pv.Value,
 	}
 }
 
 type parsedValueBuilder struct {
 	*baseBuilder
 	pv *model.ParsedValue
-	sv *model.MapValue
+	mv *model.MapValue
 }
 
 func (b *parsedValueBuilder) id(id int64) {
@@ -107,7 +107,7 @@ func (b *parsedValueBuilder) id(id int64) {
 
 func (b *parsedValueBuilder) field(id int64, name string) (objRef, error) {
 	field := model.NewMapField(id, name)
-	b.sv.Fields = append(b.sv.Fields, field)
+	b.mv.AddField(field)
 	return newDynValueBuilder(field.Ref), nil
 }
 
@@ -115,13 +115,13 @@ func (b *parsedValueBuilder) field(id int64, name string) (objRef, error) {
 func newMapBuilder(mv *model.MapValue) *mapBuilder {
 	return &mapBuilder{
 		baseBuilder: newBaseBuilder(model.MapType),
-		mapVal:      mv,
+		mv:          mv,
 	}
 }
 
 type mapBuilder struct {
 	*baseBuilder
-	mapVal *model.MapValue
+	mv *model.MapValue
 }
 
 func (b *mapBuilder) initMap() error {
@@ -131,7 +131,7 @@ func (b *mapBuilder) initMap() error {
 // prop returns a builder for a struct property.
 func (b *mapBuilder) field(id int64, name string) (objRef, error) {
 	field := model.NewMapField(id, name)
-	b.mapVal.Fields = append(b.mapVal.Fields, field)
+	b.mv.AddField(field)
 	return newDynValueBuilder(field.Ref), nil
 }
 
