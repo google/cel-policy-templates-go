@@ -69,6 +69,7 @@ schema:
   additionalProperties:
     type: string
 validator:
+  environment: standard
   terms:
     hi: rule.greeting
     bye: rule.farewell
@@ -240,6 +241,10 @@ func (r *registry) RegisterSchema(name string, schema *model.OpenAPISchema) erro
 }
 
 func (r *registry) FindEnv(name string) (*cel.Env, bool) {
+	if name == "standard" {
+		e, _ := cel.NewEnv()
+		return e, true
+	}
 	return nil, false
 }
 
