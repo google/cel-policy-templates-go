@@ -22,7 +22,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/checker"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
@@ -36,7 +38,7 @@ type Compiler struct {
 	reg Registry
 }
 
-func (c *Compiler) CompileTemplate(src *model.Source, tmpl *model.ParsedValue) (*model.CompiledTemplate, *common.Errors) {
+func (c *Compiler) CompileTemplate(src *model.Source, tmpl *model.ParsedValue) (*model.Template, *common.Errors) {
 	tc := &templateCompiler{
 		reg:    c.reg,
 		src:    src,
@@ -45,7 +47,7 @@ func (c *Compiler) CompileTemplate(src *model.Source, tmpl *model.ParsedValue) (
 	}
 	dyn := model.NewDynValue(tmpl.ID, tmpl.Value)
 	tc.checkSchema(dyn, model.TemplateSchema)
-	ctmpl := model.NewCompiledTemplate()
+	ctmpl := model.NewTemplate()
 	tc.compileTemplate(dyn, ctmpl)
 	errs := tc.errors.GetErrors()
 	if len(errs) != 0 {
@@ -61,7 +63,7 @@ type templateCompiler struct {
 	errors *common.Errors
 }
 
-func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.CompiledTemplate) {
+func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Template) {
 	m := tc.mapValue(dyn)
 	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(dyn, "apiVersion")
 	ctmpl.Description = tc.mapFieldStringValueOrEmpty(dyn, "description")
@@ -88,7 +90,7 @@ func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Co
 	}
 }
 
-func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.CompiledMetadata) {
+func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.TemplateMetadata) {
 	m := tc.mapValue(dyn)
 	cmeta.Name = tc.mapFieldStringValueOrEmpty(dyn, "name")
 	cmeta.UID = tc.mapFieldStringValueOrEmpty(dyn, "uid")
@@ -153,7 +155,7 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 }
 
 func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
-	ctmpl *model.CompiledTemplate) {
+	ctmpl *model.Template) {
 	val := tc.mapValue(dyn)
 	if len(val.Fields) == 0 {
 		// TODO: maybe not intentional that the validator is empty.
@@ -174,15 +176,19 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 }
 
 func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValue,
-	env *cel.Env, ceval *model.CompiledEvaluator) {
+	env *cel.Env, ceval *model.Evaluator) {
 	productions := tc.listValue(prods)
-	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
+	prodRules := make([]*model.Production, len(productions.Entries))
 	for i, p := range productions.Entries {
 		prod := tc.mapValue(p)
 		match, _ := prod.GetField("match")
 		matchAst := tc.compileExpr(match.Ref, env, true)
-		rule := model.NewCompiledProduction(matchAst)
-		// TODO: Add more structure checking here. For now, build a JSON object.
+		if matchAst != nil && !proto.Equal(matchAst.ResultType(), decls.Bool) {
+			tc.reportErrorAtID(match.Ref.ID,
+				"expected bool match result, found: %s",
+				checker.FormatCheckedType(matchAst.ResultType()))
+		}
+		rule := model.NewProduction(matchAst)
 		msg, found := prod.GetField("message")
 		msgTxt := "''"
 		if found {
@@ -203,7 +209,7 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValu
 		outTxt := fmt.Sprintf("{'message': %s, 'details': %s}", msgTxt, detTxt)
 		outDyn := model.NewDynValue(p.ID, model.StringValue(outTxt))
 		ast := tc.compileExpr(outDyn, env, true)
-		outDec := model.NewCompiledDecision()
+		outDec := model.NewDecision()
 		outDec.Decision = "policy.invalid"
 		outDec.Output = ast
 		rule.Decisions = append(rule.Decisions, outDec)
@@ -213,7 +219,7 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValu
 }
 
 func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
-	ctmpl *model.CompiledTemplate) {
+	ctmpl *model.Template) {
 	eval := tc.mapValue(dyn)
 	if len(eval.Fields) == 0 {
 		return
@@ -233,14 +239,19 @@ func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
 }
 
 func (tc *templateCompiler) compileEvaluatorOutputDecisions(prods *model.DynValue,
-	env *cel.Env, ceval *model.CompiledEvaluator) {
+	env *cel.Env, ceval *model.Evaluator) {
 	productions := tc.listValue(prods)
-	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
+	prodRules := make([]*model.Production, len(productions.Entries))
 	for i, p := range productions.Entries {
 		prod := tc.mapValue(p)
 		match, _ := prod.GetField("match")
 		matchAst := tc.compileExpr(match.Ref, env, true)
-		rule := model.NewCompiledProduction(matchAst)
+		if matchAst != nil && !proto.Equal(matchAst.ResultType(), decls.Bool) {
+			tc.reportErrorAtID(match.Ref.ID,
+				"expected bool match result, found: %s",
+				checker.FormatCheckedType(matchAst.ResultType()))
+		}
+		rule := model.NewProduction(matchAst)
 		outDec, decFound := tc.compileOutputDecision(p, env)
 		if decFound && outDec != nil {
 			rule.Decisions = append(rule.Decisions, outDec)
@@ -266,9 +277,9 @@ func (tc *templateCompiler) compileEvaluatorOutputDecisions(prods *model.DynValu
 
 func (tc *templateCompiler) compileOutputDecision(
 	dyn *model.DynValue,
-	env *cel.Env) (*model.CompiledDecision, bool) {
+	env *cel.Env) (*model.Decision, bool) {
 	prod := tc.mapValue(dyn)
-	outDec := model.NewCompiledDecision()
+	outDec := model.NewDecision()
 	dec, decFound := prod.GetField("decision")
 	ref, refFound := prod.GetField("reference")
 	out, outFound := prod.GetField("output")
@@ -294,9 +305,9 @@ func (tc *templateCompiler) compileOutputDecision(
 }
 
 func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
-	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env) {
+	ctmpl *model.Template) (*model.Evaluator, *cel.Env) {
 	eval := tc.mapValue(dyn)
-	evaluator := model.NewCompiledEvaluator()
+	evaluator := model.NewEvaluator()
 	evaluator.Environment = tc.mapFieldStringValueOrEmpty(dyn, "environment")
 	env, err := tc.newEnv(evaluator.Environment, ctmpl)
 	if err != nil {
@@ -318,9 +329,9 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 }
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
-	env *cel.Env, ceval *model.CompiledEvaluator) (*cel.Env, error) {
+	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
 	terms := tc.mapValue(dyn)
-	termMap := make(map[string]*model.CompiledTerm)
+	termMap := make(map[string]*model.Term)
 	var termDecls []*exprpb.Decl
 	for _, t := range terms.Fields {
 		_, found := termMap[t.Name]
@@ -333,20 +344,21 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 			tc.reportErrorAtID(t.ID, err.Error())
 			continue
 		}
+		termType := decls.Error
 		termAst := tc.compileExpr(t.Ref, termEnv, true)
-		if termAst == nil {
-			continue
-		}
-		term := model.NewCompiledTerm(t.Name, termAst)
-		for _, varName := range getVars(termAst) {
-			input, found := termMap[varName]
-			if found {
-				term.InputTerms[varName] = input
+		term := model.NewTerm(t.Name, termAst)
+		if termAst != nil {
+			termType = termAst.ResultType()
+			for _, varName := range getVars(termAst) {
+				input, found := termMap[varName]
+				if found {
+					term.InputTerms[varName] = input
+				}
 			}
 		}
 		termMap[t.Name] = term
 		ceval.Terms = append(ceval.Terms, term)
-		termDecls = append(termDecls, decls.NewIdent(t.Name, termAst.ResultType(), nil))
+		termDecls = append(termDecls, decls.NewIdent(t.Name, termType, nil))
 	}
 	// Return the productions environment which contains all terms and inputs to the template.
 	return env.Extend(cel.Declarations(termDecls...))
@@ -438,10 +450,13 @@ func (tc *templateCompiler) compileExprString(id int64,
 	return nil
 }
 
-func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate) (*cel.Env, error) {
+func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.Env, error) {
 	ruleTypes := ctmpl.RuleTypes
 	var env *cel.Env
 	if envName == "" {
+		if ruleTypes == nil {
+			return cel.NewEnv()
+		}
 		return cel.NewEnv(
 			ruleTypes.Types(types.NewRegistry()),
 			ruleTypes.Declarations(),
@@ -451,6 +466,9 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate
 	env, found = tc.reg.FindEnv(envName)
 	if !found {
 		return nil, errors.New("no such environment")
+	}
+	if ruleTypes == nil {
+		return env, nil
 	}
 	return env.Extend(
 		ruleTypes.Types(env.TypeProvider()),

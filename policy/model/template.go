@@ -22,21 +22,21 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
-func NewCompiledTemplate() *CompiledTemplate {
-	return &CompiledTemplate{
-		Metadata:  NewCompiledMetadata(),
-		Evaluator: NewCompiledEvaluator(),
+func NewTemplate() *Template {
+	return &Template{
+		Metadata:  NewTemplateMetadata(),
+		Evaluator: NewEvaluator(),
 	}
 }
 
-type CompiledTemplate struct {
+type Template struct {
 	APIVersion  string
 	Kind        string
-	Metadata    *CompiledMetadata
+	Metadata    *TemplateMetadata
 	Description string
 	RuleTypes   *RuleTypes
-	Validator   *CompiledEvaluator
-	Evaluator   *CompiledEvaluator
+	Validator   *Evaluator
+	Evaluator   *Evaluator
 }
 
 func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
@@ -104,13 +104,13 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 	return nil, false
 }
 
-func NewCompiledMetadata() *CompiledMetadata {
-	return &CompiledMetadata{
+func NewTemplateMetadata() *TemplateMetadata {
+	return &TemplateMetadata{
 		Properties: make(map[string]string),
 	}
 }
 
-type CompiledMetadata struct {
+type TemplateMetadata struct {
 	UID        string
 	Name       string
 	Namespace  string
@@ -118,50 +118,50 @@ type CompiledMetadata struct {
 	Properties map[string]string
 }
 
-func NewCompiledEvaluator() *CompiledEvaluator {
-	return &CompiledEvaluator{
-		Terms:       []*CompiledTerm{},
-		Productions: []*CompiledProduction{},
+func NewEvaluator() *Evaluator {
+	return &Evaluator{
+		Terms:       []*Term{},
+		Productions: []*Production{},
 	}
 }
 
-type CompiledEvaluator struct {
+type Evaluator struct {
 	Environment string
-	Terms       []*CompiledTerm
-	Productions []*CompiledProduction
+	Terms       []*Term
+	Productions []*Production
 }
 
-func NewCompiledTerm(name string, expr *cel.Ast) *CompiledTerm {
-	return &CompiledTerm{
+func NewTerm(name string, expr *cel.Ast) *Term {
+	return &Term{
 		Name:       name,
 		Expr:       expr,
-		InputTerms: make(map[string]*CompiledTerm),
+		InputTerms: make(map[string]*Term),
 	}
 }
 
-type CompiledTerm struct {
+type Term struct {
 	Name       string
-	InputTerms map[string]*CompiledTerm
+	InputTerms map[string]*Term
 	Expr       *cel.Ast
 }
 
-func NewCompiledProduction(match *cel.Ast) *CompiledProduction {
-	return &CompiledProduction{
+func NewProduction(match *cel.Ast) *Production {
+	return &Production{
 		Match:     match,
-		Decisions: []*CompiledDecision{},
+		Decisions: []*Decision{},
 	}
 }
 
-type CompiledProduction struct {
+type Production struct {
 	Match     *cel.Ast
-	Decisions []*CompiledDecision
+	Decisions []*Decision
 }
 
-func NewCompiledDecision() *CompiledDecision {
-	return &CompiledDecision{}
+func NewDecision() *Decision {
+	return &Decision{}
 }
 
-type CompiledDecision struct {
+type Decision struct {
 	Decision  string
 	Reference *cel.Ast
 	Output    *cel.Ast

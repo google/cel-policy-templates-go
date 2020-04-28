@@ -34,7 +34,7 @@ func TestCompiler_Template(t *testing.T) {
 			In: `apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: MultilineTemplate
+  name: GreetingTemplate
 description: >
   Policy for configuring greetings and farewells.
 schema:
@@ -74,6 +74,8 @@ validator:
     bye: rule.farewell
     both: hi == 'aloha' && bye == 'aloha'
     doubleVal: -42.42
+    emptyNullVal:
+    emptyQuotedVal: !txt ""
     falseVal: false
     intVal: -42
     nullVal: null
@@ -105,10 +107,42 @@ evaluator:
           output: bye`,
 		},
 		{
+			ID: "empty_evaluator",
+			In: `apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: NoEvaluatorTemplate
+description: >
+  Template that with an empty evaluator and validator
+validator:
+  terms:
+    noop: ""
+  productions:
+    - match: noop
+evaluator:
+`,
+			Err: `
+     ERROR: empty_evaluator:11:7: missing required field(s): [message]
+      |     - match: noop
+      | ......^
+     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null, schema=map
+      | evaluator:
+      | ..........^
+     ERROR: empty_evaluator:9:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
+      |     noop: ""
+      | ...........^
+     ERROR: empty_evaluator:11:14: expected bool match result, found: !error!
+      |     - match: noop
+      | .............^
+     ERROR: empty_evaluator:12:11: expected map type, found: null
+      | evaluator:
+      | ..........^`,
+		},
+		{
 			ID: "errant",
 			In: `apiVersion: policy.acme.co/v1
 metadata:
-  name: MultilineTemplate
+  name: ErrantTemplate
   lastModified: 2020-04-28T21:27:00
 description: >
   Policy for configuring greetings and farewells.
@@ -122,7 +156,7 @@ schema:
       enum: [1, 3.2, false, "okay"]
 validator:
   terms:
-    hi: rule.greting
+    hi: rule.grating
     bye: rule.farewell
     uintVal: 9223372036854775808
     uintVal: 9223372036854775809
@@ -153,15 +187,12 @@ evaluator:
      ERROR: errant:1:1: missing required field(s): [kind]
       | apiVersion: policy.acme.co/v1
       | ^
-     ERROR: errant:17:13: undefined field 'greting'
-      |     hi: rule.greting
+     ERROR: errant:17:13: undefined field 'grating'
+      |     hi: rule.grating
       | ............^
      ERROR: errant:20:5: term redefinition error
       |     uintVal: 9223372036854775809
       | ....^
-     ERROR: errant:22:14: undeclared reference to 'hi' (in container '')
-      |     - match: hi == '' && byte == ''
-      | .............^
      ERROR: errant:22:26: undeclared reference to 'byte' (in container '')
       |     - match: hi == '' && byte == ''
       | .........................^
@@ -170,13 +201,7 @@ evaluator:
       | ......^
      ERROR: errant:28:13: undefined field 'greting'
       |       ? rule.greting
-      | ............^
-     ERROR: errant:32:14: undeclared reference to 'hi' (in container '')
-      |     - match: hi != '' && bye == ''
-      | .............^
-     ERROR: errant:34:15: undeclared reference to 'hi' (in container '')
-      |       output: hi
-      | ..............^`,
+      | ............^`,
 		},
 	}
 

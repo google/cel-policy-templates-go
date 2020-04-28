@@ -175,7 +175,7 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 		enc.write(str).writeLineComment(v.ID)
 	case model.NullValue:
 		isPrimitive = true
-		enc.write("null").writeLineComment(v.ID)
+		enc.writeLineComment(v.ID)
 	default:
 		isPrimitive = true
 		enc.write(fmt.Sprintf("%v", dyn)).writeLineComment(v.ID)
