@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package compiler contains a suite of tools for convering parsed representations of CEL Policy
+// Template sources into type-checked and validated in-memory representations.
 package compiler
 
 import (
@@ -34,11 +36,15 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// Compiler type-checks and compiles a raw model.ParsedValue into a strongly typed in-memory
+// representation of a template or policy instance.
 type Compiler struct {
 	reg Registry
 }
 
-func (c *Compiler) CompileTemplate(src *model.Source, tmpl *model.ParsedValue) (*model.Template, *common.Errors) {
+// CompileTemplate type-checks and validates a parsed representation of a policy template.
+func (c *Compiler) CompileTemplate(src *model.Source,
+	tmpl *model.ParsedValue) (*model.Template, *common.Errors) {
 	tc := &templateCompiler{
 		reg:    c.reg,
 		src:    src,

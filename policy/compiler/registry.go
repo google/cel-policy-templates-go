@@ -20,6 +20,8 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// Registry defines an interface for looking up schema and environment references during source
+// compilation.
 type Registry interface {
 	FindSchema(name string) (*model.OpenAPISchema, bool)
 
