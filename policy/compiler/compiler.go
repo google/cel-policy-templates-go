@@ -16,10 +16,8 @@ package compiler
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"sort"
 	"strconv"
 	"time"
@@ -47,14 +45,9 @@ func (c *Compiler) CompileTemplate(src *model.Source, tmpl *model.ParsedValue) (
 	}
 	dyn := model.NewDynValue(tmpl.ID, tmpl.Value)
 	tc.checkSchema(dyn, model.TemplateSchema)
-	errs := tc.errors.GetErrors()
-	if len(errs) != 0 {
-		return nil, tc.errors
-	}
-
 	ctmpl := model.NewCompiledTemplate()
 	tc.compileTemplate(dyn, ctmpl)
-	errs = tc.errors.GetErrors()
+	errs := tc.errors.GetErrors()
 	if len(errs) != 0 {
 		return nil, tc.errors
 	}
@@ -70,9 +63,9 @@ type templateCompiler struct {
 
 func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.CompiledTemplate) {
 	m := dyn.Value.(*model.MapValue)
-	ctmpl.APIVersion = tc.mapFieldStringValue(m, "apiVersion")
-	ctmpl.Description = tc.mapFieldStringValueOrEmpty(m, "description")
-	ctmpl.Kind = tc.mapFieldStringValue(m, "kind")
+	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "apiVersion")
+	ctmpl.Description = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "description")
+	ctmpl.Kind = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "kind")
 	meta, found := m.GetField("metadata")
 	if found {
 		tc.compileMetadata(meta.Ref, ctmpl.Metadata)
@@ -104,8 +97,8 @@ func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.Co
 			dyn.Value.ModelType())
 		return
 	}
-	cmeta.Name = tc.mapFieldStringValueOrEmpty(m, "name")
-	cmeta.UID = tc.mapFieldStringValueOrEmpty(m, "uid")
+	cmeta.Name = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "name")
+	cmeta.UID = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "uid")
 	ns, found := m.GetField("namespace")
 	if found {
 		cmeta.Namespace = string(ns.Ref.Value.(model.StringValue))
@@ -131,11 +124,11 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 			dyn.Value.ModelType())
 		return
 	}
-	schema.Title = tc.mapFieldStringValueOrEmpty(m, "title")
-	schema.Description = tc.mapFieldStringValueOrEmpty(m, "description")
-	schema.Type = tc.mapFieldStringValueOrEmpty(m, "type")
-	schema.TypeRef = tc.mapFieldStringValueOrEmpty(m, "$ref")
-	schema.Format = tc.mapFieldStringValueOrEmpty(m, "format")
+	schema.Title = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "title")
+	schema.Description = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "description")
+	schema.Type = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "type")
+	schema.TypeRef = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "$ref")
+	schema.Format = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "format")
 	elem, found := m.GetField("items")
 	if found {
 		nested := model.NewOpenAPISchema()
@@ -206,7 +199,7 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 		// TODO: maybe not intentional that the validator is empty.
 		return
 	}
-	validator, prodsEnv := tc.buildProductionsEnv(val, ctmpl)
+	validator, prodsEnv := tc.buildProductionsEnv(dyn, ctmpl)
 	if validator == nil {
 		// error occurred, will have been recorded elsewhere.
 		return
@@ -263,10 +256,9 @@ func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) {
 	eval := dyn.Value.(*model.MapValue)
 	if len(eval.Fields) == 0 {
-
 		return
 	}
-	evaluator, prodsEnv := tc.buildProductionsEnv(eval, ctmpl)
+	evaluator, prodsEnv := tc.buildProductionsEnv(dyn, ctmpl)
 	if evaluator == nil {
 		// Error occurred, would have been reported elsewhere.
 		return
@@ -335,10 +327,11 @@ func (tc *templateCompiler) compileOutputDecision(
 	return outDec
 }
 
-func (tc *templateCompiler) buildProductionsEnv(eval *model.MapValue,
+func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env) {
+	eval := dyn.Value.(*model.MapValue)
 	evaluator := model.NewCompiledEvaluator()
-	evaluator.Environment = tc.mapFieldStringValueOrEmpty(eval, "environment")
+	evaluator.Environment = tc.mapFieldStringValueOrEmpty(dyn.ID, eval, "environment")
 	env, err := tc.newEnv(evaluator.Environment, ctmpl)
 	if err != nil {
 		// report any environment creation errors.
@@ -361,7 +354,7 @@ func (tc *templateCompiler) buildProductionsEnv(eval *model.MapValue,
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 	env *cel.Env, ceval *model.CompiledEvaluator) (*cel.Env, error) {
 	terms := dyn.Value.(*model.MapValue)
-	var termMap map[string]*model.CompiledTerm
+	termMap := make(map[string]*model.CompiledTerm)
 	var termDecls []*exprpb.Decl
 	for _, t := range terms.Fields {
 		_, found := termMap[t.Name]
@@ -385,6 +378,7 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 				term.InputTerms[varName] = input
 			}
 		}
+		termMap[t.Name] = term
 		ceval.Terms = append(ceval.Terms, term)
 		termDecls = append(termDecls, decls.NewIdent(t.Name, termAst.ResultType(), nil))
 	}
@@ -424,22 +418,19 @@ func (tc *templateCompiler) compileExpr(
 		}
 		tc.reportIssues(iss)
 		return nil
-	case model.StringValue:
-		relSrc := tc.src.Relative(string(v), loc.Line(), loc.Column())
-		ast, iss := env.ParseSource(relSrc)
-		if iss.Err() == nil {
-			// If the expression parses, then it's probably CEL.
-			// Report type-check issues if they are encountered.
-			ast, iss = env.Check(ast)
-			if iss.Err() != nil {
-				tc.reportIssues(iss)
-				return nil
-			}
+	case *model.MultilineStringValue:
+		ast := tc.compileExprString(dyn.ID, v.Raw, loc, env, strict)
+		if ast != nil || strict {
 			return ast
 		}
-		if strict {
-			tc.reportIssues(iss)
-			return nil
+		// non-strict parse which falls back to a plain text literal.
+		txt := model.PlainTextValue(v.Value)
+		dyn = model.NewDynValue(dyn.ID, txt)
+		return tc.compileExpr(dyn, env, true)
+	case model.StringValue:
+		ast := tc.compileExprString(dyn.ID, string(v), loc, env, strict)
+		if ast != nil || strict {
+			return ast
 		}
 		// non-strict parse which falls back to a plain text literal.
 		txt := model.PlainTextValue(v)
@@ -447,12 +438,36 @@ func (tc *templateCompiler) compileExpr(
 		return tc.compileExpr(dyn, env, true)
 	case model.UintValue:
 		relSrc := tc.src.Relative(
-			strconv.FormatUint(uint64(v), 10),
+			strconv.FormatUint(uint64(v), 10)+"u",
 			loc.Line(), loc.Column())
-		ast, _ := env.CompileSource(relSrc)
-		return ast
+		ast, iss := env.CompileSource(relSrc)
+		if iss.Err() == nil {
+			return ast
+		}
+		tc.reportIssues(iss)
 	default:
 		// TODO: support bytes, list, map, timestamp
+	}
+	return nil
+}
+
+func (tc *templateCompiler) compileExprString(id int64,
+	val string, loc common.Location, env *cel.Env, strict bool) *cel.Ast {
+	relSrc := tc.src.Relative(val, loc.Line(), loc.Column())
+	ast, iss := env.ParseSource(relSrc)
+	if iss.Err() == nil {
+		// If the expression parses, then it's probably CEL.
+		// Report type-check issues if they are encountered.
+		ast, iss = env.Check(ast)
+		if iss.Err() != nil {
+			tc.reportIssues(iss)
+			return nil
+		}
+		return ast
+	}
+	if strict {
+		tc.reportIssues(iss)
+		return nil
 	}
 	return nil
 }
@@ -477,33 +492,28 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate
 	)
 }
 
-func (tc *templateCompiler) mapFieldStringValue(m *model.MapValue, fieldName string) string {
+func (tc *templateCompiler) mapFieldStringValueOrEmpty(id int64,
+	m *model.MapValue, fieldName string) string {
 	field, found := m.GetField(fieldName)
 	if !found {
+		// do not report an error as a required field should be reported
+		// by the schema checking step.
+		return ""
+	}
+	switch v := field.Ref.Value.(type) {
+	case model.StringValue:
+		return string(v)
+	case model.PlainTextValue:
+		return string(v)
+	case *model.MultilineStringValue:
+		return v.Value
+	default:
 		// report an error.
+		tc.reportErrorAtID(id,
+			"unexpected field type: field=%s got=%s wanted=%s",
+			fieldName, field.Ref.Value.ModelType(), model.StringType)
 		return ""
 	}
-	val, ok := field.Ref.Value.(model.StringValue)
-	if !ok {
-		// report an error.
-		return ""
-	}
-	return string(val)
-}
-
-func (tc *templateCompiler) mapFieldStringValueOrEmpty(m *model.MapValue,
-	fieldName string) string {
-	field, found := m.GetField(fieldName)
-	if !found {
-		// do not report an error
-		return ""
-	}
-	val, ok := field.Ref.Value.(model.StringValue)
-	if !ok {
-		// report an error.
-		return ""
-	}
-	return string(val)
 }
 
 func (tc *templateCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
@@ -587,7 +597,7 @@ func (tc *templateCompiler) checkMapSchema(dyn *model.DynValue, schema *model.Op
 		}
 		if len(missing) > 0 {
 			sort.Strings(missing)
-			tc.reportErrorAtID(dyn.ID, "missing required properties: %s", missing)
+			tc.reportErrorAtID(dyn.ID, "missing required field(s): %s", missing)
 		}
 	}
 	// Set default values, if it is possible for them to be set.
@@ -699,37 +709,6 @@ func assignableToType(valType, schemaType string) bool {
 		return true
 	}
 	return false
-}
-
-func hashSchema(s *model.OpenAPISchema) uint64 {
-	var hsh maphash.Hash
-	hsh.WriteString(s.ModelType())
-	switch s.ModelType() {
-	case model.ListType:
-		nestedHash := hashSchema(s.Items)
-		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, nestedHash)
-		hsh.WriteByte(255)
-		hsh.Write(b)
-	case model.MapType:
-		for field, nested := range s.Properties {
-			hsh.WriteByte(255)
-			hsh.WriteString(field)
-			nestedHash := hashSchema(nested)
-			b := make([]byte, 8)
-			binary.LittleEndian.PutUint64(b, nestedHash)
-			hsh.WriteByte(255)
-			hsh.Write(b)
-		}
-		if s.AdditionalProperties != nil {
-			nestedHash := hashSchema(s.AdditionalProperties)
-			b := make([]byte, 8)
-			binary.LittleEndian.PutUint64(b, nestedHash)
-			hsh.WriteByte(255)
-			hsh.Write(b)
-		}
-	}
-	return hsh.Sum64()
 }
 
 func getVars(ast *cel.Ast) []string {

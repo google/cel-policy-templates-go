@@ -49,8 +49,11 @@ rules:
 6~metadata:7~
 	8~name: 9~"multiline"
 10~rules:11~
-	- 12~13~greeting: 14~"hello world! how are you?\n"
-		15~farewell: 16~"goodnight \"moon\"!"`,
+	- 12~13~greeting: 14~>
+	    hello world!
+	    how are you?
+      15~farewell: 16~>
+	    goodnight "moon"!`,
 		},
 		{
 			ID: "bad_selector",
@@ -403,44 +406,45 @@ evaluator:
 4~kind: 5~"PolicyTemplate"
 6~metadata:7~
 	8~name: 9~"MultilineTemplate"
-10~description: 11~"Policy for configuring greetings and farewells.\n"
+10~description: 11~>
+	Policy for configuring greetings and farewells.
 12~schema:13~
 	14~type: 15~"object"
 	16~properties:17~
-		18~greeting:19~
-			20~type: 21~"string"
-		22~farewell:23~
-			24~type: 25~"string"
+	18~greeting:19~
+		20~type: 21~"string"
+	22~farewell:23~
+		24~type: 25~"string"
 26~validator:27~
 	28~environment: 29~"default"
 	30~terms:31~
-		32~hi: 33~"rule.greeting"
-		34~bye: 35~"rule.farewell"
-		36~uint: 37~9223372036854775808
+	32~hi: 33~"rule.greeting"
+	34~bye: 35~"rule.farewell"
+	36~uint: 37~9223372036854775808
 	38~productions:39~
-		- 40~41~match: 42~"hi == '' && bye == ''"
-			43~message: 44~"at least one property must be set on the rule."
-		- 45~46~match: 47~"hi.startsWith(\"Goodbye\")"
-			48~message: 49~!txt "greeting starts with a farewell word"
-			50~details: 51~"hi"
+	- 40~41~match: 42~"hi == '' && bye == ''"
+		43~message: 44~"at least one property must be set on the rule."
+	- 45~46~match: 47~"hi.startsWith(\"Goodbye\")"
+		48~message: 49~!txt "greeting starts with a farewell word"
+		50~details: 51~"hi"
 52~evaluator:53~
 	54~environment: 55~"default"
 	56~terms:57~
-		58~hi: 59~"rule.greeting"
-		60~bye: 61~"rule.farewell"
+	58~hi: 59~"rule.greeting"
+	60~bye: 61~"rule.farewell"
 	62~productions:63~
-		- 64~65~match: 66~"hi != '' && bye == ''"
-			67~decision: 68~"policy.acme.welcome"
-			69~output: 70~"hi"
-		- 71~72~match: 73~"bye != '' && hi == ''"
-			74~decision: 75~"policy.acme.depart"
-			76~output: 77~"bye"
-		- 78~79~match: 80~"hi != '' && bye != ''"
-			81~decisions:82~
-				- 83~84~decision: 85~"policy.acme.welcome"
-					86~output: 87~"hi"
-				- 88~89~decision: 90~"policy.acme.depart"
-					91~output: 92~"bye"`,
+	- 64~65~match: 66~"hi != '' && bye == ''"
+		67~decision: 68~"policy.acme.welcome"
+		69~output: 70~"hi"
+	- 71~72~match: 73~"bye != '' && hi == ''"
+		74~decision: 75~"policy.acme.depart"
+		76~output: 77~"bye"
+	- 78~79~match: 80~"hi != '' && bye != ''"
+		81~decisions:82~
+		- 83~84~decision: 85~"policy.acme.welcome"
+			86~output: 87~"hi"
+		- 88~89~decision: 90~"policy.acme.depart"
+			91~output: 92~"bye"`,
 		},
 	}
 

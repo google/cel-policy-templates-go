@@ -160,6 +160,15 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 		isPrimitive = true
 		str := strconv.Quote(string(dyn))
 		enc.write("!txt ").write(str).writeLineComment(v.ID)
+	case *model.MultilineStringValue:
+		isPrimitive = true
+		if v.EncodeStyle == model.FoldedValueStyle {
+			enc.write(">").writeLineComment(v.ID).write("\n")
+		}
+		if v.EncodeStyle == model.LiteralStyle {
+			enc.write("|").writeLineComment(v.ID).write("\n")
+		}
+		enc.write(dyn.Raw).writeLineComment(v.ID)
 	case model.StringValue:
 		isPrimitive = true
 		str := strconv.Quote(string(dyn))

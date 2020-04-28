@@ -94,7 +94,8 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 			Type: f.ExprType(),
 		}, true
 	}
-	if st.ModelType() == MapType {
+	// This could be a dynamic map.
+	if st.ModelType() == MapType && !st.isObject() {
 		return &ref.FieldType{
 			// TODO: Provide IsSet, GetFrom which build upon maps
 			Type: st.elemType.ExprType(),

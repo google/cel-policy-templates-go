@@ -27,6 +27,7 @@ const (
 	BlockValueStyle EncodeStyle = iota
 	FlowValueStyle
 	FoldedValueStyle
+	LiteralStyle
 )
 
 type ParsedValue struct {
@@ -258,6 +259,24 @@ func (PlainTextValue) ModelType() string {
 func (v PlainTextValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(PlainTextValue)
 	return ok && v == otherV
+}
+
+// MultilineStringValue is a multiline string value which has been parsed in a way which omits
+// whitespace as well as a raw form which preserves whitespace.
+type MultilineStringValue struct {
+	Value string
+	Raw   string
+}
+
+func (*MultilineStringValue) isValueNode() {}
+
+func (*MultilineStringValue) ModelType() string {
+	return StringType
+}
+
+func (v *MultilineStringValue) Equal(other ValueNode) bool {
+	otherV, ok := other.(*MultilineStringValue)
+	return ok && v.Value == otherV.Value
 }
 
 type TimestampValue time.Time

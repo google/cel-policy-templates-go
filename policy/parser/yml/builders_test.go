@@ -22,7 +22,7 @@ import (
 )
 
 func TestBuilders_ModelMapValue(t *testing.T) {
-	sv := &model.MapValue{Fields: []*model.MapField{}}
+	sv := model.NewMapValue()
 	sb := &mapBuilder{
 		baseBuilder: &baseBuilder{typeName: model.MapType},
 		mv:          sv,
@@ -67,7 +67,7 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 			},
 		},
 	}
-	if !reflect.DeepEqual(sv, want) {
+	if !reflect.DeepEqual(sv.Fields, want.Fields) {
 		t.Errorf("got %v, wanted %v", sv, want)
 	}
 }

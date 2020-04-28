@@ -17,6 +17,7 @@ package yml
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -36,7 +37,7 @@ func Parse(src *model.Source) (*model.ParsedValue, *common.Errors) {
 	info := model.NewSourceInfo(src)
 	inst := &model.ParsedValue{Info: info}
 	builder := newParsedValueBuilder(inst)
-	parser := newParser(info, errs)
+	parser := newParser(info, src, errs)
 	parser.parseYaml(src, builder)
 	// If there are errors, return a nil instance and the error set.
 	if len(errs.GetErrors()) != 0 {
@@ -69,9 +70,10 @@ func sourceToYaml(src *model.Source, docNode *yaml.Node) error {
 	return nil
 }
 
-func newParser(info *model.SourceInfo, errs *common.Errors) *parser {
+func newParser(info *model.SourceInfo, src *model.Source, errs *common.Errors) *parser {
 	return &parser{
 		info: info,
+		src:  src,
 		errs: errs,
 	}
 }
@@ -79,6 +81,7 @@ func newParser(info *model.SourceInfo, errs *common.Errors) *parser {
 type parser struct {
 	id   int64
 	info *model.SourceInfo
+	src  *model.Source
 	errs *common.Errors
 }
 
@@ -101,11 +104,18 @@ func (p *parser) collectMetadata(id int64, node *yaml.Node) {
 	if len(comments) > 0 {
 		p.info.Comments[id] = comments
 	}
-	offset := int32(0)
-	if node.Line > 1 {
-		offset = p.info.LineOffsets[node.Line-2]
+
+	line := node.Line
+	col := int32(node.Column)
+	switch node.Style {
+	case yaml.DoubleQuotedStyle, yaml.SingleQuotedStyle:
+		col++
 	}
-	p.info.Offsets[id] = offset + int32(node.Column) - 1
+	offset := int32(0)
+	if line > 1 {
+		offset = p.info.LineOffsets[line-2]
+	}
+	p.info.Offsets[id] = offset + col - 1
 }
 
 func (p *parser) parse(node *yaml.Node, ref objRef) {
@@ -162,7 +172,35 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 	case model.NullType:
 		err = ref.assign(model.Null)
 	case model.StringType:
-		err = ref.assign(node.Value)
+		if node.Style == yaml.FoldedStyle ||
+			node.Style == yaml.LiteralStyle {
+			col := node.Column
+			line := node.Line
+			txt, found := p.src.Snippet(line)
+			indent := ""
+			for len(indent) < col-1 {
+				indent += " "
+			}
+			var raw strings.Builder
+			for found && strings.HasPrefix(txt, indent) {
+				line++
+				raw.WriteString(txt)
+				txt, found = p.src.Snippet(line)
+				if found && strings.HasPrefix(txt, indent) {
+					raw.WriteString("\n")
+				}
+			}
+			offset := p.info.Offsets[p.id]
+			offset = offset - (int32(node.Column) - 1)
+			p.info.Offsets[p.id] = offset
+			multi := &model.MultilineStringValue{
+				Value: node.Value,
+				Raw:   raw.String(),
+			}
+			err = ref.assign(multi)
+		} else {
+			err = ref.assign(node.Value)
+		}
 	default:
 		p.reportErrorAtID(p.id, "unsupported cel type: %s", modelType)
 	}
@@ -187,8 +225,6 @@ func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 		key := node.Content[i]
 		id := p.nextID()
 		p.collectMetadata(id, key)
-
-		val := node.Content[i+1]
 		keyType, found := yamlTypes[key.LongTag()]
 		if !found || keyType != "string" {
 			p.reportErrorAtID(id, "invalid map key type: %v", key.LongTag())
@@ -199,6 +235,11 @@ func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 		if err != nil {
 			p.reportErrorAtID(id, err.Error())
 			continue
+		}
+		val := node.Content[i+1]
+		if val.Style == yaml.FoldedStyle || val.Style == yaml.LiteralStyle {
+			val.Line++
+			val.Column = key.Column + 2
 		}
 		p.parse(val, propRef)
 	}
@@ -232,6 +273,8 @@ func getEncodeStyle(style yaml.Style) model.EncodeStyle {
 		return model.FlowValueStyle
 	case yaml.FoldedStyle:
 		return model.FoldedValueStyle
+	case yaml.LiteralStyle:
+		return model.LiteralStyle
 	default:
 		return model.BlockValueStyle
 	}

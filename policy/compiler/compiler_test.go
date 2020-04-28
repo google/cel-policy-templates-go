@@ -15,6 +15,7 @@
 package compiler
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/cel-go/cel"
@@ -26,7 +27,7 @@ func TestCompiler_Template(t *testing.T) {
 	tests := []struct {
 		ID  string
 		In  string
-		Out string
+		Err string
 	}{
 		{
 			ID: "canonical",
@@ -47,7 +48,8 @@ validator:
   terms:
     hi: rule.greeting
     bye: rule.farewell
-    uint: 9223372036854775808
+    uintVal: 9223372036854775808
+    both: hi == 'aloha' && bye == 'aloha'
   productions:
     - match: hi == '' && bye == ''
       message: at least one property must be set on the rule.
@@ -72,6 +74,69 @@ evaluator:
         - decision: policy.acme.depart
           output: bye`,
 		},
+		{
+			ID: "missing",
+			In: `apiVersion: policy.acme.co/v1
+metadata:
+  name: MultilineTemplate
+description: >
+  Policy for configuring greetings and farewells.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+    farewell:
+      type: string
+validator:
+  terms:
+    hi: rule.greting
+    bye: rule.farewell
+    uintVal: 9223372036854775808
+    uintVal: 9223372036854775809
+  productions:
+    - match: hi == '' && byte == ''
+      message: at least one property must be set on the rule.
+evaluator:
+  terms:
+    hi: |
+      bye != ''
+      ? rule.greting
+      : ''
+    bye: rule.farewell
+  productions:
+    - match: hi != '' && bye == ''
+      decision: policy.acme.welcome
+      output: hi`,
+			Err: `
+     ERROR: missing:1:1: missing required field(s): [kind]
+      | apiVersion: policy.acme.co/v1
+      | ^
+     ERROR: missing:15:13: undefined field 'greting'
+      |     hi: rule.greting
+      | ............^
+     ERROR: missing:18:5: term redefinition error
+      |     uintVal: 9223372036854775809
+      | ....^
+     ERROR: missing:20:14: undeclared reference to 'hi' (in container '')
+      |     - match: hi == '' && byte == ''
+      | .............^
+     ERROR: missing:20:26: undeclared reference to 'byte' (in container '')
+      |     - match: hi == '' && byte == ''
+      | .........................^
+     ERROR: missing:25:7: undeclared reference to 'bye' (in container '')
+      |       bye != ''
+      | ......^
+     ERROR: missing:26:13: undefined field 'greting'
+      |       ? rule.greting
+      | ............^
+     ERROR: missing:30:14: undeclared reference to 'hi' (in container '')
+      |     - match: hi != '' && bye == ''
+      | .............^
+     ERROR: missing:32:15: undeclared reference to 'hi' (in container '')
+      |       output: hi
+      | ..............^`,
+		},
 	}
 
 	reg := &registry{
@@ -83,11 +148,14 @@ evaluator:
 	for _, tst := range tests {
 		src := model.StringSource(tst.In, tst.ID)
 		pv, errs := parser.ParseYaml(src)
-		cpt, errs := comp.CompileTemplate(src, pv)
 		if len(errs.GetErrors()) > 0 {
 			t.Fatal(errs.ToDisplayString())
 		}
-		t.Logf("%v", cpt)
+		_, errs = comp.CompileTemplate(src, pv)
+		dbgErr := errs.ToDisplayString()
+		if !cmp(tst.Err, dbgErr) {
+			t.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
+		}
 	}
 }
 
@@ -111,4 +179,16 @@ func (r *registry) FindEnv(name string) (*cel.Env, bool) {
 
 func (r *registry) RegisterEnv(name string, e *cel.Env) error {
 	return nil
+}
+
+func cmp(a string, e string) bool {
+	a = strings.Replace(a, " ", "", -1)
+	a = strings.Replace(a, "\n", "", -1)
+	a = strings.Replace(a, "\t", "", -1)
+
+	e = strings.Replace(e, " ", "", -1)
+	e = strings.Replace(e, "\n", "", -1)
+	e = strings.Replace(e, "\t", "", -1)
+
+	return a == e
 }

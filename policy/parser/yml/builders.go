@@ -204,6 +204,8 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 		vn = model.StringValue(v)
 	case uint64:
 		vn = model.UintValue(v)
+	case *model.MultilineStringValue:
+		vn = v
 	case model.PlainTextValue:
 		vn = v
 	case model.NullValue:
