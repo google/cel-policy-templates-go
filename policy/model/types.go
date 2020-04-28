@@ -476,18 +476,44 @@ func (it *baseMapIterator) Type() ref.Type {
 }
 
 const (
-	AnyType       = "any"
-	BoolType      = "bool"
-	BytesType     = "bytes"
-	DoubleType    = "double"
-	IntType       = "int"
-	NullType      = "null"
-	StringType    = "string"
+	// AnyType is equivalent to the CEL 'dyn' type in that the value may have any of the types
+	// supported by CEL Policy Templates.
+	AnyType = "any"
+
+	// BoolType is equivalent to the CEL 'bool' type.
+	BoolType = "bool"
+
+	// BytesType is equivalent to the CEL 'bytes' type.
+	BytesType = "bytes"
+
+	// DoubleType is equivalent to the CEL 'double' type which is a 64-bit floating point value.
+	DoubleType = "double"
+
+	// IntType is equivalent to the CEL 'int' type which is a 64-bit signed int.
+	IntType = "int"
+
+	// NullType is equivalent to the CEL 'null_type'.
+	NullType = "null_type"
+
+	// StringType is equivalent to the CEL 'string' type which is expected to be a UTF-8 string.
+	// StringType values may either be string literals or expression strings.
+	StringType = "string"
+
+	// PlainTextType is equivalent to the CEL 'string' type, but which has been specifically
+	// designated as a string literal.
 	PlainTextType = "string_lit"
+
+	// TimestampType corresponds to the well-known protobuf.Timestamp type supported within CEL.
 	TimestampType = "timestamp"
-	UintType      = "uint"
-	ListType      = "list"
-	MapType       = "map"
+
+	// UintType is equivalent to the CEL 'uint' type.
+	UintType = "uint"
+
+	// ListType is equivalent to the CEL 'list' type.
+	ListType = "list"
+
+	// MapType is equivalent to the CEL 'map' type.
+	MapType = "map"
 )
 
 var (

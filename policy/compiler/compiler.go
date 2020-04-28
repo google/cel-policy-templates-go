@@ -454,26 +454,14 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.
 	ruleTypes := ctmpl.RuleTypes
 	var env *cel.Env
 	if envName == "" {
-		if ruleTypes == nil {
-			return cel.NewEnv()
-		}
-		return cel.NewEnv(
-			ruleTypes.Types(types.NewRegistry()),
-			ruleTypes.Declarations(),
-		)
+		return cel.NewEnv(ruleTypes.EnvOptions(types.NewRegistry())...)
 	}
 	var found bool
 	env, found = tc.reg.FindEnv(envName)
 	if !found {
 		return nil, errors.New("no such environment")
 	}
-	if ruleTypes == nil {
-		return env, nil
-	}
-	return env.Extend(
-		ruleTypes.Types(env.TypeProvider()),
-		ruleTypes.Declarations(),
-	)
+	return env.Extend(ruleTypes.EnvOptions(env.TypeProvider())...)
 }
 
 func (tc *templateCompiler) strValue(dyn *model.DynValue) model.StringValue {

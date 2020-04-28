@@ -72,6 +72,8 @@ func (rel *RelativeSource) OffsetLocation(offset int32) (celsrc.Location, bool) 
 	return rel.Source.OffsetLocation(absOffset + offset)
 }
 
+// NewLocation creates an absolute common.Location based on a local line, column
+// position from a relative source.
 func (rel *RelativeSource) NewLocation(line, col int) common.Location {
 	localLoc := common.NewLocation(line, col)
 	relOffset, found := rel.localSrc.LocationOffset(localLoc)

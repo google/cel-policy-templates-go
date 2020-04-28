@@ -22,6 +22,7 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewTemplate produces an empty policy Template instance.
 func NewTemplate() *Template {
 	return &Template{
 		Metadata:  NewTemplateMetadata(),
@@ -29,6 +30,7 @@ func NewTemplate() *Template {
 	}
 }
 
+// Template represents the compiled and type-checked policy template.
 type Template struct {
 	APIVersion  string
 	Kind        string
@@ -39,6 +41,7 @@ type Template struct {
 	Evaluator   *Evaluator
 }
 
+// NewRuleTypes returns an Open API Schema-based type-system which is CEL compatible.
 func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
 	// Note, if the schema indicates that it's actually based on another proto
 	// then prefer the proto definition. For expressions in the proto, a new field
@@ -50,27 +53,48 @@ func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
 	}
 }
 
+// RuleTypes extends the CEL ref.TypeProvider interface and provides an Open API Schema-based
+// type-system.
 type RuleTypes struct {
 	ref.TypeProvider
 	Schema          *OpenAPISchema
 	ruleSchemaTypes *schemaTypeProvider
 }
 
-func (rt *RuleTypes) Declarations() cel.EnvOption {
-	return cel.Declarations(
-		decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
-	)
+// EnvOptions returns a set of cel.EnvOption values which includes the Template's declaration set
+// as well as a custom ref.TypeProvider.
+//
+// Note, the standard declaration set includes 'rule' which is defined as the top-level rule-schema
+// type if one is configured.
+//
+// If the RuleTypes value is nil, an empty []cel.EnvOption set is returned.
+func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
+	if rt == nil {
+		return []cel.EnvOption{}
+	}
+	return []cel.EnvOption{
+		cel.CustomTypeProvider(&RuleTypes{
+			TypeProvider:    tp,
+			Schema:          rt.Schema,
+			ruleSchemaTypes: rt.ruleSchemaTypes,
+		}),
+		cel.Declarations(
+			decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
+		),
+	}
 }
 
-func (rt *RuleTypes) Types(tp ref.TypeProvider) cel.EnvOption {
-	return cel.CustomTypeProvider(&RuleTypes{
-		TypeProvider:    tp,
-		Schema:          rt.Schema,
-		ruleSchemaTypes: rt.ruleSchemaTypes,
-	})
-}
-
+// FindType attempts to resolve the typeName provided from the template's rule-schema, or if not
+// from the embedded ref.TypeProvider.
+//
+// FindType overrides the default type-finding behavior of the embedded TypeProvider.
+//
+// Note, when the type name is based on the Open API Schema, the name will reflect the object path
+// where the type definition appears.
 func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
+	if rt == nil {
+		return nil, false
+	}
 	simple, found := simpleExprTypes[typeName]
 	if found {
 		return simple, true
@@ -82,6 +106,12 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 	return rt.TypeProvider.FindType(typeName)
 }
 
+// FindFieldType returns a field type given a type name and field name, if found.
+//
+// Note, the type name for an Open API Schema type is likely to be its qualified object path.
+// If, in the future an object instance rather than a type name were provided, the field
+// resolution might more accurately reflect the expected type model. However, in this case
+// concessions were made to align with the existing CEL interfaces.
 func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, bool) {
 	st, found := rt.ruleSchemaTypes.types[typeName]
 	if !found {
@@ -104,20 +134,30 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 	return nil, false
 }
 
+// NewTemplateMetadata returns an empty *TemplateMetadata instance.
 func NewTemplateMetadata() *TemplateMetadata {
 	return &TemplateMetadata{
 		Properties: make(map[string]string),
 	}
 }
 
+// TemplateMetadata contains the top-level information about the Template, including its name and
+// namespace.
 type TemplateMetadata struct {
-	UID        string
-	Name       string
-	Namespace  string
+	UID       string
+	Name      string
+	Namespace string
+
+	// PluralMame is the plural form of the template name to use when managing a collection of
+	// template instances.
 	PluralName string
+
+	// Properties contains an optional set of key-value information which external applications
+	// might find useful.
 	Properties map[string]string
 }
 
+// NewEvaluator returns an empty instance of a Template Evaluator.
 func NewEvaluator() *Evaluator {
 	return &Evaluator{
 		Terms:       []*Term{},
@@ -125,12 +165,23 @@ func NewEvaluator() *Evaluator {
 	}
 }
 
+// Evaluator contains a set of production rules used to validate policy templates or
+// evaluate template instances.
+//
+// The evaluator may optionally specify a named and versioned Environment as the basis for the
+// variables and functions exposed to the CEL expressions within the Evaluator, and an optional
+// set of terms.
+//
+// Terms are like template-local variables. Terms may rely on other terms which precede them.
+// Term order matters, and no cycles are permitted among terms by design and convention.
 type Evaluator struct {
 	Environment string
 	Terms       []*Term
 	Productions []*Production
 }
 
+// NewTerm produces a named Term instance associated with a CEL Ast and a list of the input
+// terms needed to evaluate the Ast successfully.
 func NewTerm(name string, expr *cel.Ast) *Term {
 	return &Term{
 		Name:       name,
@@ -139,12 +190,16 @@ func NewTerm(name string, expr *cel.Ast) *Term {
 	}
 }
 
+// Term is a template-local variable whose name may shadow names in the Template environment and
+// which may depend on preceding terms as input.
 type Term struct {
 	Name       string
 	InputTerms map[string]*Term
 	Expr       *cel.Ast
 }
 
+// NewProduction returns an empty instance of a Production rule which minimally contains a single
+// Decision.
 func NewProduction(match *cel.Ast) *Production {
 	return &Production{
 		Match:     match,
@@ -152,15 +207,19 @@ func NewProduction(match *cel.Ast) *Production {
 	}
 }
 
+// Production describes an match-decision pair where the match, if set, indicates whether the
+// Decision is applicable, and the decision indicates its name and output value.
 type Production struct {
 	Match     *cel.Ast
 	Decisions []*Decision
 }
 
+// NewDecision returns an empty Decision instance.
 func NewDecision() *Decision {
 	return &Decision{}
 }
 
+// Decision contains a decision name, or reference to a decision name, and an output expression.
 type Decision struct {
 	Decision  string
 	Reference *cel.Ast

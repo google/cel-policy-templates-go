@@ -21,15 +21,27 @@ import (
 	structpb "github.com/golang/protobuf/ptypes/struct"
 )
 
+// EncodeStyle is a hint for string encoding of parsed values.
 type EncodeStyle int
 
 const (
+	// BlockValueStyle is the default string encoding which preserves whitespace and newlines.
 	BlockValueStyle EncodeStyle = iota
+
+	// FlowValueStyle indicates that the string is an inline representation of complex types.
 	FlowValueStyle
+
+	// FoldedValueStyle is a multiline string with whitespace and newlines trimmed to a single
+	// a whitespace. Repeated newlines are replaced with a single newline rather than a single
+	// whitespace.
 	FoldedValueStyle
+
+	// LiteralStyle is a multiline string that preserves newlines, but trims all other whitespace
+	// to a single character.
 	LiteralStyle
 )
 
+// ParsedValue represents a top-level object representing either a template or instance value.
 type ParsedValue struct {
 	ID    int64
 	Value *MapValue
@@ -61,8 +73,10 @@ type DynValue struct {
 type ValueNode interface {
 	isValueNode()
 
+	// ModelType indicates the core CEL type represented by the value.
 	ModelType() string
 
+	// Equal indicates whether two ValueNodes are equal.
 	Equal(ValueNode) bool
 }
 
@@ -82,17 +96,20 @@ type MapValue struct {
 
 func (*MapValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (*MapValue) ModelType() string {
 	return MapType
 }
 
-func (sv *MapValue) Equal(other ValueNode) bool {
+// Equal returns true if the other value is a MapValue, has the same properties, and each
+// property value is Equal.
+func (m *MapValue) Equal(other ValueNode) bool {
 	otherSv, ok := other.(*MapValue)
-	if !ok || len(sv.Fields) != len(otherSv.Fields) {
+	if !ok || len(m.Fields) != len(otherSv.Fields) {
 		return false
 	}
 	fields := make(map[string]*MapField)
-	for _, f := range sv.Fields {
+	for _, f := range m.Fields {
 		fields[f.Name] = f
 	}
 	for _, otherF := range otherSv.Fields {
@@ -104,11 +121,13 @@ func (sv *MapValue) Equal(other ValueNode) bool {
 	return true
 }
 
+// GetField returns a MapField by name if one exists.
 func (m *MapValue) GetField(name string) (*MapField, bool) {
 	field, found := m.fieldMap[name]
 	return field, found
 }
 
+// AddField appends a MapField to the MapValue and indexes the field by name.
 func (m *MapValue) AddField(field *MapField) {
 	m.Fields = append(m.Fields, field)
 	m.fieldMap[field.Name] = field
@@ -145,10 +164,12 @@ type ListValue struct {
 
 func (*ListValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (*ListValue) ModelType() string {
 	return ListType
 }
 
+// Equal returns true if the lists are of equal length and the elements are pair-wise equal.
 func (lv *ListValue) Equal(other ValueNode) bool {
 	otherLv, ok := other.(*ListValue)
 	if !ok || len(lv.Entries) != len(otherLv.Entries) {
@@ -168,10 +189,12 @@ type BoolValue bool
 
 func (BoolValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (BoolValue) ModelType() string {
 	return BoolType
 }
 
+// Equal implements the ValueNode interface method.
 func (v BoolValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(BoolValue)
 	return ok && v == otherV
@@ -182,10 +205,12 @@ type BytesValue []byte
 
 func (BytesValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (BytesValue) ModelType() string {
 	return BytesType
 }
 
+// Equal returns true if the other ValueNode is a bytes instance and the byte values are equal.
 func (v BytesValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(BytesValue)
 	return ok && bytes.Equal([]byte(v), []byte(otherV))
@@ -196,10 +221,12 @@ type DoubleValue float64
 
 func (DoubleValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (DoubleValue) ModelType() string {
 	return DoubleType
 }
 
+// Equal implements the ValueNode interface method.
 func (v DoubleValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(DoubleValue)
 	return ok && v == otherV
@@ -210,10 +237,12 @@ type IntValue int64
 
 func (IntValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (IntValue) ModelType() string {
 	return IntType
 }
 
+// Equal implements the ValueNode interface method.
 func (v IntValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(IntValue)
 	return ok && v == otherV
@@ -224,10 +253,12 @@ type NullValue structpb.NullValue
 
 func (NullValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (NullValue) ModelType() string {
 	return NullType
 }
 
+// Equal implements the ValueNode interface method.
 func (NullValue) Equal(other ValueNode) bool {
 	_, isNull := other.(NullValue)
 	return isNull
@@ -238,10 +269,12 @@ type StringValue string
 
 func (StringValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (StringValue) ModelType() string {
 	return StringType
 }
 
+// Equal implements the ValueNode interface method.
 func (v StringValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(StringValue)
 	return ok && v == otherV
@@ -252,10 +285,12 @@ type PlainTextValue string
 
 func (PlainTextValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (PlainTextValue) ModelType() string {
 	return PlainTextType
 }
 
+// Equal implements the ValueNode interface method.
 func (v PlainTextValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(PlainTextValue)
 	return ok && v == otherV
@@ -270,23 +305,28 @@ type MultilineStringValue struct {
 
 func (*MultilineStringValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (*MultilineStringValue) ModelType() string {
 	return StringType
 }
 
+// Equal implements the ValueNode interface method.
 func (v *MultilineStringValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(*MultilineStringValue)
 	return ok && v.Value == otherV.Value
 }
 
+// TimestampValue is a timestamp type compatible with both Open API Schema and protobuf.Timestamp.
 type TimestampValue time.Time
 
 func (TimestampValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (TimestampValue) ModelType() string {
 	return TimestampType
 }
 
+// Equal implements the ValueNode interface method.
 func (v TimestampValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(TimestampValue)
 	return ok && otherV == v
@@ -297,10 +337,12 @@ type UintValue uint64
 
 func (UintValue) isValueNode() {}
 
+// ModelType implements the ValueNode interface method.
 func (UintValue) ModelType() string {
 	return UintType
 }
 
+// Equal implements the ValueNode interface method.
 func (v UintValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(UintValue)
 	return ok && v == otherV

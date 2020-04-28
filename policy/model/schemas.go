@@ -20,6 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// NewOpenAPISchema returns an empty instance of an OpenAPISchema object.
 func NewOpenAPISchema() *OpenAPISchema {
 	return &OpenAPISchema{
 		Enum:       []interface{}{},
@@ -29,6 +30,18 @@ func NewOpenAPISchema() *OpenAPISchema {
 	}
 }
 
+// OpenAPISchema declares a struct capable of representing a subset of Open API Schemas
+// supported by Kubernetes which can also be specified within Protocol Buffers.
+//
+// There are a handful of notable differences:
+// - The validating constructs `allOf`, `anyOf`, `oneOf`, `not`, and type-related restrictsion are
+//   not supported as they can be better validated in the template 'validator' block.
+// - The $ref field supports references to other schema definitions, but such aliases
+//   should be removed before being serialized.
+// - The `additionalProperties` and `properties` fields are not currently mutually exclusive as is
+//   the case for Kubernetes.
+//
+// See: https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definitions/#validation
 type OpenAPISchema struct {
 	Title                string                    `yaml:"title,omitempty"`
 	Description          string                    `yaml:"description,omitempty"`
@@ -44,6 +57,7 @@ type OpenAPISchema struct {
 	AdditionalProperties *OpenAPISchema            `yaml:"additionalProperties,omitempty"`
 }
 
+// ModelType returns the CEL Policy Templates type name associated with the schema element.
 func (s *OpenAPISchema) ModelType() string {
 	commonType := openAPISchemaTypes[s.Type]
 	switch commonType {
@@ -58,6 +72,7 @@ func (s *OpenAPISchema) ModelType() string {
 	return commonType
 }
 
+// Equal returns whether two schemas are equal.
 func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
 	if s.ModelType() != other.ModelType() {
 		return false
@@ -92,6 +107,10 @@ func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
 	}
 }
 
+// FindProperty returns the Open API Schema type for the given property name.
+//
+// A property may either be explicitly defined in a `properties` map or implicitly defined in an
+// `additionalProperties` block.
 func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 	if s.ModelType() == "any" {
 		return s, true
@@ -109,8 +128,14 @@ func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 }
 
 var (
-	SchemaDef      *OpenAPISchema
+	// SchemaDef defines an Open API Schema definition in terms of an Open API Schema.
+	SchemaDef *OpenAPISchema
+
+	// InstanceSchema defines a basic schema for defining Policy Instances where the instance rule
+	// references a TemplateSchema derived from the Instance's template kind.
 	InstanceSchema *OpenAPISchema
+
+	// TemplateSchema defines a schema for defining Policy Templates.
 	TemplateSchema *OpenAPISchema
 
 	openAPISchemaTypes map[string]string = map[string]string{
