@@ -44,12 +44,42 @@ schema:
       type: string
     farewell:
       type: string
+      enum: ["aloha", "adieu", "bye", "farewell", !txt true]
+    conditions:
+      type: array
+      items:
+        type: object
+        metadata:
+          protoRef: google.type.Expr
+          resultType: bool
+          environment: standard
+        required:
+          - expression
+          - description
+        properties:
+          expression:
+            type: string
+          title:
+            type: string
+          description:
+            type: string
+          location:
+            type: string
+
+  additionalProperties:
+    type: string
 validator:
   terms:
     hi: rule.greeting
     bye: rule.farewell
-    uintVal: 9223372036854775808
     both: hi == 'aloha' && bye == 'aloha'
+    doubleVal: -42.42
+    falseVal: false
+    intVal: -42
+    nullVal: null
+    plainTxtVal: !txt plain text
+    trueVal: true
+    uintVal: 9223372036854775808
   productions:
     - match: hi == '' && bye == ''
       message: at least one property must be set on the rule.
@@ -75,10 +105,11 @@ evaluator:
           output: bye`,
 		},
 		{
-			ID: "missing",
+			ID: "errant",
 			In: `apiVersion: policy.acme.co/v1
 metadata:
   name: MultilineTemplate
+  lastModified: 2020-04-28T21:27:00
 description: >
   Policy for configuring greetings and farewells.
 schema:
@@ -88,6 +119,7 @@ schema:
       type: string
     farewell:
       type: string
+      enum: [1, 3.2, false, "okay"]
 validator:
   terms:
     hi: rule.greting
@@ -109,31 +141,40 @@ evaluator:
       decision: policy.acme.welcome
       output: hi`,
 			Err: `
-     ERROR: missing:1:1: missing required field(s): [kind]
+     ERROR: errant:14:14: value not assignable to schema type: value=int, schema=string
+      |       enum: [1, 3.2, false, "okay"]
+      | .............^
+     ERROR: errant:14:17: value not assignable to schema type: value=double, schema=string
+      |       enum: [1, 3.2, false, "okay"]
+      | ................^
+     ERROR: errant:14:22: value not assignable to schema type: value=bool, schema=string
+      |       enum: [1, 3.2, false, "okay"]
+      | .....................^
+     ERROR: errant:1:1: missing required field(s): [kind]
       | apiVersion: policy.acme.co/v1
       | ^
-     ERROR: missing:15:13: undefined field 'greting'
+     ERROR: errant:17:13: undefined field 'greting'
       |     hi: rule.greting
       | ............^
-     ERROR: missing:18:5: term redefinition error
+     ERROR: errant:20:5: term redefinition error
       |     uintVal: 9223372036854775809
       | ....^
-     ERROR: missing:20:14: undeclared reference to 'hi' (in container '')
+     ERROR: errant:22:14: undeclared reference to 'hi' (in container '')
       |     - match: hi == '' && byte == ''
       | .............^
-     ERROR: missing:20:26: undeclared reference to 'byte' (in container '')
+     ERROR: errant:22:26: undeclared reference to 'byte' (in container '')
       |     - match: hi == '' && byte == ''
       | .........................^
-     ERROR: missing:25:7: undeclared reference to 'bye' (in container '')
+     ERROR: errant:27:7: undeclared reference to 'bye' (in container '')
       |       bye != ''
       | ......^
-     ERROR: missing:26:13: undefined field 'greting'
+     ERROR: errant:28:13: undefined field 'greting'
       |       ? rule.greting
       | ............^
-     ERROR: missing:30:14: undeclared reference to 'hi' (in container '')
+     ERROR: errant:32:14: undeclared reference to 'hi' (in container '')
       |     - match: hi != '' && bye == ''
       | .............^
-     ERROR: missing:32:15: undeclared reference to 'hi' (in container '')
+     ERROR: errant:34:15: undeclared reference to 'hi' (in container '')
       |       output: hi
       | ..............^`,
 		},

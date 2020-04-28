@@ -173,7 +173,11 @@ properties:
     type: string
   metadata:
     type: object
+    required:
+      - name
     properties:
+      uid:
+        type: string
       name:
         type: string
       namespace:

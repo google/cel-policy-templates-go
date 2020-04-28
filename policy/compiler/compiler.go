@@ -62,10 +62,10 @@ type templateCompiler struct {
 }
 
 func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.CompiledTemplate) {
-	m := dyn.Value.(*model.MapValue)
-	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "apiVersion")
-	ctmpl.Description = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "description")
-	ctmpl.Kind = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "kind")
+	m := tc.mapValue(dyn)
+	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(dyn, "apiVersion")
+	ctmpl.Description = tc.mapFieldStringValueOrEmpty(dyn, "description")
+	ctmpl.Kind = tc.mapFieldStringValueOrEmpty(dyn, "kind")
 	meta, found := m.GetField("metadata")
 	if found {
 		tc.compileMetadata(meta.Ref, ctmpl.Metadata)
@@ -89,46 +89,26 @@ func (tc *templateCompiler) compileTemplate(dyn *model.DynValue, ctmpl *model.Co
 }
 
 func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.CompiledMetadata) {
-	// TODO: attach the template metadata.
-	m, ok := dyn.Value.(*model.MapValue)
-	if !ok {
-		tc.reportErrorAtID(dyn.ID,
-			"unexpected metadata type: got=%s, wanted=map",
-			dyn.Value.ModelType())
-		return
-	}
-	cmeta.Name = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "name")
-	cmeta.UID = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "uid")
-	ns, found := m.GetField("namespace")
-	if found {
-		cmeta.Namespace = string(ns.Ref.Value.(model.StringValue))
-	} else {
-		cmeta.Namespace = "default"
-	}
+	m := tc.mapValue(dyn)
+	cmeta.Name = tc.mapFieldStringValueOrEmpty(dyn, "name")
+	cmeta.UID = tc.mapFieldStringValueOrEmpty(dyn, "uid")
+	cmeta.Namespace = tc.mapFieldStringValueOrEmpty(dyn, "namespace")
 	plural, found := m.GetField("pluralName")
 	if found {
-		cmeta.PluralName = string(plural.Ref.Value.(model.StringValue))
-	} else if len(cmeta.Name) > 0 {
-		cmeta.PluralName = cmeta.Name + "s"
+		cmeta.PluralName = string(tc.strValue(plural.Ref))
 	} else {
-		// report error
+		cmeta.PluralName = cmeta.Name + "s"
 	}
 }
 
 func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	schema *model.OpenAPISchema) {
-	m, ok := dyn.Value.(*model.MapValue)
-	if !ok {
-		tc.reportErrorAtID(dyn.ID,
-			"unexpected rule schema type: got=%s, wanted=map",
-			dyn.Value.ModelType())
-		return
-	}
-	schema.Title = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "title")
-	schema.Description = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "description")
-	schema.Type = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "type")
-	schema.TypeRef = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "$ref")
-	schema.Format = tc.mapFieldStringValueOrEmpty(dyn.ID, m, "format")
+	schema.Title = tc.mapFieldStringValueOrEmpty(dyn, "title")
+	schema.Description = tc.mapFieldStringValueOrEmpty(dyn, "description")
+	schema.Type = tc.mapFieldStringValueOrEmpty(dyn, "type")
+	schema.TypeRef = tc.mapFieldStringValueOrEmpty(dyn, "$ref")
+	schema.Format = tc.mapFieldStringValueOrEmpty(dyn, "format")
+	m := tc.mapValue(dyn)
 	elem, found := m.GetField("items")
 	if found {
 		nested := model.NewOpenAPISchema()
@@ -137,47 +117,27 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	}
 	elem, found = m.GetField("metadata")
 	if found {
-		meta, ok := elem.Ref.Value.(*model.MapValue)
-		if !ok {
-			tc.reportErrorAtID(elem.Ref.ID,
-				"unexpected metadata type: got=%s, wanted=map",
-				elem.Ref.Value.ModelType())
-			meta = model.NewMapValue()
-		}
+		meta := tc.mapValue(elem.Ref)
 		for _, mf := range meta.Fields {
-			val, ok := mf.Ref.Value.(model.StringValue)
-			if ok {
+			val := tc.strValue(mf.Ref)
+			if len(val) != 0 {
 				schema.Metadata[mf.Name] = string(val)
-			} else {
-				tc.reportErrorAtID(mf.Ref.ID,
-					"unexpected metadata value type: got=%s, wanted=string",
-					mf.Ref.Value.ModelType())
 			}
 		}
 	}
 	elem, found = m.GetField("required")
 	if found {
-		reqs, ok := elem.Ref.Value.(*model.ListValue)
-		if !ok {
-			// report error, continue with empty list
-			reqs = model.NewListValue()
-		}
+		reqs := tc.listValue(elem.Ref)
 		for _, el := range reqs.Entries {
-			req, ok := el.Value.(model.StringValue)
-			if ok {
+			req := tc.strValue(el)
+			if len(req) != 0 {
 				schema.Required = append(schema.Required, string(req))
-			} else {
-				// report error
 			}
 		}
 	}
 	elem, found = m.GetField("properties")
 	if found {
-		obj, ok := elem.Ref.Value.(*model.MapValue)
-		if !ok {
-			obj = model.NewMapValue()
-			// report error, but continue with empty map.
-		}
+		obj := tc.mapValue(elem.Ref)
 		for _, field := range obj.Fields {
 			nested := model.NewOpenAPISchema()
 			schema.Properties[field.Name] = nested
@@ -194,7 +154,7 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 
 func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) {
-	val := dyn.Value.(*model.MapValue)
+	val := tc.mapValue(dyn)
 	if len(val.Fields) == 0 {
 		// TODO: maybe not intentional that the validator is empty.
 		return
@@ -215,10 +175,10 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue,
 
 func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValue,
 	env *cel.Env, ceval *model.CompiledEvaluator) {
-	productions := prods.Value.(*model.ListValue)
+	productions := tc.listValue(prods)
 	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
 	for i, p := range productions.Entries {
-		prod := p.Value.(*model.MapValue)
+		prod := tc.mapValue(p)
 		match, _ := prod.GetField("match")
 		matchAst := tc.compileExpr(match.Ref, env, true)
 		rule := model.NewCompiledProduction(matchAst)
@@ -254,7 +214,7 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValu
 
 func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) {
-	eval := dyn.Value.(*model.MapValue)
+	eval := tc.mapValue(dyn)
 	if len(eval.Fields) == 0 {
 		return
 	}
@@ -274,28 +234,27 @@ func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue,
 
 func (tc *templateCompiler) compileEvaluatorOutputDecisions(prods *model.DynValue,
 	env *cel.Env, ceval *model.CompiledEvaluator) {
-	productions := prods.Value.(*model.ListValue)
+	productions := tc.listValue(prods)
 	prodRules := make([]*model.CompiledProduction, len(productions.Entries))
 	for i, p := range productions.Entries {
-		prod := p.Value.(*model.MapValue)
+		prod := tc.mapValue(p)
 		match, _ := prod.GetField("match")
 		matchAst := tc.compileExpr(match.Ref, env, true)
 		rule := model.NewCompiledProduction(matchAst)
-		// TODO: Add more structure checking here. For now, build a JSON object.
-		_, found := prod.GetField("decision")
-		if found {
-			outDec := tc.compileOutputDecision(prod, env)
-			if outDec != nil {
-				rule.Decisions = append(rule.Decisions, outDec)
-			}
+		outDec, decFound := tc.compileOutputDecision(p, env)
+		if decFound && outDec != nil {
+			rule.Decisions = append(rule.Decisions, outDec)
 		}
-		decs, found := prod.GetField("decisions")
-		if found {
-			decsList := decs.Ref.Value.(*model.ListValue)
+		decs, decsFound := prod.GetField("decisions")
+		if decFound && decsFound {
+			tc.reportErrorAtID(decs.ID,
+				"only one of the fields may be set: [decision, decisions]")
+		}
+		if decsFound {
+			decsList := tc.listValue(decs.Ref)
 			for _, elem := range decsList.Entries {
-				tuple := elem.Value.(*model.MapValue)
-				outDec := tc.compileOutputDecision(tuple, env)
-				if outDec != nil {
+				outDec, found := tc.compileOutputDecision(elem, env)
+				if found && outDec != nil {
 					rule.Decisions = append(rule.Decisions, outDec)
 				}
 			}
@@ -306,32 +265,39 @@ func (tc *templateCompiler) compileEvaluatorOutputDecisions(prods *model.DynValu
 }
 
 func (tc *templateCompiler) compileOutputDecision(
-	prod *model.MapValue,
-	env *cel.Env) *model.CompiledDecision {
+	dyn *model.DynValue,
+	env *cel.Env) (*model.CompiledDecision, bool) {
+	prod := tc.mapValue(dyn)
 	outDec := model.NewCompiledDecision()
-	dec, found := prod.GetField("decision")
-	if found {
-		decName := dec.Ref.Value.(model.StringValue)
+	dec, decFound := prod.GetField("decision")
+	ref, refFound := prod.GetField("reference")
+	out, outFound := prod.GetField("output")
+	if !decFound && !refFound && !outFound {
+		return nil, false
+	}
+	if decFound {
+		decName := tc.strValue(dec.Ref)
 		outDec.Decision = string(decName)
 	}
-	ref, found := prod.GetField("reference")
-	if found {
+	if refFound {
 		outDec.Reference = tc.compileExpr(ref.Ref, env, true)
 	}
-	output, found := prod.GetField("output")
-	if !found {
-		// report error
-		return nil
+	if !decFound && !refFound {
+
 	}
-	outDec.Output = tc.compileExpr(output.Ref, env, false)
-	return outDec
+	if outFound {
+		outDec.Output = tc.compileExpr(out.Ref, env, false)
+	} else {
+
+	}
+	return outDec, true
 }
 
 func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 	ctmpl *model.CompiledTemplate) (*model.CompiledEvaluator, *cel.Env) {
-	eval := dyn.Value.(*model.MapValue)
+	eval := tc.mapValue(dyn)
 	evaluator := model.NewCompiledEvaluator()
-	evaluator.Environment = tc.mapFieldStringValueOrEmpty(dyn.ID, eval, "environment")
+	evaluator.Environment = tc.mapFieldStringValueOrEmpty(dyn, "environment")
 	env, err := tc.newEnv(evaluator.Environment, ctmpl)
 	if err != nil {
 		// report any environment creation errors.
@@ -353,7 +319,7 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 	env *cel.Env, ceval *model.CompiledEvaluator) (*cel.Env, error) {
-	terms := dyn.Value.(*model.MapValue)
+	terms := tc.mapValue(dyn)
 	termMap := make(map[string]*model.CompiledTerm)
 	var termDecls []*exprpb.Decl
 	for _, t := range terms.Fields {
@@ -492,8 +458,36 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.CompiledTemplate
 	)
 }
 
-func (tc *templateCompiler) mapFieldStringValueOrEmpty(id int64,
-	m *model.MapValue, fieldName string) string {
+func (tc *templateCompiler) strValue(dyn *model.DynValue) model.StringValue {
+	s, ok := dyn.Value.(model.StringValue)
+	if ok {
+		return s
+	}
+	tc.reportErrorAtID(dyn.ID, "expected string type, found: %s", dyn.Value.ModelType())
+	return model.StringValue("")
+}
+
+func (tc *templateCompiler) listValue(dyn *model.DynValue) *model.ListValue {
+	l, ok := dyn.Value.(*model.ListValue)
+	if ok {
+		return l
+	}
+	tc.reportErrorAtID(dyn.ID, "expected list type, found: %s", dyn.Value.ModelType())
+	return model.NewListValue()
+}
+
+func (tc *templateCompiler) mapValue(dyn *model.DynValue) *model.MapValue {
+	m, ok := dyn.Value.(*model.MapValue)
+	if ok {
+		return m
+	}
+	tc.reportErrorAtID(dyn.ID, "expected map type, found: %s", dyn.Value.ModelType())
+	return model.NewMapValue()
+}
+
+func (tc *templateCompiler) mapFieldStringValueOrEmpty(dyn *model.DynValue,
+	fieldName string) string {
+	m := tc.mapValue(dyn)
 	field, found := m.GetField(fieldName)
 	if !found {
 		// do not report an error as a required field should be reported
@@ -508,8 +502,7 @@ func (tc *templateCompiler) mapFieldStringValueOrEmpty(id int64,
 	case *model.MultilineStringValue:
 		return v.Value
 	default:
-		// report an error.
-		tc.reportErrorAtID(id,
+		tc.reportErrorAtID(dyn.ID,
 			"unexpected field type: field=%s got=%s wanted=%s",
 			fieldName, field.Ref.Value.ModelType(), model.StringType)
 		return ""
@@ -565,7 +558,7 @@ func (tc *templateCompiler) checkPrimitiveSchema(dyn *model.DynValue, schema *mo
 }
 
 func (tc *templateCompiler) checkListSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
-	lv := dyn.Value.(*model.ListValue)
+	lv := tc.listValue(dyn)
 	entrySchema := schema.Items
 	for _, entry := range lv.Entries {
 		tc.checkSchema(entry, entrySchema)
@@ -575,7 +568,7 @@ func (tc *templateCompiler) checkListSchema(dyn *model.DynValue, schema *model.O
 func (tc *templateCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
 	// Check whether the configured properties have been declared and if so, whether they
 	// schema-check correctly.
-	mv := dyn.Value.(*model.MapValue)
+	mv := tc.mapValue(dyn)
 	fields := make(map[string]*model.MapField, len(mv.Fields))
 	for _, f := range mv.Fields {
 		fields[f.Name] = f
@@ -701,10 +694,13 @@ func assignableToType(valType, schemaType string) bool {
 	if valType == schemaType || schemaType == model.AnyType {
 		return true
 	}
-	if valType == model.StringType &&
-		(schemaType == model.BytesType || schemaType == model.TimestampType) {
-		return true
+	if valType == model.StringType || valType == model.PlainTextType {
+		switch schemaType {
+		case model.BytesType, model.StringType, model.TimestampType, model.PlainTextType:
+			return true
+		}
 	}
+
 	if valType == model.UintType && schemaType == model.IntType {
 		return true
 	}
