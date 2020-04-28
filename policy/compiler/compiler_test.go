@@ -125,7 +125,7 @@ evaluator:
      ERROR: empty_evaluator:11:7: missing required field(s): [message]
       |     - match: noop
       | ......^
-     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null, schema=map
+     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null_type, schema=map
       | evaluator:
       | ..........^
      ERROR: empty_evaluator:9:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
@@ -134,7 +134,7 @@ evaluator:
      ERROR: empty_evaluator:11:14: expected bool match result, found: !error!
       |     - match: noop
       | .............^
-     ERROR: empty_evaluator:12:11: expected map type, found: null
+     ERROR: empty_evaluator:12:11: expected map type, found: null_type
       | evaluator:
       | ..........^`,
 		},
