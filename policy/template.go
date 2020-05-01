@@ -88,8 +88,7 @@ func (tmpl *template) FindFieldType(typeName, fieldName string) (*ref.FieldType,
 		}
 		if tk.isMap() {
 			return &ref.FieldType{
-				SupportsPresence: true,
-				Type:             tk.elemType.exprType(),
+				Type: tk.elemType.exprType(),
 			}, true
 		}
 		return nil, false
@@ -231,8 +230,7 @@ func (tType *tmplType) exprType() *exprpb.Type {
 
 func (tType *tmplType) fieldType() *ref.FieldType {
 	return &ref.FieldType{
-		SupportsPresence: true,
-		Type:             tType.exprType(),
+		Type: tType.exprType(),
 	}
 }
 

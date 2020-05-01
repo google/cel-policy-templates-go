@@ -18,22 +18,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/cel-policy-templates-go/policy/config"
+	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
-func TestDecoder_Instance(t *testing.T) {
+func TestParse_Instance(t *testing.T) {
 	tests := []struct {
 		ID  string
 		In  string
 		Out string
-		Err string
 	}{
 		{
-			ID: "bad_instance_prop",
-			In: `kinds: GrantTemplate`,
-			Err: `ERROR: instance:1:1: no such property: type=instance, property=kinds
-			| kinds: GrantTemplate
-			| ^`,
+			ID:  "bad_instance_prop",
+			In:  `kinds: GrantTemplate`,
+			Out: `1~2~kinds: 3~"GrantTemplate"`,
 		},
 		{
 			ID: "multiline_string",
@@ -52,8 +49,11 @@ rules:
 6~metadata:7~
 	8~name: 9~"multiline"
 10~rules:11~
-	- 12~13~greeting: 14~"hello world! how are you?\n"
-		15~farewell: 16~"goodnight \"moon\"!"`,
+	- 12~13~greeting: 14~>
+	    hello world!
+	    how are you?
+      15~farewell: 16~>
+	    goodnight "moon"!`,
 		},
 		{
 			ID: "bad_selector",
@@ -61,12 +61,10 @@ rules:
   matchLabels:
     - first
   matchExpression:`,
-			Err: `ERROR: instance:3:5: type not assignable to target: target=matchLabels, type=list
-			|     - first
-			| ....^
-		   ERROR: instance:4:3: no such property: type=selector, property=matchExpression
-			|   matchExpression:
-			| ..^`,
+			Out: `1~2~selector:3~
+	4~matchLabels:5~
+		- 6~"first"
+	7~matchExpression: 8~null`,
 		},
 		{
 			ID: "bad_match_expressions",
@@ -74,19 +72,15 @@ rules:
   matchExpressions:
     - {key: 1, operator: true, values: none}
     - {keys: bad, values: []}`,
-			Err: `ERROR: instance:3:40: type not assignable to target: target=list, type=string
-			|     - {key: 1, operator: true, values: none}
-			| .......................................^
-		   ERROR: instance:4:8: no such property: type=exprMatcher, property=keys
-			|     - {keys: bad, values: []}
-			| .......^`,
+			Out: `1~2~selector:3~
+			4~matchExpressions:5~
+				- 6~{7~key: 8~1, 9~operator: 10~true, 11~values: 12~"none"}
+				- 13~{14~keys: 15~"bad", 16~values: 17~[]}`,
 		},
 		{
-			ID: "bad_rules_type",
-			In: `rules: none`,
-			Err: `ERROR: instance:1:8: type not assignable to target: target=list, type=string
-			| rules: none
-			| .......^`,
+			ID:  "bad_rules_type",
+			In:  `rules: none`,
+			Out: `1~2~rules: 3~"none"`,
 		},
 		{
 			ID:  "missing_required_fields",
@@ -116,12 +110,12 @@ selector:
   matchExpressions:
     - {key: "Test", operator: "NotExists"}`,
 			Out: `1~2~apiVersion: 3~"policy.acme.co/v1"
-4~kind: 5~"GrantTemplate"
-6~metadata:7~
-	8~name: 9~"InvalidEnumValue"
-10~selector:
-	12~matchExpressions:
-	- {key: 16~"Test", operator: 18~"NotExists"}`,
+			4~kind: 5~"GrantTemplate"
+			6~metadata:7~
+				8~name: 9~"InvalidEnumValue"
+			10~selector:11~
+				12~matchExpressions:13~
+					- 14~{15~key: 16~"Test", 17~operator: 18~"NotExists"}`,
 		},
 		{
 			ID: "comments",
@@ -227,30 +221,30 @@ rules:
 			Out: `1~2~apiVersion: 3~"policy.acme.co/v1"
 4~kind: 5~"GrantTemplate"
 6~metadata:7~
-  8~name: 9~"AdminAccess"
-  10~namespace: 11~"organizations/123"
+	8~name: 9~"AdminAccess"
+	10~namespace: 11~"organizations/123"
 12~description: 13~"This template grants!"
-14~selector:
-  16~matchLabels:
-    18~env: 19~"prod"
-    20~reason: 21~"break-glass"
-  22~matchExpressions:
-    - {key: 26~"method", operator: 28~"In", values: [31~"hello", 32~"world"]}
-    - {key: 35~"service", operator: 37~"NotIn", values: [40~"debug-service"]}
+14~selector:15~
+	16~matchLabels:17~
+		18~env: 19~"prod"
+		20~reason: 21~"break-glass"
+	22~matchExpressions:23~
+		- 24~{25~key: 26~"method", 27~operator: 28~"In", 29~values: 30~[31~"hello", 32~"world"]}
+		- 33~{34~key: 35~"service", 36~operator: 37~"NotIn", 38~values: 39~[40~"debug-service"]}
 41~rules:42~
-  - 43~44~role: 45~"role/storage.bucket.admin"
-    46~members:47~
-      - 48~"group:admins@acme.co"
-      - 49~"user:ceo@acme.co"
-      - 50~51~nested:52~
-          53~key: 54~"value"
-          55~num: 56~123
-    57~condition:58~
-      59~expression: 60~"request.time < now"
-  - 61~62~role: 63~"role/storage.bucket.reader"
-    64~members:65~
-      - 66~"group:viewers@acme.co"
-      - 67~"user:ceo@acme.co"`,
+	- 43~44~role: 45~"role/storage.bucket.admin"
+		46~members:47~
+			- 48~"group:admins@acme.co"
+			- 49~"user:ceo@acme.co"
+			- 50~51~nested:52~
+					53~key: 54~"value"
+					55~num: 56~123
+		57~condition:58~
+			59~expression: 60~"request.time < now"
+	- 61~62~role: 63~"role/storage.bucket.reader"
+		64~members:65~
+			- 66~"group:viewers@acme.co"
+			- 67~"user:ceo@acme.co"`,
 		},
 	}
 
@@ -258,14 +252,14 @@ rules:
 		tc := tst
 		t.Run(tc.ID, func(tt *testing.T) {
 			in := strings.ReplaceAll(tc.In, "\t", "  ")
-			src := config.StringSource(in, "instance")
-			inst, errs := DecodeInstance(src)
+			src := model.StringSource(in, "instance")
+			inst, errs := Parse(src)
 			dbgErr := errs.ToDisplayString()
-			if !cmp(tc.Err, dbgErr) {
-				tt.Errorf("got:\n%s\nwanted:\n%s\n", dbgErr, tc.Err)
+			if dbgErr != "" {
+				tt.Fatal(dbgErr)
 			}
 			if tc.Out != "" {
-				dbg := EncodeInstance(inst, RenderDebugIDs)
+				dbg := Encode(inst, RenderDebugIDs)
 				if !cmp(tc.Out, dbg) {
 					tt.Errorf("got:\n%s\nwanted:\n%s\n", dbg, tc.Out)
 				}
@@ -274,12 +268,11 @@ rules:
 	}
 }
 
-func TestDecoder_Template(t *testing.T) {
+func TestParse_Template(t *testing.T) {
 	tests := []struct {
 		ID  string
 		In  string
 		Out string
-		Err string
 	}{
 		{
 			ID: "bad_props",
@@ -295,24 +288,18 @@ evaluator:
 		- match: b
 			decisions:
 			  - outputs: b`,
-			Err: `ERROR: template:1:1: no such property: type=template, property=kinds
-			| kinds: PolicyTemplate
-			| ^
-		 ERROR: template:3:3: no such property: type=validator, property=term
-			|   term: bad
-			| ..^
-		 ERROR: template:5:7: no such property: type=production, property=matches
-			|     - matches: b
-			| ......^
-		 ERROR: template:7:3: no such property: type=evaluator, property=env
-			|   env: default
-			| ..^
-		 ERROR: template:9:7: no such property: type=production, property=matches
-			|     - matches: a
-			| ......^
-		 ERROR: template:12:11: no such property: type=outputDecision, property=outputs
-			|         - outputs: b
-			| ..........^`,
+			Out: `1~2~kinds: 3~"PolicyTemplate"
+4~validator:5~
+	6~term: 7~"bad"
+	8~productions:9~
+		- 10~11~matches: 12~"b"
+13~evaluator:14~
+	15~env: 16~"default"
+	17~productions:18~
+		- 19~20~matches: 21~"a"
+		- 22~23~match: 24~"b"
+			25~decisions:26~
+				- 27~28~outputs: 29~"b"`,
 		},
 		{
 			ID: "evaluator_decisions",
@@ -330,19 +317,19 @@ evaluator:
 					output: b
 				- decisionRef: second
 				  output: c`,
-			Out: `1~2~evaluator:
+			Out: `1~2~evaluator:3~
 4~terms:5~
 	6~second: 7~"first"
-8~productions:
-	- 11~match: 12~"a"
+8~productions:9~
+	- 10~11~match: 12~"a"
 		13~decision: 14~"first"
 		15~decisionRef: 16~"second"
 		17~output: 18~"a"
-	- 20~match: 21~"b"
-		22~decisions:
-			- 25~decision: 26~"first"
+	- 19~20~match: 21~"b"
+		22~decisions:23~
+			- 24~25~decision: 26~"first"
 				27~output: 28~"b"
-				30~decisionRef: 31~"second"
+			- 29~30~decisionRef: 31~"second"
 				32~output: 33~"c"`,
 		},
 		{
@@ -395,7 +382,7 @@ validator:
 		- match: hi == '' && bye == ''
 			message: at least one property must be set on the rule.
 		- match: hi.startsWith("Goodbye")
-			message: greeting starts with a farewell word
+			message: !txt greeting starts with a farewell word
 			details: hi
 evaluator:
 	environment: default
@@ -419,44 +406,45 @@ evaluator:
 4~kind: 5~"PolicyTemplate"
 6~metadata:7~
 	8~name: 9~"MultilineTemplate"
-10~description: 11~"Policy for configuring greetings and farewells.\n"
+10~description: 11~>
+	Policy for configuring greetings and farewells.
 12~schema:13~
 	14~type: 15~"object"
 	16~properties:17~
-		18~greeting:19~
-			20~type: 21~"string"
-		22~farewell:23~
-			24~type: 25~"string"
-26~validator:
+	18~greeting:19~
+		20~type: 21~"string"
+	22~farewell:23~
+		24~type: 25~"string"
+26~validator:27~
 	28~environment: 29~"default"
 	30~terms:31~
-		32~hi: 33~"rule.greeting"
-		34~bye: 35~"rule.farewell"
-		36~uint: 37~9223372036854775808
-	38~productions:
-		- 41~match: 42~"hi == '' && bye == ''"
-			43~message: 44~"at least one property must be set on the rule."
-		- 46~match: 47~"hi.startsWith(\"Goodbye\")"
-			48~message: 49~"greeting starts with a farewell word"
-			50~details: 51~"hi"
-52~evaluator:
+	32~hi: 33~"rule.greeting"
+	34~bye: 35~"rule.farewell"
+	36~uint: 37~9223372036854775808
+	38~productions:39~
+	- 40~41~match: 42~"hi == '' && bye == ''"
+		43~message: 44~"at least one property must be set on the rule."
+	- 45~46~match: 47~"hi.startsWith(\"Goodbye\")"
+		48~message: 49~!txt "greeting starts with a farewell word"
+		50~details: 51~"hi"
+52~evaluator:53~
 	54~environment: 55~"default"
 	56~terms:57~
-		58~hi: 59~"rule.greeting"
-		60~bye: 61~"rule.farewell"
-	62~productions:
-		- 65~match: 66~"hi != '' && bye == ''"
-			67~decision: 68~"policy.acme.welcome"
-			69~output: 70~"hi"
-		- 72~match: 73~"bye != '' && hi == ''"
-			74~decision: 75~"policy.acme.depart"
-			76~output: 77~"bye"
-		- 79~match: 80~"hi != '' && bye != ''"
-			81~decisions:
-				- 84~decision: 85~"policy.acme.welcome"
-					86~output: 87~"hi"
-				- 89~decision: 90~"policy.acme.depart"
-					91~output: 92~"bye"`,
+	58~hi: 59~"rule.greeting"
+	60~bye: 61~"rule.farewell"
+	62~productions:63~
+	- 64~65~match: 66~"hi != '' && bye == ''"
+		67~decision: 68~"policy.acme.welcome"
+		69~output: 70~"hi"
+	- 71~72~match: 73~"bye != '' && hi == ''"
+		74~decision: 75~"policy.acme.depart"
+		76~output: 77~"bye"
+	- 78~79~match: 80~"hi != '' && bye != ''"
+		81~decisions:82~
+		- 83~84~decision: 85~"policy.acme.welcome"
+			86~output: 87~"hi"
+		- 88~89~decision: 90~"policy.acme.depart"
+			91~output: 92~"bye"`,
 		},
 	}
 
@@ -464,14 +452,14 @@ evaluator:
 		tc := tst
 		t.Run(tc.ID, func(tt *testing.T) {
 			in := strings.ReplaceAll(tc.In, "\t", "  ")
-			src := config.StringSource(in, "template")
-			tmpl, errs := DecodeTemplate(src)
+			src := model.StringSource(in, "template")
+			tmpl, errs := Parse(src)
 			dbgErr := errs.ToDisplayString()
-			if !cmp(tc.Err, dbgErr) {
-				tt.Errorf("got:\n%s\nwanted:\n%s\n", dbgErr, tc.Err)
+			if dbgErr != "" {
+				tt.Fatal(dbgErr)
 			}
 			if tc.Out != "" {
-				dbg := EncodeTemplate(tmpl, RenderDebugIDs)
+				dbg := Encode(tmpl, RenderDebugIDs)
 				if !cmp(tc.Out, dbg) {
 					tt.Errorf("got:\n%s\nwanted:\n%s\n", dbg, tc.Out)
 				}
