@@ -30,4 +30,8 @@ type Registry interface {
 	FindEnv(name string) (*cel.Env, bool)
 
 	RegisterEnv(name string, env *cel.Env) error
+
+	FindTemplate(name string) (*model.Template, bool)
+
+	RegisterTemplate(name string, tmpl *model.Template) error
 }

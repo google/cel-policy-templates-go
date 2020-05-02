@@ -480,6 +480,9 @@ const (
 	// supported by CEL Policy Templates.
 	AnyType = "any"
 
+	// ExprType represents a compiled CEL expression value.
+	ExprType = "expr"
+
 	// BoolType is equivalent to the CEL 'bool' type.
 	BoolType = "bool"
 

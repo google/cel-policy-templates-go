@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"time"
 
+	"github.com/google/cel-go/cel"
+
 	structpb "github.com/golang/protobuf/ptypes/struct"
 )
 
@@ -346,6 +348,23 @@ func (UintValue) ModelType() string {
 func (v UintValue) Equal(other ValueNode) bool {
 	otherV, ok := other.(UintValue)
 	return ok && v == otherV
+}
+
+type ExprValue cel.Ast
+
+func (*ExprValue) isValueNode() {}
+
+func (e *ExprValue) ModelType() string {
+	return ExprType
+}
+
+func (e *ExprValue) Equal(other ValueNode) bool {
+	otherE, ok := other.(*ExprValue)
+	ea := cel.Ast(*e)
+	otherEA := cel.Ast(*otherE)
+	expr, _ := cel.AstToString(&ea)
+	otherExpr, _ := cel.AstToString(&otherEA)
+	return ok && expr == otherExpr
 }
 
 // Null is a singleton NullValue instance.

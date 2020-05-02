@@ -227,7 +227,7 @@ func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 		p.collectMetadata(id, key)
 		keyType, found := yamlTypes[key.LongTag()]
 		if !found || keyType != "string" {
-			p.reportErrorAtID(id, "invalid map key type: %v", key.LongTag())
+			p.reportErrorAtID(id, "unsupported map key type: %v", key.LongTag())
 			continue
 		}
 		prop := key.Value

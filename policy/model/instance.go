@@ -14,3 +14,52 @@
 
 // Package model contains abstract representations of policy template and instance config objects.
 package model
+
+func NewInstance() *Instance {
+	return &Instance{
+		Metadata:  &InstanceMetadata{},
+		Selectors: []Selector{},
+		Rules:     []Rule{},
+	}
+}
+
+type Instance struct {
+	APIVersion  string
+	Kind        string
+	Metadata    *InstanceMetadata
+	Description string
+	Selectors   []Selector
+	Rules       []Rule
+}
+
+type InstanceMetadata struct {
+	UID       string
+	Name      string
+	Namespace string
+}
+
+type Selector interface {
+	isSelector()
+}
+
+type LabelSelector struct {
+	LabelValues map[string]string
+}
+
+func (*LabelSelector) isSelector() {}
+
+type ExpressionSelector struct {
+	Label    string
+	Operator string
+	Values   []interface{}
+}
+
+func (*ExpressionSelector) isSelector() {}
+
+type Rule interface {
+	isRule()
+}
+
+type CustomRule DynValue
+
+func (*CustomRule) isRule() {}

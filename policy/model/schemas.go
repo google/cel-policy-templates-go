@@ -131,6 +131,9 @@ var (
 	// SchemaDef defines an Open API Schema definition in terms of an Open API Schema.
 	SchemaDef *OpenAPISchema
 
+	// AnySchema indicates that the value may be of any type.
+	AnySchema *OpenAPISchema
+
 	// InstanceSchema defines a basic schema for defining Policy Instances where the instance rule
 	// references a TemplateSchema derived from the Instance's template kind.
 	InstanceSchema *OpenAPISchema
@@ -311,7 +314,7 @@ properties:
               type: string
             operator:
               type: string
-              enum: ["Exists", "In", "NotIn"]
+              enum: ["DoesNotExist", "Exists", "In", "NotIn"]
             values:
               type: array
               items: {}
@@ -326,6 +329,8 @@ properties:
 )
 
 func init() {
+	AnySchema = NewOpenAPISchema()
+
 	InstanceSchema = NewOpenAPISchema()
 	in := strings.ReplaceAll(instanceSchemaYaml, "\t", "  ")
 	err := yaml.Unmarshal([]byte(in), InstanceSchema)
