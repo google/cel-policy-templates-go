@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
@@ -169,11 +170,11 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 			enc.write("|").writeLineComment(v.ID).write("\n")
 		}
 		enc.write(dyn.Raw).writeLineComment(v.ID)
-	case model.StringValue:
+	case string:
 		isPrimitive = true
-		str := strconv.Quote(string(dyn))
+		str := strconv.Quote(dyn)
 		enc.write(str).writeLineComment(v.ID)
-	case model.NullValue:
+	case types.Null:
 		isPrimitive = true
 		enc.writeLineComment(v.ID)
 	default:

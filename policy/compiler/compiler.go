@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"time"
@@ -65,7 +66,9 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 	if tmpl.RuleTypes != nil {
 		err := c.reg.RegisterSchema("#templateRuleSchema", tmpl.RuleTypes.Schema)
 		if err != nil {
-			dc.reportError(common.NoLocation, err.Error())
+			dc.reportErrorAtID(dyn.ID,
+				"error registering schema %s: %s",
+				 tmplName, err.Error())
 		}
 	}
 	dc.checkSchema(dyn, model.InstanceSchema)
@@ -288,7 +291,7 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	}
 	elem, found = m.GetField("default")
 	if found {
-		schema.DefaultValue = tc.convertToType(elem.Ref.ID, elem.Ref.Value, schema)
+		schema.DefaultValue = tc.convertToSchemaType(elem.Ref.ID, elem.Ref.Value, schema)
 	}
 }
 
@@ -345,7 +348,7 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(prods *model.DynValu
 		}
 		// Note: this format will not yet work with structured outputs for the validator.
 		outTxt := fmt.Sprintf("{'message': %s, 'details': %s}", msgTxt, detTxt)
-		outDyn := model.NewDynValue(p.ID, model.StringValue(outTxt))
+		outDyn := model.NewDynValue(p.ID, outTxt)
 		ast := tc.compileExpr(outDyn, env, true)
 		outDec := model.NewDecision()
 		outDec.Decision = "policy.invalid"
@@ -510,23 +513,19 @@ func (tc *templateCompiler) compileExpr(
 	dyn *model.DynValue, env *cel.Env, strict bool) *cel.Ast {
 	loc, _ := tc.info.LocationByID(dyn.ID)
 	switch v := dyn.Value.(type) {
-	case model.BoolValue:
-		relSrc := tc.src.Relative(strconv.FormatBool(bool(v)), loc.Line(), loc.Column())
+	case bool:
+		relSrc := tc.src.Relative(strconv.FormatBool(v), loc.Line(), loc.Column())
 		ast, _ := env.CompileSource(relSrc)
 		return ast
-	case model.DoubleValue:
-		relSrc := tc.src.Relative(
-			strconv.FormatFloat(float64(v), 'f', -1, 64),
-			loc.Line(), loc.Column())
+	case float64:
+		relSrc := tc.src.Relative(strconv.FormatFloat(v, 'f', -1, 64), loc.Line(), loc.Column())
 		ast, _ := env.CompileSource(relSrc)
 		return ast
-	case model.IntValue:
-		relSrc := tc.src.Relative(
-			strconv.FormatInt(int64(v), 10),
-			loc.Line(), loc.Column())
+	case int64:
+		relSrc := tc.src.Relative(strconv.FormatInt(v, 10), loc.Line(), loc.Column())
 		ast, _ := env.CompileSource(relSrc)
 		return ast
-	case model.NullValue:
+	case types.Null:
 		relSrc := tc.src.Relative("null", loc.Line(), loc.Column())
 		ast, _ := env.CompileSource(relSrc)
 		return ast
@@ -547,8 +546,8 @@ func (tc *templateCompiler) compileExpr(
 		txt := model.PlainTextValue(v.Value)
 		dyn = model.NewDynValue(dyn.ID, txt)
 		return tc.compileExpr(dyn, env, true)
-	case model.StringValue:
-		ast := tc.compileExprString(dyn.ID, string(v), loc, env, strict)
+	case string:
+		ast := tc.compileExprString(dyn.ID, v, loc, env, strict)
 		if ast != nil || strict {
 			return ast
 		}
@@ -556,7 +555,7 @@ func (tc *templateCompiler) compileExpr(
 		txt := model.PlainTextValue(v)
 		dyn = model.NewDynValue(dyn.ID, txt)
 		return tc.compileExpr(dyn, env, true)
-	case model.UintValue:
+	case uint64:
 		relSrc := tc.src.Relative(
 			strconv.FormatUint(uint64(v), 10)+"u",
 			loc.Line(), loc.Column())
@@ -613,13 +612,13 @@ type dynCompiler struct {
 	errors *common.Errors
 }
 
-func (dc *dynCompiler) strValue(dyn *model.DynValue) model.StringValue {
-	s, ok := dyn.Value.(model.StringValue)
+func (dc *dynCompiler) strValue(dyn *model.DynValue) string {
+	s, ok := dyn.Value.(string)
 	if ok {
 		return s
 	}
-	dc.reportErrorAtID(dyn.ID, "expected string type, found: %s", dyn.Value.ModelType())
-	return model.StringValue("")
+	dc.reportErrorAtID(dyn.ID, "expected string type, found: %s", dyn.ModelType())
+	return ""
 }
 
 func (dc *dynCompiler) listValue(dyn *model.DynValue) *model.ListValue {
@@ -627,7 +626,7 @@ func (dc *dynCompiler) listValue(dyn *model.DynValue) *model.ListValue {
 	if ok {
 		return l
 	}
-	dc.reportErrorAtID(dyn.ID, "expected list type, found: %s", dyn.Value.ModelType())
+	dc.reportErrorAtID(dyn.ID, "expected list type, found: %s", dyn.ModelType())
 	return model.NewListValue()
 }
 
@@ -636,7 +635,7 @@ func (dc *dynCompiler) mapValue(dyn *model.DynValue) *model.MapValue {
 	if ok {
 		return m
 	}
-	dc.reportErrorAtID(dyn.ID, "expected map type, found: %s", dyn.Value.ModelType())
+	dc.reportErrorAtID(dyn.ID, "expected map type, found: %s", dyn.ModelType())
 	return model.NewMapValue()
 }
 
@@ -650,16 +649,16 @@ func (dc *dynCompiler) mapFieldStringValueOrEmpty(dyn *model.DynValue,
 		return ""
 	}
 	switch v := field.Ref.Value.(type) {
-	case model.StringValue:
-		return string(v)
+	case string:
+		return v
 	case model.PlainTextValue:
 		return string(v)
 	case *model.MultilineStringValue:
 		return v.Value
 	default:
 		dc.reportErrorAtID(dyn.ID,
-			"unexpected field type: field=%s got=%s wanted=%s",
-			fieldName, field.Ref.Value.ModelType(), model.StringType)
+			"unexpected field type: field=%s got=%T wanted=%s",
+			fieldName, field.Ref.Value, model.StringType)
 		return ""
 	}
 }
@@ -667,7 +666,7 @@ func (dc *dynCompiler) mapFieldStringValueOrEmpty(dyn *model.DynValue,
 func (dc *dynCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
 	schema = dc.resolveSchemaRef(dyn, schema)
 	modelType := schema.ModelType()
-	valueType := dyn.Value.ModelType()
+	valueType := dyn.ModelType()
 	if !assignableToType(valueType, modelType) {
 		dc.reportErrorAtID(dyn.ID,
 			"value not assignable to schema type: value=%s, schema=%s",
@@ -701,13 +700,14 @@ func (dc *dynCompiler) resolveSchemaRef(dyn *model.DynValue, schema *model.OpenA
 
 func (dc *dynCompiler) checkPrimitiveSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
 	// Ensure the value matches the schema type and format.
-	dyn.Value = dc.convertToType(dyn.ID, dyn.Value, schema)
+	dyn.Value = dc.convertToSchemaType(dyn.ID, dyn.Value, schema)
 
 	// Check whether the input value is one of the enumerated types.
 	if len(schema.Enum) > 0 {
 		for _, e := range schema.Enum {
-			val := dc.convertToType(dyn.ID, e, schema)
-			if dyn.Value.Equal(val) {
+			val := dc.convertToSchemaType(dyn.ID, e, schema)
+			// Note: deep equality won't work for list, map values.
+			if reflect.DeepEqual(dyn.Value, val) {
 				return
 			}
 		}
@@ -769,11 +769,8 @@ func (dc *dynCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPI
 			continue
 		}
 		field := model.NewMapField(0, prop)
-		field.Ref.Value = dc.convertToType(dyn.ID,
+		field.Ref.Value = dc.convertToSchemaType(dyn.ID,
 			propSchema.DefaultValue, propSchema)
-		fmt.Println(
-			fmt.Sprintf("prop %s default: %v", prop, propSchema.DefaultValue),
-		)
 		dc.checkSchema(field.Ref, propSchema)
 		mv.AddField(field)
 	}
@@ -781,131 +778,102 @@ func (dc *dynCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPI
 
 func (dc *dynCompiler) convertToPrimitive(dyn *model.DynValue) interface{} {
 	switch v := dyn.Value.(type) {
-	case model.BoolValue:
-		return bool(v)
-	case model.BytesValue:
-		return []byte(v)
-	case model.DoubleValue:
-		return float64(v)
-	case model.IntValue:
-		return int64(v)
+	case bool, []byte, float64, int64, string, uint64, time.Time, types.Null:
+		return v
 	case *model.MultilineStringValue:
 		return v.Value
-	case model.NullValue:
-		return model.Null
 	case model.PlainTextValue:
 		return string(v)
-	case model.StringValue:
-		return string(v)
-	case model.TimestampValue:
-		return time.Time(v)
-	case model.UintValue:
-		return uint64(v)
 	default:
-		dc.reportErrorAtID(dyn.ID,
-			"expected primitive type, found=%s",
-			dyn.Value.ModelType())
+		dc.reportErrorAtID(dyn.ID, "expected primitive type, found=%s", dyn.ModelType())
 		return ""
 	}
 }
 
-func (dc *dynCompiler) convertToType(id int64,
-	val interface{}, schema *model.OpenAPISchema) model.ValueNode {
-	vn, isValueNode := val.(model.ValueNode)
-	if !isValueNode {
-		switch v := val.(type) {
-		case bool:
-			vn = model.BoolValue(v)
-		case float32:
-			vn = model.DoubleValue(v)
-		case float64:
-			vn = model.DoubleValue(v)
-		case int:
-			vn = model.IntValue(v)
-		case int32:
-			vn = model.IntValue(v)
-		case int64:
-			vn = model.IntValue(v)
-		case string:
-			vn = model.StringValue(v)
-		case []interface{}:
-			lv := model.NewListValue()
-			itemSchema := schema.Items
-			if itemSchema == nil {
-				itemSchema = model.AnySchema
-			}
-			for _, e := range v {
-				ev := dc.convertToType(id, e, schema.Items)
-				elem := model.NewEmptyDynValue()
-				elem.Value = ev
-				lv.Entries = append(lv.Entries, elem)
-			}
-			return lv
-		case map[string]interface{}:
-			mv := model.NewMapValue()
-			for name, e := range v {
-				f := model.NewMapField(0, name)
-				propSchema, found := schema.FindProperty(name)
-				if !found {
-					propSchema = model.AnySchema
-					if schema.AdditionalProperties != nil {
-						propSchema = schema.AdditionalProperties
-					}
-				}
-				f.Ref.Value = dc.convertToType(id, e, propSchema)
-			}
-			return mv
+func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
+	schema *model.OpenAPISchema) interface{} {
+	switch v := val.(type) {
+	case bool, float64, int64, uint64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case string, model.PlainTextValue, *model.MultilineStringValue:
+		str := ""
+		switch s := v.(type) {
+		case model.PlainTextValue:
+			str = string(s)
+		case *model.MultilineStringValue:
+			str = s.Value
 		default:
-			dc.reportErrorAtID(id,
-				"unsupported type value for schema property. value=%v (%T), schema=%v",
-				val, val, schema)
+			str = s.(string)
 		}
-	}
-	switch schema.ModelType() {
-	case model.TimestampType:
-		str, ok := vn.(model.StringValue)
-		if !ok {
-			dc.reportErrorAtID(id,
-				"cannot convert value to timestamp. value=%s (%T)",
-				val, val)
-			return vn
-		}
-		t, err := time.Parse(time.RFC3339, string(str))
-		if err != nil {
-			dc.reportErrorAtID(id,
-				"timestamp must be RFC3339 format, e.g. YYYY-DD-MMTHH:MM:SSZ: value=%s", vn)
-			return vn
-		}
-		return model.TimestampValue(t)
-	case model.BytesType:
-		str, ok := vn.(model.StringValue)
-		if !ok {
-			dc.reportErrorAtID(id,
-				"cannot convert value to bytes. value=%s (%T)",
-				val, val)
-			return vn
-		}
-		if schema.Format == "byte" {
-			b, err := base64.StdEncoding.DecodeString(string(str))
+		switch schema.ModelType() {
+		case model.TimestampType:
+			t, err := time.Parse(time.RFC3339, str)
 			if err != nil {
 				dc.reportErrorAtID(id,
-					"byte encoding must be base64. value=%s", str)
-				return vn
+					"timestamp must be RFC3339 format, e.g. YYYY-DD-MMTHH:MM:SSZ: value=%s",
+					 str)
+				return str
 			}
-			return model.BytesValue(b)
+			return t
+		case model.BytesType:
+			if schema.Format == "byte" {
+				b, err := base64.StdEncoding.DecodeString(str)
+				if err != nil {
+					dc.reportErrorAtID(id,
+						"byte encoding must be base64. value=%s", str)
+					return str
+				}
+				return b
+			}
+			return []byte(str)
+		default:
+			return v
 		}
-		b := []byte(string(str))
-		return model.BytesValue(b)
+	case []interface{}:
+		lv := model.NewListValue()
+		itemSchema := schema.Items
+		if itemSchema == nil {
+			itemSchema = model.AnySchema
+		}
+		for _, e := range v {
+			ev := dc.convertToSchemaType(id, e, schema.Items)
+			elem := model.NewEmptyDynValue()
+			elem.Value = ev
+			lv.Entries = append(lv.Entries, elem)
+		}
+		return lv
+	case map[string]interface{}:
+		mv := model.NewMapValue()
+		for name, e := range v {
+			f := model.NewMapField(0, name)
+			propSchema, found := schema.FindProperty(name)
+			if !found {
+				propSchema = model.AnySchema
+				if schema.AdditionalProperties != nil {
+					propSchema = schema.AdditionalProperties
+				}
+			}
+			f.Ref.Value = dc.convertToSchemaType(id, e, propSchema)
+		}
+		return mv
+	case *model.ListValue, *model.MapValue:
+		return v
+	default:
+		dc.reportErrorAtID(id,
+			"unsupported type value for schema property. value=%v (%T), schema=%v",
+			val, val, schema)
+		return v
 	}
-	return vn
 }
 
 func (dc *dynCompiler) reportIssues(iss *cel.Issues) {
 	dc.errors = dc.errors.Append(iss.Errors())
-}
-
-func (dc *dynCompiler) reportError(loc common.Location, msg string, args ...interface{}) {
-	dc.errors.ReportError(loc, msg, args...)
 }
 
 func (dc *dynCompiler) reportErrorAtID(id int64, msg string, args ...interface{}) {

@@ -64,7 +64,7 @@ rules:
 			Out: `1~2~selector:3~
 	4~matchLabels:5~
 		- 6~"first"
-	7~matchExpression: 8~null`,
+	7~matchExpression: 8~`,
 		},
 		{
 			ID: "bad_match_expressions",
@@ -178,7 +178,7 @@ rules:
   - value: true
   - value: 1.2
   - value: "1000"
-  - value: null`,
+  - value:`,
 			Out: `1~2~apiVersion: 3~"policy.acme.co/v1"
 4~kind: 5~"AdmissionTemplate"
 6~metadata:7~
@@ -187,7 +187,7 @@ rules:
 	- 12~13~value: 14~true
 	- 15~16~value: 17~1.2
 	- 18~19~value: 20~"1000"
-	- 21~22~value: 23~null`,
+	- 21~22~value: 23~`,
 		},
 		{
 			ID: "canonical",

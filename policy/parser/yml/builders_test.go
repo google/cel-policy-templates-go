@@ -47,7 +47,7 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 				Name: "role",
 				Ref: &model.DynValue{
 					ID:    3,
-					Value: model.StringValue("role/storage.bucket.admin"),
+					Value: "role/storage.bucket.admin",
 				},
 			},
 			{
@@ -59,7 +59,7 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 						Entries: []*model.DynValue{
 							{
 								ID:    6,
-								Value: model.StringValue("user:wiley@acme.co"),
+								Value: "user:wiley@acme.co",
 							},
 						},
 					},

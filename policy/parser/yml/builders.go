@@ -17,6 +17,7 @@ package yml
 import (
 	"fmt"
 
+	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
@@ -192,28 +193,15 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 	if b.lb != nil {
 		return valueNotAssignableToType(model.ListType, val)
 	}
-	var vn model.ValueNode
+	var dv interface{}
 	switch v := val.(type) {
-	case bool:
-		vn = model.BoolValue(v)
-	case float64:
-		vn = model.DoubleValue(v)
-	case int64:
-		vn = model.IntValue(v)
-	case string:
-		vn = model.StringValue(v)
-	case uint64:
-		vn = model.UintValue(v)
-	case *model.MultilineStringValue:
-		vn = v
-	case model.PlainTextValue:
-		vn = v
-	case model.NullValue:
-		vn = v
+	case bool, float64, int64, string, uint64,
+	*model.MultilineStringValue, model.PlainTextValue, types.Null:
+		dv = v
 	default:
 		return valueNotAssignableToType(model.AnyType, v)
 	}
-	b.dyn.Value = vn
+	b.dyn.Value = dv
 	return nil
 }
 

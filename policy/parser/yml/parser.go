@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/common"
+	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
@@ -170,7 +171,7 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 			err = ref.assign(val)
 		}
 	case model.NullType:
-		err = ref.assign(model.Null)
+		err = ref.assign(types.NullValue)
 	case model.StringType:
 		if node.Style == yaml.FoldedStyle ||
 			node.Style == yaml.LiteralStyle {
