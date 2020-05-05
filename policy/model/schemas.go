@@ -211,8 +211,12 @@ properties:
       namespace:
         type: string
         default: "default"
-    additionalProperties:
-      type: string
+      etag:
+        type: string
+      labels:
+        type: object
+        additionalProperties:
+          type: string
   description:
     type: string
   schema:

@@ -69,7 +69,6 @@ evaluator:`,
 			In: `apiVersion: policy.acme.co/v1
 metadata:
   name: ErrantTemplate
-  lastModified: 2020-04-28T21:27:00
 description: >
   Policy for configuring greetings and farewells.
 schema:
@@ -101,31 +100,31 @@ evaluator:
       decision: policy.acme.welcome
       output: hi`,
 			Err: `
-     ERROR: errant:14:14: value not assignable to schema type: value=int, schema=string
+     ERROR: errant:13:14: value not assignable to schema type: value=int, schema=string
       |       enum: [1, 3.2, false, "okay"]
       | .............^
-     ERROR: errant:14:17: value not assignable to schema type: value=double, schema=string
+     ERROR: errant:13:17: value not assignable to schema type: value=double, schema=string
       |       enum: [1, 3.2, false, "okay"]
       | ................^
-     ERROR: errant:14:22: value not assignable to schema type: value=bool, schema=string
+     ERROR: errant:13:22: value not assignable to schema type: value=bool, schema=string
       |       enum: [1, 3.2, false, "okay"]
       | .....................^
-     ERROR: errant:20:5: field redeclaration error: uintVal
+     ERROR: errant:19:5: field redeclaration error: uintVal
       |     uintVal: 9223372036854775809
       | ....^
      ERROR: errant:1:1: missing required field(s): [kind]
       | apiVersion: policy.acme.co/v1
       | ^
-     ERROR: errant:17:13: undefined field 'grating'
+     ERROR: errant:16:13: undefined field 'grating'
       |     hi: rule.grating
       | ............^
-     ERROR: errant:22:26: undeclared reference to 'byte' (in container '')
+     ERROR: errant:21:26: undeclared reference to 'byte' (in container '')
       |     - match: hi == '' && byte == ''
       | .........................^
-     ERROR: errant:27:7: undeclared reference to 'bye' (in container '')
+     ERROR: errant:26:7: undeclared reference to 'bye' (in container '')
       |       bye != ''
       | ......^
-     ERROR: errant:28:13: undefined field 'greting'
+     ERROR: errant:27:13: undefined field 'greting'
       |       ? rule.greting
       | ............^`,
 		},

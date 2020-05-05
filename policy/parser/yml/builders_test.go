@@ -40,34 +40,19 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 	m0.id(6)
 	m0.assign("user:wiley@acme.co")
 
-	want := &model.MapValue{
-		Fields: []*model.MapField{
-			{
-				ID:   2,
-				Name: "role",
-				Ref: &model.DynValue{
-					ID:    3,
-					Value: "role/storage.bucket.admin",
-				},
-			},
-			{
-				ID:   4,
-				Name: "members",
-				Ref: &model.DynValue{
-					ID: 5,
-					Value: &model.ListValue{
-						Entries: []*model.DynValue{
-							{
-								ID:    6,
-								Value: "user:wiley@acme.co",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	role := model.NewField(2, "role")
+	role.Ref = model.NewDynValue(3, "role/storage.bucket.admin")
+
+	members := model.NewField(4, "members")
+	memberList := model.NewListValue()
+	memberList.Entries = append(memberList.Entries,
+		model.NewDynValue(6, "user:wiley@acme.co"))
+	members.Ref = model.NewDynValue(5, memberList)
+
+	want := model.NewMapValue()
+	want.AddField(role)
+	want.AddField(members)
 	if !reflect.DeepEqual(sv.Fields, want.Fields) {
-		t.Errorf("got %v, wanted %v", sv, want)
+		t.Errorf("got %v, wanted %v", sv.Fields, want.Fields)
 	}
 }

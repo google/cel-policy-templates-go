@@ -68,7 +68,7 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 		if err != nil {
 			dc.reportErrorAtID(dyn.ID,
 				"error registering schema %s: %s",
-				 tmplName, err.Error())
+				tmplName, err.Error())
 		}
 	}
 	dc.checkSchema(dyn, model.InstanceSchema)
@@ -729,7 +729,7 @@ func (dc *dynCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPI
 	// Check whether the configured properties have been declared and if so, whether they
 	// schema-check correctly.
 	mv := dc.mapValue(dyn)
-	fields := make(map[string]*model.MapField, len(mv.Fields))
+	fields := make(map[string]*model.Field, len(mv.Fields))
 	for _, f := range mv.Fields {
 		_, found := fields[f.Name]
 		if found {
@@ -768,7 +768,7 @@ func (dc *dynCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPI
 		if defined {
 			continue
 		}
-		field := model.NewMapField(0, prop)
+		field := model.NewField(0, prop)
 		field.Ref.Value = dc.convertToSchemaType(dyn.ID,
 			propSchema.DefaultValue, propSchema)
 		dc.checkSchema(field.Ref, propSchema)
@@ -817,7 +817,7 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 			if err != nil {
 				dc.reportErrorAtID(id,
 					"timestamp must be RFC3339 format, e.g. YYYY-DD-MMTHH:MM:SSZ: value=%s",
-					 str)
+					str)
 				return str
 			}
 			return t
@@ -851,7 +851,7 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 	case map[string]interface{}:
 		mv := model.NewMapValue()
 		for name, e := range v {
-			f := model.NewMapField(0, name)
+			f := model.NewField(0, name)
 			propSchema, found := schema.FindProperty(name)
 			if !found {
 				propSchema = model.AnySchema

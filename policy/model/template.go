@@ -95,10 +95,6 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 	if rt == nil {
 		return nil, false
 	}
-	simple, found := simpleExprTypes[typeName]
-	if found {
-		return simple, true
-	}
 	st, found := rt.ruleSchemaTypes.types[typeName]
 	if found {
 		return st.ExprType(), true

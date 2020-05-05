@@ -16,7 +16,6 @@ package model
 
 import (
 	"fmt"
-	"reflect"
 
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
@@ -93,7 +92,7 @@ func (st *schemaType) TypeName() string {
 		return st.objectPath
 	case MapType:
 		// Hack for making sure field types can be resolved.
-		if len(st.schema.Properties) > 0 {
+		if st.isObject() {
 			return st.objectPath
 		}
 	}
@@ -149,330 +148,6 @@ func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
 			types[t.elemType.objectPath] = t.elemType
 		}
 	}
-}
-
-type baseVal struct {
-	sType *schemaType
-	value interface{}
-}
-
-func (*baseVal) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	return nil, fmt.Errorf("unsupported native conversion to: %v", typeDesc)
-}
-
-func (*baseVal) ConvertToType(t ref.Type) ref.Val {
-	return types.NewErr("unsupported type conversion to: %v", t)
-}
-
-func (*baseVal) Equal(other ref.Val) ref.Val {
-	return types.NewErr("unsupported equality test between instances")
-}
-
-func (v *baseVal) Type() ref.Type {
-	return v.sType
-}
-
-func (v *baseVal) Value() interface{} {
-	return v.value
-}
-
-func newEmptyList() *baseList {
-	schema := NewOpenAPISchema()
-	schema.Type = "array"
-	sType := &schemaType{
-		schema: schema,
-	}
-	return &baseList{
-		baseVal: &baseVal{
-			sType: sType,
-			value: []ref.Val{},
-		},
-		elems: []ref.Val{},
-	}
-}
-
-type baseList struct {
-	*baseVal
-	elems []ref.Val
-}
-
-func (a *baseList) Add(other ref.Val) ref.Val {
-	oArr, isArr := other.(traits.Lister)
-	if !isArr {
-		return types.ValOrErr(other, "unsupported operation")
-	}
-	szRight := len(a.elems)
-	szLeft := int(oArr.Size().(types.Int))
-	sz := szRight + szLeft
-	combo := make([]ref.Val, sz, sz)
-	for i := 0; i < szRight; i++ {
-		combo[i] = a.Get(types.Int(i))
-	}
-	for i := 0; i < szLeft; i++ {
-		combo[i+szRight] = oArr.Get(types.Int(i))
-	}
-	return types.NewValueList(types.DefaultTypeAdapter, combo)
-}
-
-func (a *baseList) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	// Non-list conversion.
-	if typeDesc.Kind() != reflect.Slice && typeDesc.Kind() != reflect.Array {
-		return nil, fmt.Errorf("type conversion error from list to '%v'", typeDesc)
-	}
-
-	// If the list is already assignable to the desired type return it.
-	if reflect.TypeOf(a).AssignableTo(typeDesc) {
-		return a, nil
-	}
-
-	// List conversion.
-	otherElem := typeDesc.Elem()
-
-	// Allow the element ConvertToNative() function to determine whether conversion is possible.
-	sz := len(a.elems)
-	nativeList := reflect.MakeSlice(typeDesc, int(sz), int(sz))
-	for i := 0; i < sz; i++ {
-		elem := a.elems[i]
-		nativeElemVal, err := elem.ConvertToNative(otherElem)
-		if err != nil {
-			return nil, err
-		}
-		nativeList.Index(int(i)).Set(reflect.ValueOf(nativeElemVal))
-	}
-	return nativeList.Interface(), nil
-}
-
-func (a *baseList) Contains(val ref.Val) ref.Val {
-	if types.IsUnknownOrError(val) {
-		return val
-	}
-	var err ref.Val
-	sz := len(a.elems)
-	for i := 0; i < sz; i++ {
-		elem := a.elems[i]
-		cmp := elem.Equal(val)
-		b, ok := cmp.(types.Bool)
-		if !ok && err == nil {
-			err = types.ValOrErr(cmp, "no such overload")
-		}
-		if b == types.True {
-			return types.True
-		}
-	}
-	if err != nil {
-		return err
-	}
-	return types.False
-}
-
-func (a *baseList) Equal(other ref.Val) ref.Val {
-	oArr, isArr := other.(traits.Lister)
-	if !isArr {
-		return types.ValOrErr(other, "unsupported operation")
-	}
-	sz := types.Int(len(a.elems))
-	if sz != oArr.Size() {
-		return types.False
-	}
-	for i := types.Int(0); i < sz; i++ {
-		cmp := a.Get(i).Equal(oArr.Get(i))
-		if cmp != types.True {
-			return cmp
-		}
-	}
-	return types.True
-}
-
-func (a *baseList) Get(idx ref.Val) ref.Val {
-	iv, isInt := idx.(types.Int)
-	if !isInt {
-		return types.ValOrErr(idx, "unsupported index: %v", idx)
-	}
-	i := int(iv)
-	if i < 0 || i >= len(a.elems) {
-		return types.NewErr("index out of bounds: %v", idx)
-	}
-	return a.elems[i]
-}
-
-func (a *baseList) Iterator() traits.Iterator {
-	return &baseListIterator{
-		baseVal: &baseVal{},
-		getter:  a.Get,
-		sz:      len(a.elems),
-	}
-}
-
-func (a *baseList) Size() ref.Val {
-	return types.Int(len(a.elems))
-}
-
-type baseListIterator struct {
-	*baseVal
-	getter func(idx ref.Val) ref.Val
-	sz     int
-	idx    int
-}
-
-func (it *baseListIterator) HasNext() ref.Val {
-	if it.idx < it.sz {
-		return types.True
-	}
-	return types.False
-}
-
-func (it *baseListIterator) Next() ref.Val {
-	v := it.getter(types.Int(it.idx))
-	it.idx++
-	return v
-}
-
-func (it *baseListIterator) Type() ref.Type {
-	return types.IteratorType
-}
-
-func newEmptyObject(sType *schemaType) *baseMap {
-	return &baseMap{
-		baseVal: &baseVal{
-			sType: sType,
-			value: map[ref.Val]ref.Val{},
-		},
-		entries: map[ref.Val]ref.Val{},
-	}
-}
-
-func newEmptyMap() *baseMap {
-	schema := NewOpenAPISchema()
-	schema.Type = "object"
-	sType := &schemaType{
-		schema: schema,
-	}
-	return newEmptyObject(sType)
-}
-
-type baseMap struct {
-	*baseVal
-	entries map[ref.Val]ref.Val
-}
-
-func (m *baseMap) Contains(key ref.Val) ref.Val {
-	v, found := m.Find(key)
-	if v != nil && types.IsUnknownOrError(v) {
-		return v
-	}
-	if found {
-		return types.True
-	}
-	return types.False
-}
-
-func (m *baseMap) Equal(other ref.Val) ref.Val {
-	oMap, isMap := other.(traits.Mapper)
-	if !isMap {
-		return types.ValOrErr(other, "unsupported operation")
-	}
-	if m.Size() != oMap.Size() {
-		return types.False
-	}
-	it := m.Iterator()
-	for it.HasNext() == types.True {
-		k := it.Next()
-		v := m.Get(k)
-		ov := oMap.Get(k)
-		vEq := v.Equal(ov)
-		if vEq != types.True {
-			return vEq
-		}
-	}
-	return types.True
-}
-
-func (m *baseMap) Find(key ref.Val) (ref.Val, bool) {
-	v, found := m.entries[key]
-	if found {
-		return v, true
-	}
-	// If the key type doesn't match what's expected and that's the reason for not finding the
-	// entry, then raise an error. Only applies to maps where the key type can be something
-	// other than a string.
-	if !m.sType.isObject() {
-		// key and elem types are only set if there are additional properties.
-		if key.Type().TypeName() != m.sType.keyType.TypeName() {
-			return types.ValOrErr(key, "unsupported key: %v", key), true
-		}
-		return nil, false
-	}
-	// For object types the key type must be a string.
-	k, isStr := key.(types.String)
-	if !isStr {
-		return types.ValOrErr(key, "unsupported key: %v", key), true
-	}
-	// Preserve proto-like safe traversal for well-defined message types where if a field is
-	// defined, but not set, the field type's zero-value is returned.
-	fType, found := m.sType.fields[string(k)]
-	if !found {
-		return nil, false
-	}
-	if fType.isObject() {
-		return newEmptyObject(fType), true
-	}
-	defaultVal, found := typeDefaults[fType.TypeName()]
-	if found {
-		return defaultVal, true
-	}
-	return nil, false
-}
-
-func (m *baseMap) Get(key ref.Val) ref.Val {
-	v, found := m.Find(key)
-	if found {
-		return v
-	}
-	return types.ValOrErr(key, "no such key: %v", key)
-}
-
-func (m *baseMap) IsSet(key ref.Val) ref.Val {
-	return m.Contains(key)
-}
-
-func (m *baseMap) Iterator() traits.Iterator {
-	keys := make([]ref.Val, len(m.entries))
-	i := 0
-	for k := range m.entries {
-		keys[i] = k
-		i++
-	}
-	return &baseMapIterator{
-		baseVal: &baseVal{},
-		keys:    keys,
-	}
-}
-
-func (m *baseMap) Size() ref.Val {
-	return types.Int(len(m.entries))
-}
-
-type baseMapIterator struct {
-	*baseVal
-	keys []ref.Val
-	idx  int
-}
-
-func (it *baseMapIterator) HasNext() ref.Val {
-	if it.idx < len(it.keys) {
-		return types.True
-	}
-	return types.False
-}
-
-func (it *baseMapIterator) Next() ref.Val {
-	key := it.keys[it.idx]
-	it.idx++
-	return key
-}
-
-func (it *baseMapIterator) Type() ref.Type {
-	return types.IteratorType
 }
 
 const (
@@ -541,7 +216,7 @@ var (
 		IntType:    numericTraits,
 		StringType: bytesTraits,
 		ListType:   containerTraits | traits.AdderType,
-		MapType:    containerTraits | traits.FieldTesterType,
+		MapType:    containerTraits,
 	}
 	typeDefaults = map[string]ref.Val{
 		BoolType:   types.False,
@@ -549,8 +224,8 @@ var (
 		DoubleType: types.Double(0),
 		IntType:    types.Int(0),
 		StringType: types.String(""),
-		ListType:   newEmptyList(),
-		MapType:    newEmptyMap(),
+		ListType:   NewListValue(),
+		MapType:    NewMapValue(),
 	}
 	simpleExprTypes = map[string]*exprpb.Type{
 		BoolType:      decls.Bool,

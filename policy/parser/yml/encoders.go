@@ -71,15 +71,15 @@ func (enc *encoder) String() string {
 	return enc.buf.String()
 }
 
-func (enc *encoder) writeMap(mv *model.MapValue) *encoder {
+func (enc *encoder) writeFields(fields []*model.Field) *encoder {
 	inList := enc.inList()
-	for i, f := range mv.Fields {
+	for i, f := range fields {
 		enc.writeField(f).maybeEOL()
 		if i == 0 && inList {
 			enc.startMap()
 		}
 	}
-	if len(mv.Fields) > 0 && inList {
+	if len(fields) > 0 && inList {
 		enc.endMap()
 	}
 	return enc
@@ -153,7 +153,16 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 			enc.eol()
 			enc.indent()
 		}
-		enc.writeMap(dyn)
+		enc.writeFields(dyn.Fields)
+		if eol {
+			enc.dedent()
+		}
+	case *model.ObjectValue:
+		if eol {
+			enc.eol()
+			enc.indent()
+		}
+		enc.writeFields(dyn.Fields)
 		if eol {
 			enc.dedent()
 		}
@@ -188,12 +197,12 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 	return enc
 }
 
-func (enc *encoder) writeInlineField(field *model.MapField) *encoder {
+func (enc *encoder) writeInlineField(field *model.Field) *encoder {
 	return enc.writeFieldName(field.ID, field.Name).write(" ").
 		writeInlineValue(field.Ref)
 }
 
-func (enc *encoder) writeField(field *model.MapField) *encoder {
+func (enc *encoder) writeField(field *model.Field) *encoder {
 	enc.writeFieldName(field.ID, field.Name)
 	if field.Ref.EncodeStyle == model.FlowValueStyle {
 		enc.writeInlineValue(field.Ref).maybeEOL()
