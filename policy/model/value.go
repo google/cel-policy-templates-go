@@ -74,6 +74,7 @@ type DynValue struct {
 	EncodeStyle EncodeStyle
 }
 
+// ModelType returns the policy model type of the dyn value.
 func (dv *DynValue) ModelType() string {
 	switch dv.Value.(type) {
 	case bool:
@@ -104,6 +105,11 @@ func (dv *DynValue) ModelType() string {
 	return "unknown"
 }
 
+// ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
+// and Go-native types.
+//
+// The default behavior of this method is to first convert to a CEL type which has a well-defined
+// set of conversion behaviors and proxy to the CEL ConvertToNative method for the type.
 func (dv *DynValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
 	ev := dv.ExprValue()
 	if types.IsError(ev) {
@@ -112,9 +118,11 @@ func (dv *DynValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) 
 	return ev.ConvertToNative(typeDesc)
 }
 
+// Equal returns whether the dyn value is equal to a given CEL value.
 func (dv *DynValue) Equal(other ref.Val) ref.Val {
 	dvType := dv.Type()
 	otherType := other.Type()
+	// Preserve CEL's homogeneous equality constraint.
 	if dvType.TypeName() != otherType.TypeName() {
 		return types.MaybeNoSuchOverloadErr(other)
 	}
@@ -137,6 +145,7 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 	}
 }
 
+// ExprValue converts the DynValue into a CEL value.
 func (dv *DynValue) ExprValue() ref.Val {
 	switch v := dv.Value.(type) {
 	case ref.Val:
@@ -168,6 +177,7 @@ func (dv *DynValue) ExprValue() ref.Val {
 	}
 }
 
+// Type returns the CEL type for the given value.
 func (dv *DynValue) Type() ref.Type {
 	switch v := dv.Value.(type) {
 	case ref.Val:
@@ -224,6 +234,7 @@ func (sv *structValue) GetField(name string) (*Field, bool) {
 	return field, found
 }
 
+// IsSet returns whether the given field, which is defined, has also been set.
 func (sv *structValue) IsSet(key ref.Val) ref.Val {
 	k, ok := key.(types.String)
 	if !ok {
@@ -234,6 +245,7 @@ func (sv *structValue) IsSet(key ref.Val) ref.Val {
 	return celBool(found)
 }
 
+// NewObjectValue creates a struct value with a schema type and returns the empty ObjectValue.
 func NewObjectValue(sType *schemaType) *ObjectValue {
 	return &ObjectValue{
 		structValue: newStructValue(),
@@ -241,15 +253,21 @@ func NewObjectValue(sType *schemaType) *ObjectValue {
 	}
 }
 
+// ObjectValue is a struct with a custom schema type which indicates the fields and types
+// associated with the structure.
 type ObjectValue struct {
 	*structValue
 	objectType *schemaType
 }
 
+// ConvertToNative is an implementation of the CEL ref.Val interface method used to convert from
+// CEL types to Go-native struct like types.
 func (o *ObjectValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	return nil, nil
+	// TODO: Implement support for object conversion akin to what's done for maps.
+	return nil, fmt.Errorf("object conversion to native types not yet supported")
 }
 
+// ConvertToType is an implementation of the CEL ref.Val interface method.
 func (o *ObjectValue) ConvertToType(t ref.Type) ref.Val {
 	if t == types.TypeType {
 		return types.NewObjectTypeValue(o.objectType.TypeName())
@@ -260,9 +278,11 @@ func (o *ObjectValue) ConvertToType(t ref.Type) ref.Val {
 	return types.NewErr("type conversion error from '%s' to '%s'", o.Type(), t)
 }
 
+// Equal returns true if the two object types are equal and their field values are equal.
 func (o *ObjectValue) Equal(other ref.Val) ref.Val {
+	// Preserve CEL's homogeneous equality semantics.
 	if o.objectType.TypeName() != other.Type().TypeName() {
-		return types.NoSuchOverloadErr()
+		return types.MaybeNoSuchOverloadErr(other)
 	}
 	o2 := other.(traits.Indexer)
 	for name, field := range o.fieldMap {
@@ -277,6 +297,11 @@ func (o *ObjectValue) Equal(other ref.Val) ref.Val {
 	return types.True
 }
 
+// Get returns the value of the specified field.
+//
+// If the field is set, its value is returned. If the field is not set, the zero value for the
+// field is returned thus allowing for safe-traversal and preserving proto-like field traversal
+// semantics for Open API Schema backed types.
 func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	n, ok := name.(types.String)
 	if !ok {
@@ -301,10 +326,12 @@ func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	return types.NewErr("no default for object path: %s", fieldType.objectPath)
 }
 
+// Type returns the CEL type value of the object.
 func (o *ObjectValue) Type() ref.Type {
 	return o.objectType
 }
 
+// Value returns the Go-native representation of the object.
 func (o *ObjectValue) Value() interface{} {
 	return o
 }
@@ -321,6 +348,18 @@ type MapValue struct {
 	*structValue
 }
 
+// ConvertToObject produces an ObjectValue from the MapValue with the associated schema type.
+//
+// The conversion is shallow and the memory shared between the Object and Map as all references
+// to the map are expected to be replaced with the Object reference.
+func (m *MapValue) ConvertToObject(sType *schemaType) *ObjectValue {
+	return &ObjectValue{
+		structValue: m.structValue,
+		objectType:  sType,
+	}
+}
+
+// Contains returns whether the given key is contained in the MapValue.
 func (m *MapValue) Contains(key ref.Val) ref.Val {
 	v, found := m.Find(key)
 	if v != nil && types.IsUnknownOrError(v) {
@@ -329,10 +368,14 @@ func (m *MapValue) Contains(key ref.Val) ref.Val {
 	return celBool(found)
 }
 
+// ConvertToNative converts the MapValue type to a native go type.s
 func (m *MapValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	return nil, nil
+	// TODO: Implement map conversion logic similar to what's supported within CEL's
+	// default map type.
+	return nil, fmt.Errorf("map conversion to native types not yet supported")
 }
 
+// ConvertToType converts the MapValue to another CEL type, if possible.
 func (m *MapValue) ConvertToType(t ref.Type) ref.Val {
 	switch t {
 	case types.MapType:
@@ -343,6 +386,8 @@ func (m *MapValue) ConvertToType(t ref.Type) ref.Val {
 	return types.NewErr("type conversion error from '%s' to '%s'", m.Type(), t)
 }
 
+// Equal returns true if the maps are of the same size, have the same keys, and the key-values
+// from each map are equal.
 func (m *MapValue) Equal(other ref.Val) ref.Val {
 	oMap, isMap := other.(traits.Mapper)
 	if !isMap {
@@ -366,6 +411,7 @@ func (m *MapValue) Equal(other ref.Val) ref.Val {
 	return types.True
 }
 
+// Find returns the value for the key in the map, if found.
 func (m *MapValue) Find(name ref.Val) (ref.Val, bool) {
 	// Currently only maps with string keys are supported as this is best aligned with JSON,
 	// and also much simpler to support.
@@ -381,6 +427,7 @@ func (m *MapValue) Find(name ref.Val) (ref.Val, bool) {
 	return nil, false
 }
 
+// Get returns the value for the key in the map, or error if not found.
 func (m *MapValue) Get(key ref.Val) ref.Val {
 	v, found := m.Find(key)
 	if found {
@@ -389,6 +436,9 @@ func (m *MapValue) Get(key ref.Val) ref.Val {
 	return types.ValOrErr(key, "no such key: %v", key)
 }
 
+// Iterator produces a traits.Iterator which walks over the map keys.
+//
+// The Iterator is frequently used within comprehensions.
 func (m *MapValue) Iterator() traits.Iterator {
 	keys := make([]ref.Val, len(m.fieldMap))
 	i := 0
@@ -402,14 +452,17 @@ func (m *MapValue) Iterator() traits.Iterator {
 	}
 }
 
+// Size returns the number of keys in the map.
 func (m *MapValue) Size() ref.Val {
 	return types.Int(len(m.Fields))
 }
 
+// Type returns the CEL ref.Type for the map.
 func (m *MapValue) Type() ref.Type {
 	return types.MapType
 }
 
+// Value returns the Go-native representation of the MapValue.
 func (m *MapValue) Value() interface{} {
 	return m
 }
@@ -420,6 +473,7 @@ type baseMapIterator struct {
 	idx  int
 }
 
+// HasNext implements the traits.Iterator interface method.
 func (it *baseMapIterator) HasNext() ref.Val {
 	if it.idx < len(it.keys) {
 		return types.True
@@ -427,12 +481,14 @@ func (it *baseMapIterator) HasNext() ref.Val {
 	return types.False
 }
 
+// Next implements the traits.Iterator interface method.
 func (it *baseMapIterator) Next() ref.Val {
 	key := it.keys[it.idx]
 	it.idx++
 	return key
 }
 
+// Type implements the CEL ref.Val interface metohd.
 func (it *baseMapIterator) Type() ref.Type {
 	return types.IteratorType
 }
@@ -466,6 +522,7 @@ type ListValue struct {
 	Entries []*DynValue
 }
 
+// Add concatenates two lists together to produce a new CEL list value.
 func (lv *ListValue) Add(other ref.Val) ref.Val {
 	oArr, isArr := other.(traits.Lister)
 	if !isArr {
@@ -484,6 +541,10 @@ func (lv *ListValue) Add(other ref.Val) ref.Val {
 	return types.NewValueList(types.DefaultTypeAdapter, combo)
 }
 
+// Contains returns whether the input `val` is equal to an element in the list.
+//
+// If any pair-wise comparison between the input value and the list element is an error, the
+// operation will return an error.
 func (lv *ListValue) Contains(val ref.Val) ref.Val {
 	if types.IsUnknownOrError(val) {
 		return val
@@ -507,6 +568,8 @@ func (lv *ListValue) Contains(val ref.Val) ref.Val {
 	return types.False
 }
 
+// ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
+// and Go-native array-like types.
 func (lv *ListValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
 	// Non-list conversion.
 	if typeDesc.Kind() != reflect.Slice && typeDesc.Kind() != reflect.Array {
@@ -535,6 +598,7 @@ func (lv *ListValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error)
 	return nativeList.Interface(), nil
 }
 
+// ConvertToType converts the ListValue to another CEL type.
 func (lv *ListValue) ConvertToType(t ref.Type) ref.Val {
 	switch t {
 	case types.ListType:
@@ -545,6 +609,8 @@ func (lv *ListValue) ConvertToType(t ref.Type) ref.Val {
 	return types.NewErr("type conversion error from '%s' to '%s'", ListType, t)
 }
 
+// Equal returns true if two lists are of the same size, and the values at each index are also
+// equal.
 func (lv *ListValue) Equal(other ref.Val) ref.Val {
 	oArr, isArr := other.(traits.Lister)
 	if !isArr {
@@ -563,6 +629,9 @@ func (lv *ListValue) Equal(other ref.Val) ref.Val {
 	return types.True
 }
 
+// Get returns the value at the given index.
+//
+// If the index is negative or greater than the size of the list, an error is returned.
 func (lv *ListValue) Get(idx ref.Val) ref.Val {
 	iv, isInt := idx.(types.Int)
 	if !isInt {
@@ -575,6 +644,7 @@ func (lv *ListValue) Get(idx ref.Val) ref.Val {
 	return lv.Entries[i].ExprValue()
 }
 
+// Iterator produces a traits.Iterator suitable for use in CEL comprehension macros.
 func (lv *ListValue) Iterator() traits.Iterator {
 	return &baseListIterator{
 		getter: lv.Get,
@@ -582,14 +652,17 @@ func (lv *ListValue) Iterator() traits.Iterator {
 	}
 }
 
+// Size returns the number of elements in the list.
 func (lv *ListValue) Size() ref.Val {
 	return types.Int(len(lv.Entries))
 }
 
+// Type returns the CEL ref.Type for the list.
 func (lv *ListValue) Type() ref.Type {
 	return types.ListType
 }
 
+// Value returns the Go-native value.
 func (lv *ListValue) Value() interface{} {
 	return lv
 }

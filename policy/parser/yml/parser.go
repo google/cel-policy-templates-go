@@ -19,11 +19,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/cel-policy-templates-go/policy/model"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
 // Parse decodes a YAML source object to a model.ParsedValue.

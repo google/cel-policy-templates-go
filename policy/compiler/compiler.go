@@ -43,6 +43,9 @@ type Compiler struct {
 	reg Registry
 }
 
+// CompileInstance type-checks and validates a parsed representation of a policy instance whose
+// format and validation logic is also determined by policy template referenced in the policy
+// instance 'kind' field.
 func (c *Compiler) CompileInstance(src *model.Source,
 	inst *model.ParsedValue) (*model.Instance, *common.Errors) {
 	return c.newInstanceCompiler(src, inst).compile()
@@ -75,6 +78,7 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 	return &instanceCompiler{
 		dynCompiler: dc,
 		dyn:         dyn,
+		rt:          tmpl.RuleTypes,
 	}
 }
 
@@ -102,6 +106,7 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 type instanceCompiler struct {
 	*dynCompiler
 	dyn *model.DynValue
+	rt  *model.RuleTypes
 }
 
 func (ic *instanceCompiler) compile() (*model.Instance, *common.Errors) {
@@ -124,17 +129,21 @@ func (ic *instanceCompiler) compile() (*model.Instance, *common.Errors) {
 		ruleSet := ic.listValue(rules.Ref)
 		cinst.Rules = make([]model.Rule, len(ruleSet.Entries))
 		for i, rule := range ruleSet.Entries {
-			// TODO: handle CEL expression compilation.
-			custRuleVal := model.CustomRule(*rule)
-			cinst.Rules[i] = &custRuleVal
+			cinst.Rules[i] = ic.convertToRule(rule)
 		}
 	}
+
 	// TODO: handle running the validator on a per-rule basis once the evaluator is implemented.
 	errs := ic.errors.GetErrors()
 	if len(errs) > 0 {
 		return nil, ic.errors
 	}
 	return cinst, ic.errors
+}
+
+func (ic *instanceCompiler) convertToRule(dyn *model.DynValue) model.Rule {
+	// TODO: handle CEL expression compilation, possibly as an observer
+	return ic.rt.ConvertToRule(dyn)
 }
 
 func (ic *instanceCompiler) compileMetadata(dyn *model.DynValue,

@@ -22,6 +22,9 @@ import (
 
 // Registry defines an interface for looking up schema and environment references during source
 // compilation.
+//
+// TODO: Move this to a common location, provide reference implmentation to be shared by compiler
+// and evaluators.
 type Registry interface {
 	FindSchema(name string) (*model.OpenAPISchema, bool)
 

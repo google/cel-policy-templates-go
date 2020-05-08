@@ -15,6 +15,7 @@
 // Package model contains abstract representations of policy template and instance config objects.
 package model
 
+// NewInstance returns an empty policy instance.
 func NewInstance() *Instance {
 	return &Instance{
 		Metadata:  &InstanceMetadata{},
@@ -23,43 +24,75 @@ func NewInstance() *Instance {
 	}
 }
 
+// Instance represents the compiled, type-checked, and validated policy instance.
 type Instance struct {
 	APIVersion  string
 	Kind        string
 	Metadata    *InstanceMetadata
 	Description string
-	Selectors   []Selector
-	Rules       []Rule
+
+	// Selectors determine whether the instance applies to the current evaluation context.
+	// All Selector values must return true for the policy instance to be included in policy
+	// evaluation step.
+	Selectors []Selector
+
+	// Rules represent reference data to be used in evaluation policy decisions.
+	// Depending on the nature of the decisions being emitted, some or all Rules may be evaluated
+	// and the results aggregated according to the decision types being emitted.
+	Rules []Rule
 }
 
+// InstanceMetadata contains standard metadata which may be associated with an instance.
 type InstanceMetadata struct {
 	UID       string
 	Name      string
 	Namespace string
 }
 
+// Selector interface indicates a pre-formatted instance selection condition.
+//
+// The implementations of such conditions are expected to be platform specific.
+//
+// Note, if there is a clear need to tailor selection more heavily, then the schema definition
+// for a selector should be moved into the Template schema.
 type Selector interface {
 	isSelector()
 }
 
+// LabelSelector matches key, value pairs of labels associated with the evaluation context.
+//
+// In Kubernetes, the such labels are provided as 'resource.labels'.
 type LabelSelector struct {
+	// LabelValues provides a map of the string keys and values expected.
 	LabelValues map[string]string
 }
 
 func (*LabelSelector) isSelector() {}
 
+// ExpressionSelector matches a label against an existence condition.
 type ExpressionSelector struct {
-	Label    string
+	// Label name being matched.
+	Label string
+
+	// Operator determines the evaluation behavior. Must be one of Exists, NotExists, In, or NotIn.
 	Operator string
-	Values   []interface{}
+
+	// Values set, optional, to be used in the NotIn, In set membership tests.
+	Values []interface{}
 }
 
 func (*ExpressionSelector) isSelector() {}
 
+// Rule interface indicates the value types that may be used as Rule instances.
+//
+// Note, the code within the main repo deals exclusively with custom, yaml-based rules, but it
+// is entirely possible to use a protobuf message as the rule container.
 type Rule interface {
 	isRule()
 }
 
+// CustomRule extends the DynValue and represents rules whose type definition is provided in the
+// policy template.
 type CustomRule DynValue
 
 func (*CustomRule) isRule() {}
