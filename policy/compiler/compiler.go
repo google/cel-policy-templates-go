@@ -65,6 +65,7 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 	tmpl, found := c.reg.FindTemplate(tmplName)
 	if !found {
 		// report an error and return
+		dc.reportError("no such template: %s", tmplName)
 	}
 	if tmpl.RuleTypes != nil {
 		err := c.reg.RegisterSchema("#templateRuleSchema", tmpl.RuleTypes.Schema)
@@ -885,12 +886,20 @@ func (dc *dynCompiler) reportIssues(iss *cel.Issues) {
 	dc.errors = dc.errors.Append(iss.Errors())
 }
 
+func (dc *dynCompiler) reportError(msg string, args ...interface{}) {
+	dc.reportErrorAtLoc(common.NoLocation, msg, args...)
+}
+
+func (dc *dynCompiler) reportErrorAtLoc(loc common.Location, msg string, args ...interface{}) {
+	dc.errors.ReportError(loc, msg, args...)
+}
+
 func (dc *dynCompiler) reportErrorAtID(id int64, msg string, args ...interface{}) {
 	loc, found := dc.info.LocationByID(id)
 	if !found {
 		loc = common.NoLocation
 	}
-	dc.errors.ReportError(loc, msg, args...)
+	dc.reportErrorAtLoc(loc, msg, args...)
 }
 
 func assignableToType(valType, schemaType string) bool {
