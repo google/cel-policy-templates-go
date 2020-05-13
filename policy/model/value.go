@@ -15,10 +15,16 @@
 package model
 
 import (
-	"bytes"
+	"fmt"
+	"reflect"
 	"time"
 
-	structpb "github.com/golang/protobuf/ptypes/struct"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/common/types/traits"
+
+	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 // EncodeStyle is a hint for string encoding of parsed values.
@@ -55,7 +61,7 @@ func NewEmptyDynValue() *DynValue {
 }
 
 // NewDynValue returns a DynValue that corresponds to a parse node id and value.
-func NewDynValue(id int64, val ValueNode) *DynValue {
+func NewDynValue(id int64, val interface{}) *DynValue {
 	return &DynValue{ID: id, Value: val}
 }
 
@@ -64,87 +70,441 @@ func NewDynValue(id int64, val ValueNode) *DynValue {
 // Template, and whether there are schemas which might enforce a more rigid type definition.
 type DynValue struct {
 	ID          int64
-	Value       ValueNode
+	Value       interface{}
 	EncodeStyle EncodeStyle
 }
 
-// ValueNode is a marker interface used to indicate which value types may populate a DynValue's
-// Value field.
-type ValueNode interface {
-	isValueNode()
+// ModelType returns the policy model type of the dyn value.
+func (dv *DynValue) ModelType() string {
+	switch dv.Value.(type) {
+	case bool:
+		return BoolType
+	case []byte:
+		return BytesType
+	case float64:
+		return DoubleType
+	case int64:
+		return IntType
+	case string:
+		return StringType
+	case uint64:
+		return UintType
+	case types.Null:
+		return NullType
+	case time.Time:
+		return TimestampType
+	case PlainTextValue:
+		return PlainTextType
+	case *MultilineStringValue:
+		return StringType
+	case *ListValue:
+		return ListType
+	case *MapValue:
+		return MapType
+	}
+	return "unknown"
+}
 
-	// ModelType indicates the core CEL type represented by the value.
-	ModelType() string
+// ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
+// and Go-native types.
+//
+// The default behavior of this method is to first convert to a CEL type which has a well-defined
+// set of conversion behaviors and proxy to the CEL ConvertToNative method for the type.
+func (dv *DynValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	ev := dv.ExprValue()
+	if types.IsError(ev) {
+		return nil, ev.(*types.Err)
+	}
+	return ev.ConvertToNative(typeDesc)
+}
 
-	// Equal indicates whether two ValueNodes are equal.
-	Equal(ValueNode) bool
+// Equal returns whether the dyn value is equal to a given CEL value.
+func (dv *DynValue) Equal(other ref.Val) ref.Val {
+	dvType := dv.Type()
+	otherType := other.Type()
+	// Preserve CEL's homogeneous equality constraint.
+	if dvType.TypeName() != otherType.TypeName() {
+		return types.MaybeNoSuchOverloadErr(other)
+	}
+	switch v := dv.Value.(type) {
+	case ref.Val:
+		return v.Equal(other)
+	case PlainTextValue:
+		return celBool(string(v) == other.Value().(string))
+	case *MultilineStringValue:
+		return celBool(v.Value == other.Value().(string))
+	case time.Time:
+		otherTimestamp := other.Value().(*tpb.Timestamp)
+		otherTime, err := ptypes.Timestamp(otherTimestamp)
+		if err != nil {
+			return types.NewErr(err.Error())
+		}
+		return celBool(v.Equal(otherTime))
+	default:
+		return celBool(reflect.DeepEqual(v, other.Value()))
+	}
+}
+
+// ExprValue converts the DynValue into a CEL value.
+func (dv *DynValue) ExprValue() ref.Val {
+	switch v := dv.Value.(type) {
+	case ref.Val:
+		return v
+	case bool:
+		return types.Bool(v)
+	case []byte:
+		return types.Bytes(v)
+	case float64:
+		return types.Double(v)
+	case int64:
+		return types.Int(v)
+	case string:
+		return types.String(v)
+	case uint64:
+		return types.Uint(v)
+	case PlainTextValue:
+		return types.String(string(v))
+	case *MultilineStringValue:
+		return types.String(v.Value)
+	case time.Time:
+		tbuf, err := ptypes.TimestampProto(v)
+		if err != nil {
+			return types.NewErr(err.Error())
+		}
+		return types.Timestamp{Timestamp: tbuf}
+	default:
+		return types.NewErr("no such expr type: %T", v)
+	}
+}
+
+// Type returns the CEL type for the given value.
+func (dv *DynValue) Type() ref.Type {
+	switch v := dv.Value.(type) {
+	case ref.Val:
+		return v.Type()
+	case bool:
+		return types.BoolType
+	case []byte:
+		return types.BytesType
+	case float64:
+		return types.DoubleType
+	case int64:
+		return types.IntType
+	case string, PlainTextValue, *MultilineStringValue:
+		return types.StringType
+	case uint64:
+		return types.UintType
+	case time.Time:
+		return types.TimestampType
+	}
+	return types.ErrType
+}
+
+// PlainTextValue is a text string literal which must not be treated as an expression.
+type PlainTextValue string
+
+// MultilineStringValue is a multiline string value which has been parsed in a way which omits
+// whitespace as well as a raw form which preserves whitespace.
+type MultilineStringValue struct {
+	Value string
+	Raw   string
+}
+
+func newStructValue() *structValue {
+	return &structValue{
+		Fields:   []*Field{},
+		fieldMap: map[string]*Field{},
+	}
+}
+
+type structValue struct {
+	Fields   []*Field
+	fieldMap map[string]*Field
+}
+
+// AddField appends a MapField to the MapValue and indexes the field by name.
+func (sv *structValue) AddField(field *Field) {
+	sv.Fields = append(sv.Fields, field)
+	sv.fieldMap[field.Name] = field
+}
+
+// GetField returns a MapField by name if one exists.
+func (sv *structValue) GetField(name string) (*Field, bool) {
+	field, found := sv.fieldMap[name]
+	return field, found
+}
+
+// IsSet returns whether the given field, which is defined, has also been set.
+func (sv *structValue) IsSet(key ref.Val) ref.Val {
+	k, ok := key.(types.String)
+	if !ok {
+		return types.MaybeNoSuchOverloadErr(key)
+	}
+	name := string(k)
+	_, found := sv.fieldMap[name]
+	return celBool(found)
+}
+
+// NewObjectValue creates a struct value with a schema type and returns the empty ObjectValue.
+func NewObjectValue(sType *schemaType) *ObjectValue {
+	return &ObjectValue{
+		structValue: newStructValue(),
+		objectType:  sType,
+	}
+}
+
+// ObjectValue is a struct with a custom schema type which indicates the fields and types
+// associated with the structure.
+type ObjectValue struct {
+	*structValue
+	objectType *schemaType
+}
+
+// ConvertToNative is an implementation of the CEL ref.Val interface method used to convert from
+// CEL types to Go-native struct like types.
+func (o *ObjectValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	// TODO: Implement support for object conversion akin to what's done for maps.
+	return nil, fmt.Errorf("object conversion to native types not yet supported")
+}
+
+// ConvertToType is an implementation of the CEL ref.Val interface method.
+func (o *ObjectValue) ConvertToType(t ref.Type) ref.Val {
+	if t == types.TypeType {
+		return types.NewObjectTypeValue(o.objectType.TypeName())
+	}
+	if t.TypeName() == o.objectType.TypeName() {
+		return o
+	}
+	return types.NewErr("type conversion error from '%s' to '%s'", o.Type(), t)
+}
+
+// Equal returns true if the two object types are equal and their field values are equal.
+func (o *ObjectValue) Equal(other ref.Val) ref.Val {
+	// Preserve CEL's homogeneous equality semantics.
+	if o.objectType.TypeName() != other.Type().TypeName() {
+		return types.MaybeNoSuchOverloadErr(other)
+	}
+	o2 := other.(traits.Indexer)
+	for name, field := range o.fieldMap {
+		k := types.String(name)
+		ov := o2.Get(k)
+		v := field.Ref.ExprValue()
+		vEq := v.Equal(ov)
+		if vEq != types.True {
+			return vEq
+		}
+	}
+	return types.True
+}
+
+// Get returns the value of the specified field.
+//
+// If the field is set, its value is returned. If the field is not set, the zero value for the
+// field is returned thus allowing for safe-traversal and preserving proto-like field traversal
+// semantics for Open API Schema backed types.
+func (o *ObjectValue) Get(name ref.Val) ref.Val {
+	n, ok := name.(types.String)
+	if !ok {
+		return types.MaybeNoSuchOverloadErr(n)
+	}
+	nameStr := string(n)
+	field, found := o.fieldMap[nameStr]
+	if found {
+		return field.Ref.ExprValue()
+	}
+	fieldType, found := o.objectType.fields[nameStr]
+	if !found {
+		return types.NewErr("no such field: %s", nameStr)
+	}
+	if fieldType.isObject() {
+		return NewObjectValue(fieldType)
+	}
+	fieldDefault, found := typeDefaults[fieldType.TypeName()]
+	if found {
+		return fieldDefault
+	}
+	return types.NewErr("no default for object path: %s", fieldType.objectPath)
+}
+
+// Type returns the CEL type value of the object.
+func (o *ObjectValue) Type() ref.Type {
+	return o.objectType
+}
+
+// Value returns the Go-native representation of the object.
+func (o *ObjectValue) Value() interface{} {
+	return o
 }
 
 // NewMapValue returns an empty MapValue.
 func NewMapValue() *MapValue {
 	return &MapValue{
-		Fields:   []*MapField{},
-		fieldMap: map[string]*MapField{},
+		structValue: newStructValue(),
 	}
 }
 
 // MapValue declares an object with a set of named fields whose values are dynamically typed.
 type MapValue struct {
-	Fields   []*MapField
-	fieldMap map[string]*MapField
+	*structValue
 }
 
-func (*MapValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (*MapValue) ModelType() string {
-	return MapType
+// ConvertToObject produces an ObjectValue from the MapValue with the associated schema type.
+//
+// The conversion is shallow and the memory shared between the Object and Map as all references
+// to the map are expected to be replaced with the Object reference.
+func (m *MapValue) ConvertToObject(sType *schemaType) *ObjectValue {
+	return &ObjectValue{
+		structValue: m.structValue,
+		objectType:  sType,
+	}
 }
 
-// Equal returns true if the other value is a MapValue, has the same properties, and each
-// property value is Equal.
-func (m *MapValue) Equal(other ValueNode) bool {
-	otherSv, ok := other.(*MapValue)
-	if !ok || len(m.Fields) != len(otherSv.Fields) {
-		return false
+// Contains returns whether the given key is contained in the MapValue.
+func (m *MapValue) Contains(key ref.Val) ref.Val {
+	v, found := m.Find(key)
+	if v != nil && types.IsUnknownOrError(v) {
+		return v
 	}
-	fields := make(map[string]*MapField)
-	for _, f := range m.Fields {
-		fields[f.Name] = f
+	return celBool(found)
+}
+
+// ConvertToNative converts the MapValue type to a native go type.s
+func (m *MapValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	// TODO: Implement map conversion logic similar to what's supported within CEL's
+	// default map type.
+	return nil, fmt.Errorf("map conversion to native types not yet supported")
+}
+
+// ConvertToType converts the MapValue to another CEL type, if possible.
+func (m *MapValue) ConvertToType(t ref.Type) ref.Val {
+	switch t {
+	case types.MapType:
+		return m
+	case types.TypeType:
+		return types.MapType
 	}
-	for _, otherF := range otherSv.Fields {
-		f, found := fields[otherF.Name]
-		if !found || !f.Ref.Value.Equal(otherF.Ref.Value) {
-			return false
+	return types.NewErr("type conversion error from '%s' to '%s'", m.Type(), t)
+}
+
+// Equal returns true if the maps are of the same size, have the same keys, and the key-values
+// from each map are equal.
+func (m *MapValue) Equal(other ref.Val) ref.Val {
+	oMap, isMap := other.(traits.Mapper)
+	if !isMap {
+		return types.MaybeNoSuchOverloadErr(other)
+	}
+	if m.Size() != oMap.Size() {
+		return types.False
+	}
+	for name, field := range m.fieldMap {
+		k := types.String(name)
+		ov, found := oMap.Find(k)
+		if !found {
+			return types.False
+		}
+		v := field.Ref.ExprValue()
+		vEq := v.Equal(ov)
+		if vEq != types.True {
+			return vEq
 		}
 	}
-	return true
+	return types.True
 }
 
-// GetField returns a MapField by name if one exists.
-func (m *MapValue) GetField(name string) (*MapField, bool) {
-	field, found := m.fieldMap[name]
-	return field, found
+// Find returns the value for the key in the map, if found.
+func (m *MapValue) Find(name ref.Val) (ref.Val, bool) {
+	// Currently only maps with string keys are supported as this is best aligned with JSON,
+	// and also much simpler to support.
+	n, ok := name.(types.String)
+	if !ok {
+		return types.MaybeNoSuchOverloadErr(n), true
+	}
+	nameStr := string(n)
+	field, found := m.fieldMap[nameStr]
+	if found {
+		return field.Ref.ExprValue(), true
+	}
+	return nil, false
 }
 
-// AddField appends a MapField to the MapValue and indexes the field by name.
-func (m *MapValue) AddField(field *MapField) {
-	m.Fields = append(m.Fields, field)
-	m.fieldMap[field.Name] = field
+// Get returns the value for the key in the map, or error if not found.
+func (m *MapValue) Get(key ref.Val) ref.Val {
+	v, found := m.Find(key)
+	if found {
+		return v
+	}
+	return types.ValOrErr(key, "no such key: %v", key)
 }
 
-// NewMapField returns a MapField instance with an empty DynValue that refers to the
+// Iterator produces a traits.Iterator which walks over the map keys.
+//
+// The Iterator is frequently used within comprehensions.
+func (m *MapValue) Iterator() traits.Iterator {
+	keys := make([]ref.Val, len(m.fieldMap))
+	i := 0
+	for k := range m.fieldMap {
+		keys[i] = types.String(k)
+		i++
+	}
+	return &baseMapIterator{
+		baseVal: &baseVal{},
+		keys:    keys,
+	}
+}
+
+// Size returns the number of keys in the map.
+func (m *MapValue) Size() ref.Val {
+	return types.Int(len(m.Fields))
+}
+
+// Type returns the CEL ref.Type for the map.
+func (m *MapValue) Type() ref.Type {
+	return types.MapType
+}
+
+// Value returns the Go-native representation of the MapValue.
+func (m *MapValue) Value() interface{} {
+	return m
+}
+
+type baseMapIterator struct {
+	*baseVal
+	keys []ref.Val
+	idx  int
+}
+
+// HasNext implements the traits.Iterator interface method.
+func (it *baseMapIterator) HasNext() ref.Val {
+	if it.idx < len(it.keys) {
+		return types.True
+	}
+	return types.False
+}
+
+// Next implements the traits.Iterator interface method.
+func (it *baseMapIterator) Next() ref.Val {
+	key := it.keys[it.idx]
+	it.idx++
+	return key
+}
+
+// Type implements the CEL ref.Val interface metohd.
+func (it *baseMapIterator) Type() ref.Type {
+	return types.IteratorType
+}
+
+// NewField returns a MapField instance with an empty DynValue that refers to the
 // specified parse node id and field name.
-func NewMapField(id int64, name string) *MapField {
-	return &MapField{
+func NewField(id int64, name string) *Field {
+	return &Field{
 		ID:   id,
 		Name: name,
 		Ref:  NewEmptyDynValue(),
 	}
 }
 
-// MapField specifies a field name and a reference to a dynamic value.
-type MapField struct {
+// Field specifies a field name and a reference to a dynamic value.
+type Field struct {
 	ID   int64
 	Name string
 	Ref  *DynValue
@@ -162,191 +522,196 @@ type ListValue struct {
 	Entries []*DynValue
 }
 
-func (*ListValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (*ListValue) ModelType() string {
-	return ListType
+// Add concatenates two lists together to produce a new CEL list value.
+func (lv *ListValue) Add(other ref.Val) ref.Val {
+	oArr, isArr := other.(traits.Lister)
+	if !isArr {
+		return types.ValOrErr(other, "unsupported operation")
+	}
+	szRight := len(lv.Entries)
+	szLeft := int(oArr.Size().(types.Int))
+	sz := szRight + szLeft
+	combo := make([]ref.Val, sz)
+	for i := 0; i < szRight; i++ {
+		combo[i] = lv.Entries[i].ExprValue()
+	}
+	for i := 0; i < szLeft; i++ {
+		combo[i+szRight] = oArr.Get(types.Int(i))
+	}
+	return types.NewValueList(types.DefaultTypeAdapter, combo)
 }
 
-// Equal returns true if the lists are of equal length and the elements are pair-wise equal.
-func (lv *ListValue) Equal(other ValueNode) bool {
-	otherLv, ok := other.(*ListValue)
-	if !ok || len(lv.Entries) != len(otherLv.Entries) {
-		return false
+// Contains returns whether the input `val` is equal to an element in the list.
+//
+// If any pair-wise comparison between the input value and the list element is an error, the
+// operation will return an error.
+func (lv *ListValue) Contains(val ref.Val) ref.Val {
+	if types.IsUnknownOrError(val) {
+		return val
 	}
-	for i, entry := range lv.Entries {
-		otherEntry := otherLv.Entries[i]
-		if !entry.Value.Equal(otherEntry.Value) {
-			return false
+	var err ref.Val
+	sz := len(lv.Entries)
+	for i := 0; i < sz; i++ {
+		elem := lv.Entries[i]
+		cmp := elem.Equal(val)
+		b, ok := cmp.(types.Bool)
+		if !ok && err == nil {
+			err = types.ValOrErr(cmp, "no such overload")
+		}
+		if b == types.True {
+			return types.True
 		}
 	}
-	return true
+	if err != nil {
+		return err
+	}
+	return types.False
 }
 
-// BoolValue is a boolean value suitable for use within DynValue objects.
-type BoolValue bool
+// ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
+// and Go-native array-like types.
+func (lv *ListValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	// Non-list conversion.
+	if typeDesc.Kind() != reflect.Slice && typeDesc.Kind() != reflect.Array {
+		return nil, fmt.Errorf("type conversion error from list to '%v'", typeDesc)
+	}
 
-func (BoolValue) isValueNode() {}
+	// If the list is already assignable to the desired type return it.
+	if reflect.TypeOf(lv).AssignableTo(typeDesc) {
+		return lv, nil
+	}
 
-// ModelType implements the ValueNode interface method.
-func (BoolValue) ModelType() string {
-	return BoolType
+	// List conversion.
+	otherElem := typeDesc.Elem()
+
+	// Allow the element ConvertToNative() function to determine whether conversion is possible.
+	sz := len(lv.Entries)
+	nativeList := reflect.MakeSlice(typeDesc, int(sz), int(sz))
+	for i := 0; i < sz; i++ {
+		elem := lv.Entries[i]
+		nativeElemVal, err := elem.ConvertToNative(otherElem)
+		if err != nil {
+			return nil, err
+		}
+		nativeList.Index(int(i)).Set(reflect.ValueOf(nativeElemVal))
+	}
+	return nativeList.Interface(), nil
 }
 
-// Equal implements the ValueNode interface method.
-func (v BoolValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(BoolValue)
-	return ok && v == otherV
+// ConvertToType converts the ListValue to another CEL type.
+func (lv *ListValue) ConvertToType(t ref.Type) ref.Val {
+	switch t {
+	case types.ListType:
+		return lv
+	case types.TypeType:
+		return types.ListType
+	}
+	return types.NewErr("type conversion error from '%s' to '%s'", ListType, t)
 }
 
-// BytesValue is a []byte value suitable for use within DynValue objects.
-type BytesValue []byte
-
-func (BytesValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (BytesValue) ModelType() string {
-	return BytesType
+// Equal returns true if two lists are of the same size, and the values at each index are also
+// equal.
+func (lv *ListValue) Equal(other ref.Val) ref.Val {
+	oArr, isArr := other.(traits.Lister)
+	if !isArr {
+		return types.ValOrErr(other, "unsupported operation")
+	}
+	sz := types.Int(len(lv.Entries))
+	if sz != oArr.Size() {
+		return types.False
+	}
+	for i := types.Int(0); i < sz; i++ {
+		cmp := lv.Get(i).Equal(oArr.Get(i))
+		if cmp != types.True {
+			return cmp
+		}
+	}
+	return types.True
 }
 
-// Equal returns true if the other ValueNode is a bytes instance and the byte values are equal.
-func (v BytesValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(BytesValue)
-	return ok && bytes.Equal([]byte(v), []byte(otherV))
+// Get returns the value at the given index.
+//
+// If the index is negative or greater than the size of the list, an error is returned.
+func (lv *ListValue) Get(idx ref.Val) ref.Val {
+	iv, isInt := idx.(types.Int)
+	if !isInt {
+		return types.ValOrErr(idx, "unsupported index: %v", idx)
+	}
+	i := int(iv)
+	if i < 0 || i >= len(lv.Entries) {
+		return types.NewErr("index out of bounds: %v", idx)
+	}
+	return lv.Entries[i].ExprValue()
 }
 
-// DoubleValue is a float64 value suitable for use within DynValue objects.
-type DoubleValue float64
-
-func (DoubleValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (DoubleValue) ModelType() string {
-	return DoubleType
+// Iterator produces a traits.Iterator suitable for use in CEL comprehension macros.
+func (lv *ListValue) Iterator() traits.Iterator {
+	return &baseListIterator{
+		getter: lv.Get,
+		sz:     len(lv.Entries),
+	}
 }
 
-// Equal implements the ValueNode interface method.
-func (v DoubleValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(DoubleValue)
-	return ok && v == otherV
+// Size returns the number of elements in the list.
+func (lv *ListValue) Size() ref.Val {
+	return types.Int(len(lv.Entries))
 }
 
-// IntValue is an int64 value suitable for use within DynValue objects.
-type IntValue int64
-
-func (IntValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (IntValue) ModelType() string {
-	return IntType
+// Type returns the CEL ref.Type for the list.
+func (lv *ListValue) Type() ref.Type {
+	return types.ListType
 }
 
-// Equal implements the ValueNode interface method.
-func (v IntValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(IntValue)
-	return ok && v == otherV
+// Value returns the Go-native value.
+func (lv *ListValue) Value() interface{} {
+	return lv
 }
 
-// NullValue is a protobuf.Struct concrete null value suitable for use within DynValue objects.
-type NullValue structpb.NullValue
+type baseVal struct{}
 
-func (NullValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (NullValue) ModelType() string {
-	return NullType
+func (*baseVal) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	return nil, fmt.Errorf("unsupported native conversion to: %v", typeDesc)
 }
 
-// Equal implements the ValueNode interface method.
-func (NullValue) Equal(other ValueNode) bool {
-	_, isNull := other.(NullValue)
-	return isNull
+func (*baseVal) ConvertToType(t ref.Type) ref.Val {
+	return types.NewErr("unsupported type conversion to: %v", t)
 }
 
-// StringValue is a string value suitable for use within DynValue objects.
-type StringValue string
-
-func (StringValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (StringValue) ModelType() string {
-	return StringType
+func (*baseVal) Equal(other ref.Val) ref.Val {
+	return types.NewErr("unsupported equality test between instances")
 }
 
-// Equal implements the ValueNode interface method.
-func (v StringValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(StringValue)
-	return ok && v == otherV
+func (v *baseVal) Value() interface{} {
+	return nil
 }
 
-// PlainTextValue is a text string literal which must not be treated as an expression.
-type PlainTextValue string
-
-func (PlainTextValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (PlainTextValue) ModelType() string {
-	return PlainTextType
+type baseListIterator struct {
+	*baseVal
+	getter func(idx ref.Val) ref.Val
+	sz     int
+	idx    int
 }
 
-// Equal implements the ValueNode interface method.
-func (v PlainTextValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(PlainTextValue)
-	return ok && v == otherV
+func (it *baseListIterator) HasNext() ref.Val {
+	if it.idx < it.sz {
+		return types.True
+	}
+	return types.False
 }
 
-// MultilineStringValue is a multiline string value which has been parsed in a way which omits
-// whitespace as well as a raw form which preserves whitespace.
-type MultilineStringValue struct {
-	Value string
-	Raw   string
+func (it *baseListIterator) Next() ref.Val {
+	v := it.getter(types.Int(it.idx))
+	it.idx++
+	return v
 }
 
-func (*MultilineStringValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (*MultilineStringValue) ModelType() string {
-	return StringType
+func (it *baseListIterator) Type() ref.Type {
+	return types.IteratorType
 }
 
-// Equal implements the ValueNode interface method.
-func (v *MultilineStringValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(*MultilineStringValue)
-	return ok && v.Value == otherV.Value
+func celBool(pred bool) ref.Val {
+	if pred {
+		return types.True
+	}
+	return types.False
 }
-
-// TimestampValue is a timestamp type compatible with both Open API Schema and protobuf.Timestamp.
-type TimestampValue time.Time
-
-func (TimestampValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (TimestampValue) ModelType() string {
-	return TimestampType
-}
-
-// Equal implements the ValueNode interface method.
-func (v TimestampValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(TimestampValue)
-	return ok && otherV == v
-}
-
-// UintValue is a uint64 value suitable for use within DynValue objects.
-type UintValue uint64
-
-func (UintValue) isValueNode() {}
-
-// ModelType implements the ValueNode interface method.
-func (UintValue) ModelType() string {
-	return UintType
-}
-
-// Equal implements the ValueNode interface method.
-func (v UintValue) Equal(other ValueNode) bool {
-	otherV, ok := other.(UintValue)
-	return ok && v == otherV
-}
-
-// Null is a singleton NullValue instance.
-var Null NullValue

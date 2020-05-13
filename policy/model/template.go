@@ -16,10 +16,6 @@ package model
 
 import (
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
-	"github.com/google/cel-go/common/types/ref"
-
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 // NewTemplate produces an empty policy Template instance.
@@ -39,99 +35,6 @@ type Template struct {
 	RuleTypes   *RuleTypes
 	Validator   *Evaluator
 	Evaluator   *Evaluator
-}
-
-// NewRuleTypes returns an Open API Schema-based type-system which is CEL compatible.
-func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
-	// Note, if the schema indicates that it's actually based on another proto
-	// then prefer the proto definition. For expressions in the proto, a new field
-	// annotation will be needed to indicate the expected environment and type of
-	// the expression.
-	return &RuleTypes{
-		ruleSchemaTypes: newSchemaTypeProvider(kind, schema),
-		Schema:          schema,
-	}
-}
-
-// RuleTypes extends the CEL ref.TypeProvider interface and provides an Open API Schema-based
-// type-system.
-type RuleTypes struct {
-	ref.TypeProvider
-	Schema          *OpenAPISchema
-	ruleSchemaTypes *schemaTypeProvider
-}
-
-// EnvOptions returns a set of cel.EnvOption values which includes the Template's declaration set
-// as well as a custom ref.TypeProvider.
-//
-// Note, the standard declaration set includes 'rule' which is defined as the top-level rule-schema
-// type if one is configured.
-//
-// If the RuleTypes value is nil, an empty []cel.EnvOption set is returned.
-func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
-	if rt == nil {
-		return []cel.EnvOption{}
-	}
-	return []cel.EnvOption{
-		cel.CustomTypeProvider(&RuleTypes{
-			TypeProvider:    tp,
-			Schema:          rt.Schema,
-			ruleSchemaTypes: rt.ruleSchemaTypes,
-		}),
-		cel.Declarations(
-			decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
-		),
-	}
-}
-
-// FindType attempts to resolve the typeName provided from the template's rule-schema, or if not
-// from the embedded ref.TypeProvider.
-//
-// FindType overrides the default type-finding behavior of the embedded TypeProvider.
-//
-// Note, when the type name is based on the Open API Schema, the name will reflect the object path
-// where the type definition appears.
-func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
-	if rt == nil {
-		return nil, false
-	}
-	simple, found := simpleExprTypes[typeName]
-	if found {
-		return simple, true
-	}
-	st, found := rt.ruleSchemaTypes.types[typeName]
-	if found {
-		return st.ExprType(), true
-	}
-	return rt.TypeProvider.FindType(typeName)
-}
-
-// FindFieldType returns a field type given a type name and field name, if found.
-//
-// Note, the type name for an Open API Schema type is likely to be its qualified object path.
-// If, in the future an object instance rather than a type name were provided, the field
-// resolution might more accurately reflect the expected type model. However, in this case
-// concessions were made to align with the existing CEL interfaces.
-func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, bool) {
-	st, found := rt.ruleSchemaTypes.types[typeName]
-	if !found {
-		return rt.TypeProvider.FindFieldType(typeName, fieldName)
-	}
-	f, found := st.fields[fieldName]
-	if found {
-		return &ref.FieldType{
-			// TODO: Provide IsSet, GetFrom which build upon maps
-			Type: f.ExprType(),
-		}, true
-	}
-	// This could be a dynamic map.
-	if st.ModelType() == MapType && !st.isObject() {
-		return &ref.FieldType{
-			// TODO: Provide IsSet, GetFrom which build upon maps
-			Type: st.elemType.ExprType(),
-		}, true
-	}
-	return nil, false
 }
 
 // NewTemplateMetadata returns an empty *TemplateMetadata instance.

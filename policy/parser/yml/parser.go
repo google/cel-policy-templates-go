@@ -19,10 +19,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/cel-policy-templates-go/policy/model"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/common"
-	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-go/common/types"
 )
 
 // Parse decodes a YAML source object to a model.ParsedValue.
@@ -170,7 +172,7 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 			err = ref.assign(val)
 		}
 	case model.NullType:
-		err = ref.assign(model.Null)
+		err = ref.assign(types.NullValue)
 	case model.StringType:
 		if node.Style == yaml.FoldedStyle ||
 			node.Style == yaml.LiteralStyle {
@@ -227,7 +229,7 @@ func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 		p.collectMetadata(id, key)
 		keyType, found := yamlTypes[key.LongTag()]
 		if !found || keyType != "string" {
-			p.reportErrorAtID(id, "invalid map key type: %v", key.LongTag())
+			p.reportErrorAtID(id, "unsupported map key type: %v", key.LongTag())
 			continue
 		}
 		prop := key.Value
