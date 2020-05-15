@@ -12,29 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package compiler
+package model
 
 import (
 	"github.com/google/cel-go/cel"
-
-	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
 // Registry defines an interface for looking up schema and environment references during source
 // compilation.
-//
-// TODO: Move this to a common location, provide reference implmentation to be shared by compiler
-// and evaluators.
 type Registry interface {
-	FindSchema(name string) (*model.OpenAPISchema, bool)
+	FindSchema(name string) (*OpenAPISchema, bool)
 
-	RegisterSchema(name string, s *model.OpenAPISchema) error
+	RegisterSchema(name string, s *OpenAPISchema) error
 
 	FindEnv(name string) (*cel.Env, bool)
 
 	RegisterEnv(name string, env *cel.Env) error
 
-	FindTemplate(name string) (*model.Template, bool)
+	FindTemplate(name string) (*Template, bool)
 
-	RegisterTemplate(name string, tmpl *model.Template) error
+	RegisterTemplate(name string, tmpl *Template) error
 }

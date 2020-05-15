@@ -48,18 +48,18 @@ validator:
     - match: noop
 evaluator:`,
 			Err: `
-     ERROR: empty_evaluator:11:7: missing required field(s): [message]
-      |     - match: noop
-      | ......^
-     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null_type, schema=map
-      | evaluator:
-      | ..........^
      ERROR: empty_evaluator:9:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
       |     noop: ""
       | ...........^
+     ERROR: empty_evaluator:11:7: missing required field(s): [message]
+      |     - match: noop
+      | ......^
      ERROR: empty_evaluator:11:14: expected bool match result, found: !error!
       |     - match: noop
       | .............^
+     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null_type, schema=map
+      | evaluator:
+      | ..........^
      ERROR: empty_evaluator:12:11: expected map type, found: null_type
       | evaluator:
       | ..........^`,
@@ -100,6 +100,9 @@ evaluator:
       decision: policy.acme.welcome
       output: hi`,
 			Err: `
+     ERROR: errant:1:1: missing required field(s): [kind]
+      | apiVersion: policy.acme.co/v1
+      | ^
      ERROR: errant:13:14: value not assignable to schema type: value=int, schema=string
       |       enum: [1, 3.2, false, "okay"]
       | .............^
@@ -109,15 +112,12 @@ evaluator:
      ERROR: errant:13:22: value not assignable to schema type: value=bool, schema=string
       |       enum: [1, 3.2, false, "okay"]
       | .....................^
-     ERROR: errant:19:5: field redeclaration error: uintVal
-      |     uintVal: 9223372036854775809
-      | ....^
-     ERROR: errant:1:1: missing required field(s): [kind]
-      | apiVersion: policy.acme.co/v1
-      | ^
      ERROR: errant:16:13: undefined field 'grating'
       |     hi: rule.grating
       | ............^
+     ERROR: errant:19:5: field redeclaration error: uintVal
+      |     uintVal: 9223372036854775809
+      | ....^
      ERROR: errant:21:26: undeclared reference to 'byte' (in container '')
       |     - match: hi == '' && byte == ''
       | .........................^
@@ -189,6 +189,31 @@ rules:
           request.time.getDate() == 1" `,
 		},
 		{
+			ID: `backwards`,
+			In: `apiVersion: policy.acme.co/v1
+kind: GreetingPolicy
+metadata:
+  name: backwards-greeting
+rules:
+  - greeting: "Goodbye"
+  - greeting: ""
+  - greeting: ""
+    farewell: ""`,
+			Err: `
+        ERROR: backwards:6:5: greeting starts with a farewell word. details: Goodbye
+         |   - greeting: "Goodbye"
+         | ....^
+        ERROR: backwards:7:5: at least one of 'greeting' or 'farewell' must be a non-empty string
+         |   - greeting: ""
+         | ....^
+        ERROR: backwards:8:5: at least one of 'greeting' or 'farewell' must be a non-empty string
+         |   - greeting: ""
+         | ....^
+        ERROR: backwards:9:16: invalid enum value: . must be one of: [Aloha Adieu Bye Farewell true]
+         |     farewell: ""
+         | ...............^`,
+		},
+		{
 			ID: `errant`,
 			In: `apiVersion: policy.acme.co/v1
 kind: GreetingPolicy
@@ -210,21 +235,24 @@ rules:
           request.time.getMonth() == 0 &&
           request.time.getDate() == 1" `,
 			Err: `
-        ERROR: errant:6:15: value not assignable to schema type: value=null_type, schema=map
-        |   matchLabels:
-        | ..............^
-        ERROR: errant:10:33: invalid enum value: DoesNotExists. must be one of: [DoesNotExist Exists In NotIn]
-        |     - {key: "trace", operator: "DoesNotExists"}
-        | ................................^
-        ERROR: errant:13:16: invalid enum value: Hello. must be one of: [Aloha Adieu Bye Farewell true]
-        |   - farewell: "Hello"
-        | ...............^
-        ERROR: errant:6:15: expected map type, found: null_type
-        |   matchLabels:
-        | ..............^
-        ERROR: errant:9:45: expected primitive type, found=list
-        |     - {key: "env", operator: "In", values: [["test"]]}
-        | ............................................^`,
+     ERROR: errant:6:15: value not assignable to schema type: value=null_type, schema=map
+      |   matchLabels:
+      | ..............^
+     ERROR: errant:6:15: expected map type, found: null_type
+      |   matchLabels:
+      | ..............^
+     ERROR: errant:9:45: expected primitive type, found=list
+      |     - {key: "env", operator: "In", values: [["test"]]}
+      | ............................................^
+     ERROR: errant:10:33: invalid enum value: DoesNotExists. must be one of: [DoesNotExist Exists In NotIn]
+      |     - {key: "trace", operator: "DoesNotExists"}
+      | ................................^
+     ERROR: errant:12:5: greeting starts with a farewell word. details: Goodbye
+      |   - greeting: "Goodbye"
+      | ....^
+     ERROR: errant:13:16: invalid enum value: Hello. must be one of: [Aloha Adieu Bye Farewell true]
+      |   - farewell: "Hello"
+      | ...............^`,
 		},
 	}
 
@@ -376,7 +404,9 @@ validator:
     uintVal: 9223372036854775808
   productions:
     - match: hi == '' && bye == ''
-      message: at least one property must be set on the rule.
+      message: >
+        at least one of 'greeting' or 'farewell' must be a non-empty
+        string
     - match: hi.startsWith("Goodbye")
       message: greeting starts with a farewell word
       details: hi

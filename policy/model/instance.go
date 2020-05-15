@@ -16,11 +16,12 @@
 package model
 
 // NewInstance returns an empty policy instance.
-func NewInstance() *Instance {
+func NewInstance(info *SourceInfo) *Instance {
 	return &Instance{
 		Metadata:  &InstanceMetadata{},
 		Selectors: []Selector{},
 		Rules:     []Rule{},
+		Info:      info,
 	}
 }
 
@@ -40,6 +41,9 @@ type Instance struct {
 	// Depending on the nature of the decisions being emitted, some or all Rules may be evaluated
 	// and the results aggregated according to the decision types being emitted.
 	Rules []Rule
+
+	// Info represents the source metadata from the input instance.
+	Info *SourceInfo
 }
 
 // InstanceMetadata contains standard metadata which may be associated with an instance.
@@ -89,10 +93,17 @@ func (*ExpressionSelector) isSelector() {}
 // is entirely possible to use a protobuf message as the rule container.
 type Rule interface {
 	isRule()
+	GetID() int64
 }
 
-// CustomRule extends the DynValue and represents rules whose type definition is provided in the
+// CustomRule embeds the DynValue and represents rules whose type definition is provided in the
 // policy template.
-type CustomRule DynValue
+type CustomRule struct {
+	*DynValue
+}
 
 func (*CustomRule) isRule() {}
+
+func (c *CustomRule) GetID() int64 {
+	return c.ID
+}

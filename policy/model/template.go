@@ -16,13 +16,15 @@ package model
 
 import (
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/types/ref"
 )
 
 // NewTemplate produces an empty policy Template instance.
-func NewTemplate() *Template {
+func NewTemplate(info *SourceInfo) *Template {
 	return &Template{
 		Metadata:  NewTemplateMetadata(),
 		Evaluator: NewEvaluator(),
+		Info:      info,
 	}
 }
 
@@ -35,6 +37,7 @@ type Template struct {
 	RuleTypes   *RuleTypes
 	Validator   *Evaluator
 	Evaluator   *Evaluator
+	Info        *SourceInfo
 }
 
 // NewTemplateMetadata returns an empty *TemplateMetadata instance.
@@ -85,8 +88,9 @@ type Evaluator struct {
 
 // NewTerm produces a named Term instance associated with a CEL Ast and a list of the input
 // terms needed to evaluate the Ast successfully.
-func NewTerm(name string, expr *cel.Ast) *Term {
+func NewTerm(id int64, name string, expr *cel.Ast) *Term {
 	return &Term{
+		ID:         id,
 		Name:       name,
 		Expr:       expr,
 		InputTerms: make(map[string]*Term),
@@ -96,6 +100,7 @@ func NewTerm(name string, expr *cel.Ast) *Term {
 // Term is a template-local variable whose name may shadow names in the Template environment and
 // which may depend on preceding terms as input.
 type Term struct {
+	ID         int64
 	Name       string
 	InputTerms map[string]*Term
 	Expr       *cel.Ast
@@ -103,8 +108,9 @@ type Term struct {
 
 // NewProduction returns an empty instance of a Production rule which minimally contains a single
 // Decision.
-func NewProduction(match *cel.Ast) *Production {
+func NewProduction(id int64, match *cel.Ast) *Production {
 	return &Production{
+		ID:        id,
 		Match:     match,
 		Decisions: []*Decision{},
 	}
@@ -113,6 +119,7 @@ func NewProduction(match *cel.Ast) *Production {
 // Production describes an match-decision pair where the match, if set, indicates whether the
 // Decision is applicable, and the decision indicates its name and output value.
 type Production struct {
+	ID        int64
 	Match     *cel.Ast
 	Decisions []*Decision
 }
@@ -124,7 +131,22 @@ func NewDecision() *Decision {
 
 // Decision contains a decision name, or reference to a decision name, and an output expression.
 type Decision struct {
-	Decision  string
+	Name      string
 	Reference *cel.Ast
 	Output    *cel.Ast
+}
+
+func NewDecisionValue(name string, val ref.Val, det *cel.EvalDetails) *DecisionValue {
+	return &DecisionValue{
+		Name:    name,
+		Value:   val,
+		Details: det,
+	}
+}
+
+type DecisionValue struct {
+	RuleID  int64
+	Name    string
+	Value   ref.Val
+	Details *cel.EvalDetails
 }
