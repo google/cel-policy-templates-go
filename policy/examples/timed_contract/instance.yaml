@@ -13,13 +13,13 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: TimedContractTemplate
+kind: timed_contract
 metadata:
-  name: WarnerAnimContract
+  name: warner_anim_contract
   namespace: acme
-spec:
-  description: >
-    "Yearly Warner Studios license to Acme.co products"
-  resource_prefix: "/company/warneranimstudios/"
-  start: "2019-01-01T00:00:00Z"
-  end: "2020-01-01T00:00:00Z"
+rules:
+  - description: >
+      "Yearly Warner Studios license to Acme.co products"
+    resource_prefix: "/company/warneranimstudios/"
+    start: "2019-01-01T00:00:00Z"
+    end: "2020-01-01T00:00:00Z"

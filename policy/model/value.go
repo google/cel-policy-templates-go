@@ -572,7 +572,9 @@ func (lv *ListValue) Contains(val ref.Val) ref.Val {
 // and Go-native array-like types.
 func (lv *ListValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
 	// Non-list conversion.
-	if typeDesc.Kind() != reflect.Slice && typeDesc.Kind() != reflect.Array {
+	if typeDesc.Kind() != reflect.Slice &&
+		typeDesc.Kind() != reflect.Array &&
+		typeDesc.Kind() != reflect.Interface {
 		return nil, fmt.Errorf("type conversion error from list to '%v'", typeDesc)
 	}
 

@@ -13,16 +13,16 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: SensitiveDataTemplate
+kind: sensitive_data
 metadata:
-  name: SecretAcmeResources
+  name: secret_acme_resources
   namespace: acme
-spec:
-  resource_prefixes:
-    - "/company/acme/secrets/"
-    - "/company/acme/research/anvils/"
-    - "/company/acme/contracts/*"
-  labels:
-    sensitivity:
-      - "secret"
-      - "top-secret"
+rules:
+  - resource_prefixes:
+      - "/company/acme/secrets/"
+      - "/company/acme/research/anvils/"
+      - "/company/acme/contracts/*"
+    labels:
+      sensitivity:
+        - "secret"
+        - "top-secret"

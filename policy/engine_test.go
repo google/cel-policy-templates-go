@@ -16,6 +16,7 @@ package policy
 
 import (
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"testing"
 
@@ -24,9 +25,9 @@ import (
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/interpreter/functions"
+	"github.com/google/cel-policy-templates-go/policy/model"
 
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
-
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -42,12 +43,12 @@ type metadata struct {
 	Resource      string
 	Mode          string
 	ResourceTypes []string
+	Data          []string
 }
 
 type violation struct {
-	Message  string
-	Details  []string
-	Metadata *metadata
+	Message string
+	Details *metadata
 }
 
 type access struct {
@@ -87,27 +88,67 @@ var (
 	})
 
 	testCases = []tc{
-		// Required labels
+		// Sensitive Data
 		{
-			name:   "required_label_violation",
-			policy: "required_labels",
+			name:   "sensitive_data_prefix_same_location",
+			policy: "sensitive_data",
 			input: map[string]interface{}{
+				"destination.ip":  "10.0.0.1",
+				"origin.ip":       "10.0.0.1",
+				"resource.name":   "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{},
+			},
+			outputs: []interface{}{},
+		},
+		{
+			name:   "sensitive_data_prefix_diff_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip":  "10.0.0.1",
+				"origin.ip":       "10.0.0.2",
+				"resource.name":   "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{},
+			},
+			outputs: []interface{}{true},
+		},
+		{
+			name:   "sensitive_data_label_same_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.1",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/seems-normal/but-isnt",
 				"resource.labels": map[string]string{
-					"env":    "dev",
-					"ssh":    "enabled",
-					"random": "bar",
+					"sensitivity": "secret",
 				},
 			},
-			outputs: []interface{}{
-				violation{
-					Message: "missing one or more required labels",
-					Details: []string{"verified"},
-				},
-				violation{
-					Message: "invalid values provided on one or more labels",
-					Details: []string{"verified"},
+			outputs: []interface{}{},
+		},
+		{
+			name:   "sensitive_data_label_diff_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.2",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/seems-normal/but-isnt",
+				"resource.labels": map[string]string{
+					"sensitivity": "secret",
 				},
 			},
+			outputs: []interface{}{true},
+		},
+		{
+			name:   "sensitive_data_diff_location_not_sensitive",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.2",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/biz-as-usual",
+				"resource.labels": map[string]string{
+					"sensitivity": "public",
+				},
+			},
+			outputs: []interface{}{},
 		},
 		// Timed contracts
 		{
@@ -135,81 +176,7 @@ var (
 				"resource.name": "/company/warneranimstudios/goodbye",
 				"request.time":  &tpb.Timestamp{Seconds: 1646416000},
 			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		// Sensitive Data
-		{
-			name:   "sensitive_data_prefix_same_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.1",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
-			},
-			outputs: []interface{}{},
-		},
-		{
-			name:   "sensitive_data_prefix_diff_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.2",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
-			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		{
-			name:   "sensitive_data_label_same_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.1",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/seems-normal/but-isnt",
-				"resource.labels": map[string]string{
-					"sensitivity": "secret",
-				},
-			},
-			outputs: []interface{}{},
-		},
-		{
-			name:   "sensitive_data_label_diff_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.2",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/seems-normal/but-isnt",
-				"resource.labels": map[string]string{
-					"sensitivity": "secret",
-				},
-			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		{
-			name:   "sensitive_data_diff_location_not_sensitive",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.2",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/biz-as-usual",
-				"resource.labels": map[string]string{
-					"sensitivity": "public",
-				},
-			},
-			outputs: []interface{}{},
+			outputs: []interface{}{true},
 		},
 		// Restricted Destinations
 		{
@@ -237,11 +204,7 @@ var (
 				},
 				"resource.labels": map[string]string{},
 			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
+			outputs: []interface{}{true},
 		},
 		{
 			name:   "restricted_destinations_restricted_location_ir_national",
@@ -257,7 +220,7 @@ var (
 			outputs: []interface{}{},
 		},
 		{
-			name:   "restricted_destinations_valic_location_ir_label",
+			name:   "restricted_destinations_valid_location_ir_label",
 			policy: "restricted_destinations",
 			input: map[string]interface{}{
 				"destination.ip":      "10.0.0.2",
@@ -267,16 +230,38 @@ var (
 					"location": "ir",
 				},
 			},
+			outputs: []interface{}{true},
+		},
+		// Required labels
+		{
+			name:   "required_labels_violation",
+			policy: "required_labels",
+			input: map[string]interface{}{
+				"resource.labels": map[string]string{
+					"env":    "dev",
+					"ssh":    "enabled",
+					"random": "bar",
+				},
+			},
 			outputs: []interface{}{
-				access{
-					Deny: true,
+				violation{
+					Message: "missing one or more required labels",
+					Details: &metadata{
+						Data: []string{"verified"},
+					},
+				},
+				violation{
+					Message: "invalid values provided on one or more labels",
+					Details: &metadata{
+						Data: []string{"verified"},
+					},
 				},
 			},
 		},
-		// Allowed Resource Types
+		// Resource Types
 		{
-			name:   "allowed_resource_types_denied_request",
-			policy: "allowed_resource_types",
+			name:   "resource_types_denied_request",
+			policy: "resource_types",
 			input: map[string]interface{}{
 				"resource.type": "sqladmin.googleapis.com/Instance",
 				"resource.name": "forbidden-my-sql-instance",
@@ -284,7 +269,7 @@ var (
 			outputs: []interface{}{
 				violation{
 					Message: "forbidden-my-sql-instance is in violation.",
-					Metadata: &metadata{
+					Details: &metadata{
 						Resource: "forbidden-my-sql-instance",
 						Mode:     "deny",
 						ResourceTypes: []string{
@@ -299,29 +284,51 @@ var (
 	}
 )
 
-func TestEnforcer(t *testing.T) {
+func TestEngine(t *testing.T) {
+	env, _ := cel.NewEnv(stdDecls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		env, _ := cel.NewEnv(stdDecls)
 		t.Run(tst.name, func(tt *testing.T) {
-			enfOpts := []EngineOption{
-				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
-				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
-				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
-				stdFuncs,
-			}
-			enforcer, err := NewEngine(env, enfOpts...)
+			engine, err := NewEngine(stdFuncs)
 			if err != nil {
 				tt.Fatal(err)
 			}
-			decisions, err := enforcer.Evaluate(tst.input)
+			engine.AddEnv("", env)
+
+			tmplFile := fmt.Sprintf("examples/%s/template.yaml", tst.policy)
+			tmplBytes, err := ioutil.ReadFile(tmplFile)
+			if err != nil {
+				tt.Fatal(err)
+			}
+			tmplSrc := model.ByteSource(tmplBytes, tmplFile)
+			tmpl, iss := engine.CompileTemplate(tmplSrc)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
+			}
+			err = engine.AddTemplate(tmpl)
+			if err != nil {
+				tt.Fatal(err)
+			}
+
+			instFile := fmt.Sprintf("examples/%s/instance.yaml", tst.policy)
+			instBytes, err := ioutil.ReadFile(instFile)
+			if err != nil {
+				tt.Fatal(iss.Err())
+			}
+			instSrc := model.ByteSource(instBytes, instFile)
+			inst, iss := engine.CompileInstance(instSrc)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
+			}
+			engine.AddInstance(inst)
+			decisions, err := engine.Eval(tst.input)
 			if err != nil {
 				tt.Error(err)
 			}
 			found := false
 			for _, dec := range decisions {
 				for _, out := range tst.outputs {
-					ntv, err := dec.ConvertToNative(reflect.TypeOf(out))
+					ntv, err := dec.Value.ConvertToNative(reflect.TypeOf(out))
 					if err != nil {
 						tt.Fatalf("out type: %T, err: %v", dec, err)
 					}
@@ -345,19 +352,41 @@ func BenchmarkEnforcer(b *testing.B) {
 	for _, tstVal := range testCases {
 		tst := tstVal
 		env, _ := cel.NewEnv(stdDecls)
+		engine, err := NewEngine(stdFuncs)
+		if err != nil {
+			b.Fatal(err)
+		}
+		engine.AddEnv("", env)
+		tmplFile := fmt.Sprintf("examples/%s/template.yaml", tst.policy)
+		tmplBytes, err := ioutil.ReadFile(tmplFile)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tmplSrc := model.ByteSource(tmplBytes, tmplFile)
+		tmpl, iss := engine.CompileTemplate(tmplSrc)
+		if iss.Err() != nil {
+			b.Fatal(iss.Err())
+		}
+		err = engine.AddTemplate(tmpl)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		instFile := fmt.Sprintf("examples/%s/instance.yaml", tst.policy)
+		instBytes, err := ioutil.ReadFile(instFile)
+		if err != nil {
+			b.Fatal(iss.Err())
+		}
+		instSrc := model.ByteSource(instBytes, instFile)
+		inst, iss := engine.CompileInstance(instSrc)
+		if iss.Err() != nil {
+			b.Fatal(iss.Err())
+		}
+		engine.AddInstance(inst)
+
 		b.Run(tst.name, func(bb *testing.B) {
-			enfOpts := []EngineOption{
-				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
-				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
-				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
-				stdFuncs,
-			}
-			enforcer, err := NewEngine(env, enfOpts...)
-			if err != nil {
-				bb.Fatal(err)
-			}
 			for i := 0; i < bb.N; i++ {
-				_, err := enforcer.Evaluate(tst.input)
+				_, err := engine.Eval(tst.input)
 				if err != nil {
 					bb.Fatal(err)
 				}

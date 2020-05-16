@@ -30,21 +30,23 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
-func NewTemplate(reg model.Registry, mdl *model.Template) (*Template, error) {
+func NewTemplate(reg model.Registry,
+	mdl *model.Template,
+	evalOpts... cel.ProgramOption) (*Template, error) {
 	t := &Template{
 		reg:     reg,
 		mdl:     mdl,
 		actPool: newRuleActivationPool(),
 	}
 	if mdl.Validator != nil {
-		val, err := t.newEvaluator(mdl.Validator)
+		val, err := t.newEvaluator(mdl.Validator, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
 		t.validator = val
 	}
 	if mdl.Evaluator != nil {
-		eval, err := t.newEvaluator(mdl.Evaluator)
+		eval, err := t.newEvaluator(mdl.Evaluator, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -100,16 +102,12 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 	return iss
 }
 
-func (t *Template) Eval(inst *model.Instance, vars interface{}) ([]*model.DecisionValue, error) {
+func (t *Template) Eval(inst *model.Instance, vars interpreter.Activation) ([]*model.DecisionValue, error) {
 	// TODO: support incremental evaluation, both for debug and for aggregation simplicity.
 	if t.evaluator == nil {
 		return nil, nil
 	}
-	varsAct, err := interpreter.NewActivation(vars)
-	if err != nil {
-		return nil, err
-	}
-	return t.evalInternal(t.evaluator, inst, varsAct)
+	return t.evalInternal(t.evaluator, inst, vars)
 }
 
 func (t *Template) evalInternal(eval *evaluator,
@@ -137,17 +135,18 @@ func (t *Template) evalInternal(eval *evaluator,
 	return decisions, nil
 }
 
-func (t *Template) newEvaluator(mdl *model.Evaluator) (*evaluator, error) {
+func (t *Template) newEvaluator(mdl *model.Evaluator,
+	evalOpts... cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
 	// Expose the cel EvalOptions as policy.EvalOption functions.
-	evalOpts := cel.EvalOptions(cel.OptOptimize)
+	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
 	env, err := t.newEnv(mdl.Environment)
 	if err != nil {
 		return nil, err
 	}
 	termDecls := make([]*exprpb.Decl, len(mdl.Terms))
 	for i, t := range mdl.Terms {
-		term, err := env.Program(t.Expr, evalOpts)
+		term, err := env.Program(t.Expr, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -160,13 +159,13 @@ func (t *Template) newEvaluator(mdl *model.Evaluator) (*evaluator, error) {
 	}
 	prods := make([]*prod, len(mdl.Productions))
 	for i, p := range mdl.Productions {
-		match, err := prodEnv.Program(p.Match, evalOpts)
+		match, err := prodEnv.Program(p.Match, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
 		decs := make([]*decision, len(p.Decisions))
 		for i, d := range p.Decisions {
-			dec, err := prodEnv.Program(d.Output, evalOpts)
+			dec, err := prodEnv.Program(d.Output, evalOpts...)
 			if err != nil {
 				return nil, err
 			}

@@ -15,11 +15,33 @@
 apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: RequiredLabelsTemplate
+  name: required_labels
   namespace: acme
-spec:
+schema:
+  type: object
+  required:
+    - labels
   properties:
     labels:
       type: object
-      additionalProperties:
-        type: string
+      additionalProperties: {}
+evaluator:
+  terms:
+    want: rule.labels
+    missing: want.filter(l, !(l in resource.labels))
+    invalid: >
+      resource.labels.filter(l,
+        l in want && want[l] != resource.labels[l])
+  productions:
+    - match: missing.size() > 0
+      decision: policy.violation
+      output:
+        message: missing one or more required labels
+        details:
+          data: missing
+    - match: invalid.size() > 0
+      decision: policy.violation
+      output:
+        message: invalid values provided on one or more label
+        details:
+          data: invalid

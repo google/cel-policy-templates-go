@@ -253,10 +253,9 @@ rules:
 		t.Run(tc.ID, func(tt *testing.T) {
 			in := strings.ReplaceAll(tc.In, "\t", "  ")
 			src := model.StringSource(in, "instance")
-			inst, errs := Parse(src)
-			dbgErr := errs.ToDisplayString()
-			if dbgErr != "" {
-				tt.Fatal(dbgErr)
+			inst, iss := Parse(src)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
 			}
 			if tc.Out != "" {
 				dbg := Encode(inst, RenderDebugIDs)
@@ -453,10 +452,9 @@ evaluator:
 		t.Run(tc.ID, func(tt *testing.T) {
 			in := strings.ReplaceAll(tc.In, "\t", "  ")
 			src := model.StringSource(in, "template")
-			tmpl, errs := Parse(src)
-			dbgErr := errs.ToDisplayString()
-			if dbgErr != "" {
-				tt.Fatal(dbgErr)
+			tmpl, iss := Parse(src)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
 			}
 			if tc.Out != "" {
 				dbg := Encode(tmpl, RenderDebugIDs)

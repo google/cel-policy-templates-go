@@ -13,12 +13,12 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: RequiredLabelsTemplate
+kind: required_labels
 metadata:
-  name: ProdLabels
+  name: prod_labels
   namespace: acme
-spec:
-  labels:
-    env: prod
-    ssh: enabled
-    verified: true
+rules:
+  - labels:
+      env: prod
+      ssh: enabled
+      verified: true

@@ -131,21 +131,26 @@ evaluator:
 	}
 
 	reg := &registry{
-		schemas: map[string]*model.OpenAPISchema{},
+		schemas: map[string]*model.OpenAPISchema{
+			"#openAPISchema":  model.SchemaDef,
+			"#templateSchema": model.TemplateSchema,
+			"#instanceSchema": model.InstanceSchema,
+		},
 	}
-	reg.RegisterSchema("#openAPISchema", model.SchemaDef)
-	reg.RegisterSchema("#templateSchema", model.TemplateSchema)
 	comp := &Compiler{reg: reg}
 	for _, tc := range tests {
 		tst := tc
 		t.Run(tst.ID, func(tt *testing.T) {
 			src := model.StringSource(tst.In, tst.ID)
-			pv, errs := parser.ParseYaml(src)
-			if len(errs.GetErrors()) > 0 {
-				tt.Fatal(errs.ToDisplayString())
+			pv, iss := parser.ParseYaml(src)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
 			}
-			_, errs = comp.CompileTemplate(src, pv)
-			dbgErr := errs.ToDisplayString()
+			_, iss = comp.CompileTemplate(src, pv)
+			dbgErr := ""
+			if iss.Err() != nil {
+				dbgErr = iss.Err().Error()
+			}
 			if !cmp(tst.Err, dbgErr) {
 				tt.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
 			}
@@ -257,11 +262,13 @@ rules:
 	}
 
 	reg := &registry{
-		schemas:   map[string]*model.OpenAPISchema{},
+		schemas: map[string]*model.OpenAPISchema{
+			"#openAPISchema":  model.SchemaDef,
+			"#templateSchema": model.TemplateSchema,
+			"#instanceSchema": model.InstanceSchema,
+		},
 		templates: map[string]*model.Template{},
 	}
-	reg.RegisterSchema("#openAPISchema", model.SchemaDef)
-	reg.RegisterSchema("#templateSchema", model.TemplateSchema)
 	comp := &Compiler{reg: reg}
 	tmplSrc := model.StringSource(canonicalTemplate, "canonicalTemplate")
 	tmplAst, _ := parser.ParseYaml(tmplSrc)
@@ -270,12 +277,15 @@ rules:
 
 	for _, tst := range tests {
 		src := model.StringSource(tst.In, tst.ID)
-		pv, errs := parser.ParseYaml(src)
-		if len(errs.GetErrors()) > 0 {
-			t.Fatal(errs.ToDisplayString())
+		pv, iss := parser.ParseYaml(src)
+		if iss.Err() != nil {
+			t.Fatal(iss.Err())
 		}
-		_, errs = comp.CompileInstance(src, pv)
-		dbgErr := errs.ToDisplayString()
+		_, iss = comp.CompileInstance(src, pv)
+		dbgErr := ""
+		if iss.Err() != nil {
+			dbgErr = iss.Err().Error()
+		}
 		if !cmp(tst.Err, dbgErr) {
 			t.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
 		}
@@ -292,21 +302,12 @@ func (r *registry) FindSchema(name string) (*model.OpenAPISchema, bool) {
 	return s, found
 }
 
-func (r *registry) RegisterSchema(name string, schema *model.OpenAPISchema) error {
-	r.schemas[name] = schema
-	return nil
-}
-
 func (r *registry) FindEnv(name string) (*cel.Env, bool) {
-	if name == "standard" {
+	if name == "" || name == "standard" {
 		e, _ := cel.NewEnv()
 		return e, true
 	}
 	return nil, false
-}
-
-func (*registry) RegisterEnv(name string, e *cel.Env) error {
-	return nil
 }
 
 func (r *registry) FindTemplate(name string) (*model.Template, bool) {

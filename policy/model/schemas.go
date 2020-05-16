@@ -142,15 +142,16 @@ var (
 	TemplateSchema *OpenAPISchema
 
 	openAPISchemaTypes map[string]string = map[string]string{
-		"boolean": BoolType,
-		"number":  DoubleType,
-		"integer": IntType,
-		"null":    NullType,
-		"string":  StringType,
-		"date":    TimestampType,
-		"array":   ListType,
-		"object":  MapType,
-		"":        "any",
+		"boolean":   BoolType,
+		"number":    DoubleType,
+		"integer":   IntType,
+		"null":      NullType,
+		"string":    StringType,
+		"date":      TimestampType,
+		"date-time": TimestampType,
+		"array":     ListType,
+		"object":    MapType,
+		"":          "any",
 	}
 )
 
@@ -226,6 +227,8 @@ properties:
     required:
       - productions
     properties:
+      description:
+        type: string
       environment:
         type: string
       terms:
@@ -249,6 +252,8 @@ properties:
     required:
       - productions
     properties:
+      description:
+        type: string
       environment:
         type: string
       terms:

@@ -13,19 +13,13 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: PolicyEvaluator
+kind: resource_types
 metadata:
-  name: TimedContractEvaluator
+  name: restricted_resource_types
   namespace: acme
-spec:
-  template: TimedContractTemplate
-  description: >
-    Ensure requests occur within a given time-window
-  terms:
-    start_time: timestamp(spec.start)
-    end_time: timestamp(spec.end)
-  rules:
-    - match: >
-        resource.name.startsWith(spec.resource_prefix)
-          && (request.time < start_time || request.time > end_time)
-      output: "{'deny': true}"
+rules:
+  - mode: deny
+    resource_types:
+      - sqladmin.googleapis.com/Instance
+      - compute.googleapis.com/Instance
+      - dataproc.googleapis.com/Job

@@ -21,15 +21,9 @@ import (
 // Registry defines an interface for looking up schema and environment references during source
 // compilation.
 type Registry interface {
-	FindSchema(name string) (*OpenAPISchema, bool)
-
-	RegisterSchema(name string, s *OpenAPISchema) error
-
 	FindEnv(name string) (*cel.Env, bool)
 
-	RegisterEnv(name string, env *cel.Env) error
+	FindSchema(name string) (*OpenAPISchema, bool)
 
 	FindTemplate(name string) (*Template, bool)
-
-	RegisterTemplate(name string, tmpl *Template) error
 }

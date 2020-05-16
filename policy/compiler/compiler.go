@@ -39,23 +39,31 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
+	return &Compiler{
+		evalOpts: evalOpts,
+		reg:      reg,
+	}
+}
+
 // Compiler type-checks and compiles a raw model.ParsedValue into a strongly typed in-memory
 // representation of a template or policy instance.
 type Compiler struct {
-	reg model.Registry
+	evalOpts []cel.ProgramOption
+	reg      model.Registry
 }
 
 // CompileInstance type-checks and validates a parsed representation of a policy instance whose
 // format and validation logic is also determined by policy template referenced in the policy
 // instance 'kind' field.
 func (c *Compiler) CompileInstance(src *model.Source,
-	inst *model.ParsedValue) (*model.Instance, *common.Errors) {
+	inst *model.ParsedValue) (*model.Instance, *cel.Issues) {
 	return c.newInstanceCompiler(src, inst).compile()
 }
 
 // CompileTemplate type-checks and validates a parsed representation of a policy template.
 func (c *Compiler) CompileTemplate(src *model.Source,
-	tmpl *model.ParsedValue) (*model.Template, *common.Errors) {
+	tmpl *model.ParsedValue) (*model.Template, *cel.Issues) {
 	return c.newTemplateCompiler(src, tmpl).compile()
 }
 
@@ -64,18 +72,14 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 	dc := c.newDynCompiler(src, inst)
 	dyn := model.NewDynValue(inst.ID, inst.Value)
 	tmplName := dc.mapFieldStringValueOrEmpty(dyn, "kind")
-	tmpl, found := c.reg.FindTemplate(tmplName)
+	tmpl, found := dc.reg.FindTemplate(tmplName)
 	if !found {
 		// report an error and return
 		dc.reportError("no such template: %s", tmplName)
+		return nil
 	}
 	if tmpl.RuleTypes != nil {
-		err := c.reg.RegisterSchema("#templateRuleSchema", tmpl.RuleTypes.Schema)
-		if err != nil {
-			dc.reportErrorAtID(dyn.ID,
-				"error registering schema %s: %s",
-				tmplName, err.Error())
-		}
+		dc.reg.ruleSchema = tmpl.RuleTypes.Schema
 	}
 	dc.checkSchema(dyn, model.InstanceSchema)
 	return &instanceCompiler{
@@ -83,6 +87,7 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 		dyn:         dyn,
 		rt:          tmpl.RuleTypes,
 		tmpl:        tmpl,
+		evalOpts:    c.evalOpts,
 	}
 }
 
@@ -100,7 +105,9 @@ func (c *Compiler) newTemplateCompiler(src *model.Source,
 func (c *Compiler) newDynCompiler(src *model.Source,
 	pv *model.ParsedValue) *dynCompiler {
 	return &dynCompiler{
-		reg:    c.reg,
+		reg: &compReg{
+			Registry: c.reg,
+		},
 		src:    src,
 		info:   pv.Info,
 		errors: common.NewErrors(src),
@@ -109,12 +116,13 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 
 type instanceCompiler struct {
 	*dynCompiler
-	dyn  *model.DynValue
-	rt   *model.RuleTypes
-	tmpl *model.Template
+	dyn      *model.DynValue
+	rt       *model.RuleTypes
+	tmpl     *model.Template
+	evalOpts []cel.ProgramOption
 }
 
-func (ic *instanceCompiler) compile() (*model.Instance, *common.Errors) {
+func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 	cinst := model.NewInstance(ic.info)
 	cinst.APIVersion = ic.mapFieldStringValueOrEmpty(ic.dyn, "apiVersion")
 	cinst.Description = ic.mapFieldStringValueOrEmpty(ic.dyn, "description")
@@ -137,7 +145,7 @@ func (ic *instanceCompiler) compile() (*model.Instance, *common.Errors) {
 			cinst.Rules[i] = ic.convertToRule(rule)
 		}
 	}
-	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl)
+	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.evalOpts...)
 	if err != nil {
 		// report the error
 		ic.reportError(err.Error())
@@ -149,9 +157,9 @@ func (ic *instanceCompiler) compile() (*model.Instance, *common.Errors) {
 	// TODO: handle running the validator on a per-rule basis once the evaluator is implemented.
 	errs := ic.errors.GetErrors()
 	if len(errs) > 0 {
-		return nil, ic.errors
+		return nil, cel.NewIssues(ic.errors)
 	}
-	return cinst, ic.errors
+	return cinst, nil
 }
 
 func (ic *instanceCompiler) convertToRule(dyn *model.DynValue) model.Rule {
@@ -209,7 +217,7 @@ type templateCompiler struct {
 	dyn *model.DynValue
 }
 
-func (tc *templateCompiler) compile() (*model.Template, *common.Errors) {
+func (tc *templateCompiler) compile() (*model.Template, *cel.Issues) {
 	ctmpl := model.NewTemplate(tc.info)
 	m := tc.mapValue(tc.dyn)
 	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(tc.dyn, "apiVersion")
@@ -237,9 +245,9 @@ func (tc *templateCompiler) compile() (*model.Template, *common.Errors) {
 	}
 	errs := tc.errors.GetErrors()
 	if len(errs) > 0 {
-		return nil, tc.errors
+		return nil, cel.NewIssues(tc.errors)
 	}
-	return ctmpl, tc.errors
+	return ctmpl, nil
 }
 
 func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.TemplateMetadata) {
@@ -532,65 +540,103 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 	return env.Extend(cel.Declarations(termDecls...))
 }
 
-func (tc *templateCompiler) compileExpr(
-	dyn *model.DynValue, env *cel.Env, strict bool) *cel.Ast {
+func (tc *templateCompiler) compileExpr(dyn *model.DynValue,
+	env *cel.Env, strict bool) *cel.Ast {
 	loc, _ := tc.info.LocationByID(dyn.ID)
+	exprString, err := tc.buildExprString(dyn, env, strict)
+	if err != nil {
+		return nil
+	}
+	relSrc := tc.src.Relative(exprString, loc.Line(), loc.Column())
+	ast, iss := env.CompileSource(relSrc)
+	if iss.Err() == nil {
+		return ast
+	}
+	tc.reportIssues(iss)
+	return nil
+}
+
+func (tc *templateCompiler) buildExprString(
+	dyn *model.DynValue, env *cel.Env, strict bool) (string, error) {
 	switch v := dyn.Value.(type) {
 	case bool:
-		relSrc := tc.src.Relative(strconv.FormatBool(v), loc.Line(), loc.Column())
-		ast, _ := env.CompileSource(relSrc)
-		return ast
+		return strconv.FormatBool(v), nil
 	case float64:
-		relSrc := tc.src.Relative(strconv.FormatFloat(v, 'f', -1, 64), loc.Line(), loc.Column())
-		ast, _ := env.CompileSource(relSrc)
-		return ast
+		return strconv.FormatFloat(v, 'f', -1, 64), nil
 	case int64:
-		relSrc := tc.src.Relative(strconv.FormatInt(v, 10), loc.Line(), loc.Column())
-		ast, _ := env.CompileSource(relSrc)
-		return ast
+		return strconv.FormatInt(v, 10), nil
 	case types.Null:
-		relSrc := tc.src.Relative("null", loc.Line(), loc.Column())
-		ast, _ := env.CompileSource(relSrc)
-		return ast
+		return "null", nil
 	case model.PlainTextValue:
-		relSrc := tc.src.Relative(strconv.Quote(string(v)), loc.Line(), loc.Column())
-		ast, iss := env.CompileSource(relSrc)
-		if iss.Err() == nil {
-			return ast
-		}
-		tc.reportIssues(iss)
-		return nil
+		return strconv.Quote(string(v)), nil
 	case *model.MultilineStringValue:
+		loc, _ := tc.info.LocationByID(dyn.ID)
 		ast := tc.compileExprString(dyn.ID, v.Raw, loc, env, strict)
-		if ast != nil || strict {
-			return ast
+		if ast != nil {
+			return v.Raw, nil
+		}
+		if strict {
+			return "''", errors.New("error")
 		}
 		// non-strict parse which falls back to a plain text literal.
-		txt := model.PlainTextValue(strings.TrimSpace(v.Value))
-		dyn = model.NewDynValue(dyn.ID, txt)
-		return tc.compileExpr(dyn, env, true)
+		return strconv.Quote(strings.TrimSpace(v.Value)), nil
 	case string:
+		loc, _ := tc.info.LocationByID(dyn.ID)
 		ast := tc.compileExprString(dyn.ID, v, loc, env, strict)
-		if ast != nil || strict {
-			return ast
+		if ast != nil {
+			return v, nil
 		}
-		// non-strict parse which falls back to a plain text literal.
-		txt := model.PlainTextValue(v)
-		dyn = model.NewDynValue(dyn.ID, txt)
-		return tc.compileExpr(dyn, env, true)
+		if strict {
+			return "", errors.New("error")
+		}
+		return strconv.Quote(v), nil
 	case uint64:
-		relSrc := tc.src.Relative(
-			strconv.FormatUint(uint64(v), 10)+"u",
-			loc.Line(), loc.Column())
-		ast, iss := env.CompileSource(relSrc)
-		if iss.Err() == nil {
-			return ast
+		return strconv.FormatUint(uint64(v), 10) + "u", nil
+	case *model.ListValue:
+		var buf strings.Builder
+		buf.WriteString("[")
+		cnt := len(v.Entries)
+		for i, e := range v.Entries {
+			str, err := tc.buildExprString(e, env, strict)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(str)
+			if i < cnt-1 {
+				buf.WriteString(", ")
+			}
 		}
-		tc.reportIssues(iss)
+		buf.WriteString("]")
+		return buf.String(), nil
+	case *model.MapValue:
+		var buf strings.Builder
+		buf.WriteString("{")
+		cnt := len(v.Fields)
+		for i, f := range v.Fields {
+			buf.WriteString(strconv.Quote(f.Name))
+			buf.WriteString(": ")
+			str, err := tc.buildExprString(f.Ref, env, strict)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(str)
+			if i < cnt-1 {
+				buf.WriteString(", ")
+			}
+		}
+		buf.WriteString("}")
+		return buf.String(), nil
+	case time.Time:
+		var buf strings.Builder
+		buf.WriteString("timestamp('")
+		buf.WriteString(v.Format(time.RFC3339))
+		buf.WriteString("')")
+		str := buf.String()
+		return str, nil
 	default:
-		// TODO: support bytes, list, map, timestamp
+		// TODO: handle bytes
+		return "", nil
 	}
-	return nil
 }
 
 func (tc *templateCompiler) compileExprString(id int64,
@@ -615,13 +661,9 @@ func (tc *templateCompiler) compileExprString(id int64,
 }
 
 func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.Env, error) {
-	env := stdEnv
-	if envName != "" {
-		var found bool
-		env, found = tc.reg.FindEnv(envName)
-		if !found {
-			return nil, errors.New("no such environment")
-		}
+	env, found := tc.reg.FindEnv(envName)
+	if !found {
+		return nil, fmt.Errorf("no such environment: %s", envName)
 	}
 	if ctmpl.RuleTypes == nil {
 		return env, nil
@@ -632,7 +674,7 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.
 }
 
 type dynCompiler struct {
-	reg    model.Registry
+	reg    *compReg
 	src    *model.Source
 	info   *model.SourceInfo
 	errors *common.Errors
@@ -948,8 +990,14 @@ func getVars(ast *cel.Ast) []string {
 	return vars
 }
 
-var stdEnv *cel.Env
+type compReg struct {
+	model.Registry
+	ruleSchema *model.OpenAPISchema
+}
 
-func init() {
-	stdEnv, _ = cel.NewEnv()
+func (reg *compReg) FindSchema(name string) (*model.OpenAPISchema, bool) {
+	if name == "#templateRuleSchema" {
+		return reg.ruleSchema, true
+	}
+	return reg.Registry.FindSchema(name)
 }

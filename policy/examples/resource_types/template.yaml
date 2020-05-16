@@ -15,12 +15,16 @@
 apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: AllowedResourceTypesTemplate
+  name: resource_types
   namespace: acme
-spec:
+schema:
+  type: object
+  required: ["resource_types"]
   properties:
     mode:
       type: string
+      enum: ["allow", "deny"]
+      default: "allow"
       description: >
         String identifying the operational mode, allow or deny.
         In the allow mode, only resource types from the resource_types
@@ -29,8 +33,22 @@ spec:
         raise a violation.
     resource_types:
       type: array
-      items: 
+      items:
         type: string
       description: >
         Array of resource types that will be either allowed (mode:allow)
         or denied (mode:deny)
+evaluator:
+  terms:
+    matches_resource_type: resource.type in rule.resource_types
+  productions:
+    - match: >
+        rule.mode == 'allow' && !matches_resource_type ||
+        rule.mode == 'deny' && matches_resource_type
+      decision: 'policy.violation'
+      output:
+        message: resource.name + " is in violation."
+        details:
+          resource: resource.name
+          mode: rule.mode
+          resourceTypes: rule.resource_types

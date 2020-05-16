@@ -15,9 +15,10 @@
 apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: SensitiveDataTemplate
+  name: sensitive_data
   namespace: acme
-spec:
+schema:
+  type: object
   properties:
     description:
       type: string
@@ -31,3 +32,16 @@ spec:
         type: array
         items:
           type: string
+evaluator:
+  description: >
+    Treat resources with certain names and labels as sensitive when
+    accessed outside the country where the resource exists.
+  terms:
+    different_locations: locationCode(origin.ip) != locationCode(destination.ip)
+    is_sensitive_prefix: rule.resource_prefixes.exists(prefix, resource.name.startsWith(prefix))
+    is_sensitive_label: >
+      rule.labels.exists(l, l in resource.labels && resource.labels[l] in rule.labels[l])
+  productions:
+    - match: different_locations && (is_sensitive_prefix || is_sensitive_label)
+      decision: policy.deny
+      output: true

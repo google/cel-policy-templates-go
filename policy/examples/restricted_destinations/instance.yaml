@@ -13,17 +13,18 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: RestrictedDestinationsTemplate
+kind: restricted_destinations
 metadata:
-  name: UnitedStatesEconomicSanctions
+  name: us-economic-sanctions
   namespace: acme
-spec:
-  description: >
-    Prevent US access to data within countries currently under economic sanction.
-  origin: "us"
-  restricted_destinations:
-    - "cu"
-    - "ir"
-    - "kp"
-    - "sd"
-    - "sy"
+rules:
+  - description: >
+      Prevent US access to data within countries currently under
+      economic sanction.
+    origin: "us"
+    restricted_destinations:
+      - "cu"
+      - "ir"
+      - "kp"
+      - "sd"
+      - "sy"

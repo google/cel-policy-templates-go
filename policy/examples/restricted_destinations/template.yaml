@@ -15,9 +15,10 @@
 apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: RestrictedDestinationsTemplate
+  name: restricted_destinations
   namespace: acme
-spec:
+schema:
+  type: object
   properties:
     description:
       type: string
@@ -27,3 +28,32 @@ spec:
       type: array
       items:
         type: string
+validator:
+  terms:
+    invalid_dests:
+      rule.restricted_destinations.filter(d, d.size() != 2)
+  productions:
+    - match: rule.origin.size() != 2
+      message: >
+        origin must be a two-letter location code
+    - match: invalid_dests.size() > 0
+      message: >
+        restricted_destinations must only contain two-letter
+        location codes
+      details:
+        data: invalid_dests
+evaluator:
+  terms:
+    matches_origin_ip: locationCode(origin.ip) == rule.origin
+    has_nationality: has(request.auth.claims.nationality)
+    matches_nationality: has_nationality && request.auth.claims.nationality == rule.origin
+    matches_dest_ip: locationCode(destination.ip) in rule.restricted_destinations
+    matches_dest_label: resource.labels.location in rule.restricted_destinations
+    matches_dest: matches_dest_ip || matches_dest_label
+  productions:
+    - match: matches_nationality && matches_dest
+      decision: policy.deny
+      output: true
+    - match: "!has_nationality && matches_origin_ip && matches_dest"
+      decision: policy.deny
+      output: true

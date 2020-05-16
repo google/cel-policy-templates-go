@@ -15,9 +15,10 @@
 apiVersion: policy.acme.co/v1
 kind: PolicyTemplate
 metadata:
-  name: TimedContractTemplate
+  name: timed_contract
   namespace: acme
-spec:
+schema:
+  type: object
   properties:
     description:
       type: string
@@ -29,3 +30,10 @@ spec:
     end:
       type: string
       format: date-time
+evaluator:
+  productions:
+    - match: >
+        resource.name.startsWith(rule.resource_prefix) &&
+        (request.time < rule.start || request.time > rule.end)
+      decision: policy.deny
+      output: true
