@@ -1,0 +1,58 @@
+1~# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"restricted_destinations"
+  10~namespace: 11~"acme"
+12~schema:13~
+  14~type: 15~"object"
+  16~properties:17~
+    18~description:19~
+      20~type: 21~"string"
+    22~origin:23~
+      24~type: 25~"string"
+    26~restricted_destinations:27~
+      28~type: 29~"array"
+      30~items:31~
+        32~type: 33~"string"
+34~validator:35~
+  36~terms:37~
+    38~invalid_dests: 39~"rule.restricted_destinations.filter(d, d.size() != 2)"
+  40~productions:41~
+    - 42~43~match: 44~"rule.origin.size() != 2"
+      45~message: 46~>
+        origin must be a two-letter location code
+    - 47~48~match: 49~"invalid_dests.size() > 0"
+      50~message: 51~>
+        restricted_destinations must only contain two-letter
+        location codes
+      52~details:53~
+        54~data: 55~"invalid_dests"
+56~evaluator:57~
+  58~terms:59~
+    60~matches_origin_ip: 61~"locationCode(origin.ip) == rule.origin"
+    62~has_nationality: 63~"has(request.auth.claims.nationality)"
+    64~matches_nationality: 65~"has_nationality && request.auth.claims.nationality == rule.origin"
+    66~matches_dest_ip: 67~"locationCode(destination.ip) in rule.restricted_destinations"
+    68~matches_dest_label: 69~"resource.labels.location in rule.restricted_destinations"
+    70~matches_dest: 71~"matches_dest_ip || matches_dest_label"
+  72~productions:73~
+    - 74~75~match: 76~"matches_nationality && matches_dest"
+      77~decision: 78~"policy.deny"
+      79~output: 80~true
+    - 81~82~match: 83~"!has_nationality && matches_origin_ip && matches_dest"
+      84~decision: 85~"policy.deny"
+      86~output: 87~true

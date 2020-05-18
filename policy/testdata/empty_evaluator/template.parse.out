@@ -1,0 +1,12 @@
+1~2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"NoEvaluatorTemplate"
+10~description: 11~>
+  Template that with an empty evaluator and validator
+12~validator:13~
+  14~terms:15~
+    16~noop: 17~""
+  18~productions:19~
+    - 20~21~match: 22~"noop"
+23~evaluator: 24~

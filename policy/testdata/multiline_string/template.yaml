@@ -1,0 +1,10 @@
+apiVersion: policy.acme.com/v1
+kind: MultilineTemplate
+metadata:
+  name: multiline
+rules:
+  - greeting: |
+      hello world!
+      how are you?
+    farewell: >
+      goodnight "moon"!

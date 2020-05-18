@@ -1,0 +1,11 @@
+1~2~schema:3~
+  4~type: 5~"array"
+  6~items:7~
+    8~type: 9~"object"
+    10~properties:11~
+      - 12~13~obj: # comment14~
+          15~nested: 16~"value"
+        17~desc: 18~"hello"
+      - 19~20~obj:21~
+          22~# comment
+          nested: 23~"value"

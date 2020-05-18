@@ -1,0 +1,47 @@
+1~# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"required_labels"
+  10~namespace: 11~"acme"
+12~schema:13~
+  14~type: 15~"object"
+  16~required:17~
+    - 18~"labels"
+  19~properties:20~
+    21~labels:22~
+      23~type: 24~"object"
+      25~additionalProperties:26~{}
+27~evaluator:28~
+  29~terms:30~
+    31~want: 32~"rule.labels"
+    33~missing: 34~"want.filter(l, !(l in resource.labels))"
+    35~invalid: 36~>
+      resource.labels.filter(l,
+        l in want && want[l] != resource.labels[l])
+  37~productions:38~
+    - 39~40~match: 41~"missing.size() > 0"
+      42~decision: 43~"policy.violation"
+      44~output:45~
+        46~message: 47~"missing one or more required labels"
+        48~details:49~
+          50~data: 51~"missing"
+    - 52~53~match: 54~"invalid.size() > 0"
+      55~decision: 56~"policy.violation"
+      57~output:58~
+        59~message: 60~"invalid values provided on one or more label"
+        61~details:62~
+          63~data: 64~"invalid"

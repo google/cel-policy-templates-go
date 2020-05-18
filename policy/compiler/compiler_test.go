@@ -15,250 +15,21 @@
 package compiler
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
+	"github.com/google/cel-policy-templates-go/policy/test"
 )
 
-func TestCompiler_Template(t *testing.T) {
-	tests := []struct {
-		ID  string
-		In  string
-		Err string
-	}{
-		{
-			ID: "canonical",
-			In: canonicalTemplate,
-		},
-		{
-			ID: "empty_evaluator",
-			In: `apiVersion: policy.acme.co/v1
-kind: PolicyTemplate
-metadata:
-  name: NoEvaluatorTemplate
-description: >
-  Template that with an empty evaluator and validator
-validator:
-  terms:
-    noop: ""
-  productions:
-    - match: noop
-evaluator:`,
-			Err: `
-     ERROR: empty_evaluator:9:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
-      |     noop: ""
-      | ...........^
-     ERROR: empty_evaluator:11:7: missing required field(s): [message]
-      |     - match: noop
-      | ......^
-     ERROR: empty_evaluator:11:14: expected bool match result, found: !error!
-      |     - match: noop
-      | .............^
-     ERROR: empty_evaluator:12:11: value not assignable to schema type: value=null_type, schema=map
-      | evaluator:
-      | ..........^
-     ERROR: empty_evaluator:12:11: expected map type, found: null_type
-      | evaluator:
-      | ..........^`,
-		},
-		{
-			ID: "errant",
-			In: `apiVersion: policy.acme.co/v1
-metadata:
-  name: ErrantTemplate
-description: >
-  Policy for configuring greetings and farewells.
-schema:
-  type: object
-  properties:
-    greeting:
-      type: string
-    farewell:
-      type: string
-      enum: [1, 3.2, false, "okay"]
-validator:
-  terms:
-    hi: rule.grating
-    bye: rule.farewell
-    uintVal: 9223372036854775808
-    uintVal: 9223372036854775809
-  productions:
-    - match: hi == '' && byte == ''
-      message: at least one property must be set on the rule.
-evaluator:
-  terms:
-    hi: |
-      bye != ''
-      ? rule.greting
-      : ''
-    bye: rule.farewell
-  productions:
-    - match: hi != '' && bye == ''
-      decision: policy.acme.welcome
-      output: hi`,
-			Err: `
-     ERROR: errant:1:1: missing required field(s): [kind]
-      | apiVersion: policy.acme.co/v1
-      | ^
-     ERROR: errant:13:14: value not assignable to schema type: value=int, schema=string
-      |       enum: [1, 3.2, false, "okay"]
-      | .............^
-     ERROR: errant:13:17: value not assignable to schema type: value=double, schema=string
-      |       enum: [1, 3.2, false, "okay"]
-      | ................^
-     ERROR: errant:13:22: value not assignable to schema type: value=bool, schema=string
-      |       enum: [1, 3.2, false, "okay"]
-      | .....................^
-     ERROR: errant:16:13: undefined field 'grating'
-      |     hi: rule.grating
-      | ............^
-     ERROR: errant:19:5: field redeclaration error: uintVal
-      |     uintVal: 9223372036854775809
-      | ....^
-     ERROR: errant:21:26: undeclared reference to 'byte' (in container '')
-      |     - match: hi == '' && byte == ''
-      | .........................^
-     ERROR: errant:26:7: undeclared reference to 'bye' (in container '')
-      |       bye != ''
-      | ......^
-     ERROR: errant:27:13: undefined field 'greting'
-      |       ? rule.greting
-      | ............^`,
-		},
-	}
-
-	reg := &registry{
-		schemas: map[string]*model.OpenAPISchema{
-			"#openAPISchema":  model.SchemaDef,
-			"#templateSchema": model.TemplateSchema,
-			"#instanceSchema": model.InstanceSchema,
-		},
-	}
-	comp := &Compiler{reg: reg}
-	for _, tc := range tests {
-		tst := tc
-		t.Run(tst.ID, func(tt *testing.T) {
-			src := model.StringSource(tst.In, tst.ID)
-			pv, iss := parser.ParseYaml(src)
-			if iss.Err() != nil {
-				tt.Fatal(iss.Err())
-			}
-			_, iss = comp.CompileTemplate(src, pv)
-			dbgErr := ""
-			if iss.Err() != nil {
-				dbgErr = iss.Err().Error()
-			}
-			if !cmp(tst.Err, dbgErr) {
-				tt.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
-			}
-		})
-	}
-}
-
-func TestCompiler_Instance(t *testing.T) {
-	tests := []struct {
-		ID  string
-		In  string
-		Err string
-	}{
-		{
-			ID: `canonical`,
-			In: `apiVersion: policy.acme.co/v1
-kind: GreetingPolicy
-metadata:
-  name: seasons-greetings
-selector:
-  matchLabels:
-    env: prod
-  matchExpressions:
-    - {key: "trace", operator: "DoesNotExist"}
-    - {key: "debug", operator: "In", values: ["false", "justified"]}
-rules:
-  - greeting: "Hello"
-  - farewell: "Farewell"
-  - greeting: "You survived Y2K!"
-    computer_greeting: WUFZIFkySyE=
-    start_date: "2000-01-01T00:00:00Z"
-    end_date: "2000-01-07T00:00:00Z"
-    details:
-      gone: [1999]
-      next: [2038]
-  - greeting: "Happy New Year's!"
-    conditions:
-      - description: Ring in the New Year.
-        expression: >
-          request.time.getMonth() == 0 &&
-          request.time.getDate() == 1" `,
-		},
-		{
-			ID: `backwards`,
-			In: `apiVersion: policy.acme.co/v1
-kind: GreetingPolicy
-metadata:
-  name: backwards-greeting
-rules:
-  - greeting: "Goodbye"
-  - greeting: ""
-  - greeting: ""
-    farewell: ""`,
-			Err: `
-        ERROR: backwards:6:5: greeting starts with a farewell word. details: Goodbye
-         |   - greeting: "Goodbye"
-         | ....^
-        ERROR: backwards:7:5: at least one of 'greeting' or 'farewell' must be a non-empty string
-         |   - greeting: ""
-         | ....^
-        ERROR: backwards:8:5: at least one of 'greeting' or 'farewell' must be a non-empty string
-         |   - greeting: ""
-         | ....^
-        ERROR: backwards:9:16: invalid enum value: . must be one of: [Aloha Adieu Bye Farewell true]
-         |     farewell: ""
-         | ...............^`,
-		},
-		{
-			ID: `errant`,
-			In: `apiVersion: policy.acme.co/v1
-kind: GreetingPolicy
-metadata:
-  name: errant-greetings
-selector:
-  matchLabels:
-  matchExpressions:
-    - {key: "env", operator: "NotIn", values: ["test", "staging"]}
-    - {key: "env", operator: "In", values: [["test"]]}
-    - {key: "trace", operator: "DoesNotExists"}
-rules:
-  - greeting: "Goodbye"
-  - farewell: "Hello"
-  - greeting: "Happy New Year's!"
-    conditions:
-      - description: Ring in the New Year.
-        expression: >
-          request.time.getMonth() == 0 &&
-          request.time.getDate() == 1" `,
-			Err: `
-     ERROR: errant:6:15: value not assignable to schema type: value=null_type, schema=map
-      |   matchLabels:
-      | ..............^
-     ERROR: errant:6:15: expected map type, found: null_type
-      |   matchLabels:
-      | ..............^
-     ERROR: errant:9:45: expected primitive type, found=list
-      |     - {key: "env", operator: "In", values: [["test"]]}
-      | ............................................^
-     ERROR: errant:10:33: invalid enum value: DoesNotExists. must be one of: [DoesNotExist Exists In NotIn]
-      |     - {key: "trace", operator: "DoesNotExists"}
-      | ................................^
-     ERROR: errant:12:5: greeting starts with a farewell word. details: Goodbye
-      |   - greeting: "Goodbye"
-      | ....^
-     ERROR: errant:13:16: invalid enum value: Hello. must be one of: [Aloha Adieu Bye Farewell true]
-      |   - farewell: "Hello"
-      | ...............^`,
-		},
+func TestCompiler(t *testing.T) {
+	tr := test.NewReader("../testdata")
+	tests, err := tr.ReadCases("compile")
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	reg := &registry{
@@ -269,26 +40,33 @@ rules:
 		},
 		templates: map[string]*model.Template{},
 	}
-	comp := &Compiler{reg: reg}
-	tmplSrc := model.StringSource(canonicalTemplate, "canonicalTemplate")
-	tmplAst, _ := parser.ParseYaml(tmplSrc)
-	tmpl, _ := comp.CompileTemplate(tmplSrc, tmplAst)
-	reg.RegisterTemplate(tmpl.Metadata.Name, tmpl)
-
-	for _, tst := range tests {
-		src := model.StringSource(tst.In, tst.ID)
-		pv, iss := parser.ParseYaml(src)
-		if iss.Err() != nil {
-			t.Fatal(iss.Err())
-		}
-		_, iss = comp.CompileInstance(src, pv)
-		dbgErr := ""
-		if iss.Err() != nil {
-			dbgErr = iss.Err().Error()
-		}
-		if !cmp(tst.Err, dbgErr) {
-			t.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
-		}
+	comp := NewCompiler(reg)
+	for _, tc := range tests {
+		tst := tc
+		t.Run(tst.ID, func(tt *testing.T) {
+			pv, iss := parser.ParseYaml(tst.In)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
+			}
+			var tmpl *model.Template
+			if tst.Kind == "template" {
+				tmpl, iss = comp.CompileTemplate(tst.In, pv)
+			}
+			if tst.Kind == "instance" {
+				_, iss = comp.CompileInstance(tst.In, pv)
+			}
+			dbgErr := ""
+			if iss.Err() != nil {
+				dbgErr = iss.Err().Error()
+			}
+			if !cmp(tst.Err, dbgErr) {
+				fmt.Println(dbgErr)
+				tt.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
+			}
+			if tmpl != nil {
+				reg.templates[tmpl.Metadata.Name] = tmpl
+			}
+		})
 	}
 }
 
@@ -304,8 +82,7 @@ func (r *registry) FindSchema(name string) (*model.OpenAPISchema, bool) {
 
 func (r *registry) FindEnv(name string) (*cel.Env, bool) {
 	if name == "" || name == "standard" {
-		e, _ := cel.NewEnv()
-		return e, true
+		return env, true
 	}
 	return nil, false
 }
@@ -313,11 +90,6 @@ func (r *registry) FindEnv(name string) (*cel.Env, bool) {
 func (r *registry) FindTemplate(name string) (*model.Template, bool) {
 	tmpl, found := r.templates[name]
 	return tmpl, found
-}
-
-func (r *registry) RegisterTemplate(name string, tmpl *model.Template) error {
-	r.templates[name] = tmpl
-	return nil
 }
 
 func cmp(a string, e string) bool {
@@ -332,100 +104,8 @@ func cmp(a string, e string) bool {
 	return a == e
 }
 
-var (
-	canonicalTemplate = `
-apiVersion: policy.acme.co/v1
-kind: PolicyTemplate
-metadata:
-  name: GreetingPolicy
-description: >
-  Policy for configuring greetings and farewells.
-schema:
-  type: object
-  properties:
-    greeting:
-      type: string
-    farewell:
-      type: string
-      enum: ["Aloha", "Adieu", "Bye", "Farewell", !txt true]
-    computer_greeting:
-      type: string
-      format: byte
-    start_date:
-      type: string
-      format: date-time
-    end_date:
-      type: string
-      format: date-time
-    details:
-      type: object
-      default: {gone: [], next: []}
-      additionalProperties:
-        type: array
-        items:
-          type: integer
+var env *cel.Env
 
-    conditions:
-      type: array
-      items:
-        type: object
-        metadata:
-          protoRef: google.type.Expr
-          resultType: bool
-          environment: standard
-        required:
-          - expression
-          - description
-        properties:
-          expression:
-            type: string
-          title:
-            type: string
-          description:
-            type: string
-          location:
-            type: string
-
-  additionalProperties:
-    type: string
-validator:
-  environment: standard
-  terms:
-    hi: rule.greeting
-    bye: rule.farewell
-    both: hi == 'aloha' && bye == 'aloha'
-    doubleVal: -42.42
-    emptyNullVal:
-    emptyQuotedVal: !txt ""
-    falseVal: false
-    intVal: -42
-    nullVal: null
-    plainTxtVal: !txt plain text
-    trueVal: true
-    uintVal: 9223372036854775808
-  productions:
-    - match: hi == '' && bye == ''
-      message: >
-        at least one of 'greeting' or 'farewell' must be a non-empty
-        string
-    - match: hi.startsWith("Goodbye")
-      message: greeting starts with a farewell word
-      details: hi
-evaluator:
-  terms:
-    hi: rule.greeting
-    bye: rule.farewell
-  productions:
-    - match: hi != '' && bye == ''
-      decision: policy.acme.welcome
-      output: hi
-    - match: bye != '' && hi == ''
-      decision: policy.acme.depart
-      output: bye
-    - match: hi != '' && bye != ''
-      decisions:
-        - decision: policy.acme.welcome
-          output: hi
-        - decision: policy.acme.depart
-          output: bye`
-)
+func init() {
+	env, _ = cel.NewEnv(test.Decls)
+}

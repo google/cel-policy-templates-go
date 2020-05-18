@@ -1,0 +1,27 @@
+apiVersion: policy.acme.co/v1
+kind: greeting
+metadata:
+  name: seasons-greetings
+selector:
+  matchLabels:
+    env: prod
+  matchExpressions:
+    - {key: "trace", operator: "DoesNotExist"}
+    - {key: "debug", operator: "In", values: ["false", "justified"]}
+rules:
+  - greeting: "Hello"
+  - farewell: "Farewell"
+  - greeting: "You survived Y2K!"
+    computer_greeting: WUFZIFkySyE=
+    start_date: "2000-01-01T00:00:00Z"
+    end_date: "2000-01-07T00:00:00Z"
+    details:
+      gone:
+        - 1999
+      next: [2038]
+  - greeting: "Happy New Year's!"
+    conditions:
+      - description: Ring in the New Year.
+        expression: >
+          request.time.getMonth() == 0 &&
+          request.time.getDate() == 1"

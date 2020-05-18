@@ -218,6 +218,8 @@ properties:
         type: object
         additionalProperties:
           type: string
+      pluralName:
+        type: string
   description:
     type: string
   schema:

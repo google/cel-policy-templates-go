@@ -1,0 +1,54 @@
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: invalid_greeting
+  pluralName: invalid_greetings
+description: >
+  Policy for configuring greetings and farewells.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+    farewell:
+      type: string
+
+validator:
+  environment: standard
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+    both: hi == 'aloha' && bye == 'aloha'
+    doubleVal: -42.42
+    emptyNullVal:
+    emptyQuotedVal: !txt ""
+    falseVal: false
+    intVal: -42
+    nullVal: null
+    plainTxtVal: !txt plain text
+    trueVal: true
+    uintVal: 9223372036854775808
+  productions:
+    - match: hi + bye
+      message: >
+        at least one of 'greeting' or 'farewell' must be a non-empty
+        string
+      details:
+        - hi
+evaluator:
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+  productions:
+    - match: hi != '' && bye == ''
+      decision: policy.acme.welcome
+      output: hi
+    - match: bye != '' && hi == ''
+      decision: policy.acme.depart
+      output: bye
+    - match: hi != '' && bye != ''
+      decisions:
+        - decision: policy.acme.welcome
+          output: hi
+        - decision: policy.acme.depart
+          output: bye

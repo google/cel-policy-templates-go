@@ -1,0 +1,33 @@
+apiVersion: policy.acme.co/v1
+metadata:
+  name: ErrantTemplate
+description: >
+  Policy for configuring greetings and farewells.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+    farewell:
+      type: string
+      enum: [1, 3.2, false, "okay"]
+validator:
+  terms:
+    hi: rule.grating
+    bye: rule.farewell
+    uintVal: 9223372036854775808
+    uintVal: 9223372036854775809
+  productions:
+    - match: hi == '' && byte == ''
+      message: at least one property must be set on the rule.
+evaluator:
+  terms:
+    hi: |
+      bye != ''
+      ? rule.greting
+      : ''
+    bye: rule.farewell
+  productions:
+    - match: hi != '' && bye == ''
+      decision: policy.acme.welcome
+      output: hi

@@ -1,0 +1,12 @@
+ERROR: ../testdata/greeting/instance.bad_data.yaml:6:5: greeting starts with a farewell word. details: Goodbye
+ |   - greeting: "Goodbye"
+ | ....^
+ERROR: ../testdata/greeting/instance.bad_data.yaml:7:5: at least one of 'greeting' or 'farewell' must be a non-empty string
+ |   - greeting: ""
+ | ....^
+ERROR: ../testdata/greeting/instance.bad_data.yaml:8:5: at least one of 'greeting' or 'farewell' must be a non-empty string
+ |   - greeting: ""
+ | ....^
+ERROR: ../testdata/greeting/instance.bad_data.yaml:9:16: invalid enum value: . must be one of: [Aloha Adieu Bye Farewell true]
+ |     farewell: ""
+ | ...............^

@@ -1,0 +1,14 @@
+evaluator:
+  terms:
+    second: first
+  productions:
+    - match: a
+      decision: first
+      decisionRef: second
+      output: a
+    - match: b
+      decisions:
+        - decision: first
+          output: b
+        - decisionRef: second
+          output: c

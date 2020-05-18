@@ -1,0 +1,7 @@
+apiVersion: policy.acme.co/v1
+kind: GrantTemplate
+metadata:
+  name: InvalidEnumValue
+selector:
+  matchExpressions:
+    - {key: "Test", operator: "NotExists"}

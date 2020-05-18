@@ -1,0 +1,12 @@
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: NoEvaluatorTemplate
+description: >
+  Template that with an empty evaluator and validator
+validator:
+  terms:
+    noop: ""
+  productions:
+    - match: noop
+evaluator:

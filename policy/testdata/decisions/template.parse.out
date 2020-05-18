@@ -1,0 +1,14 @@
+1~2~evaluator:3~
+  4~terms:5~
+    6~second: 7~"first"
+  8~productions:9~
+    - 10~11~match: 12~"a"
+      13~decision: 14~"first"
+      15~decisionRef: 16~"second"
+      17~output: 18~"a"
+    - 19~20~match: 21~"b"
+      22~decisions:23~
+        - 24~25~decision: 26~"first"
+          27~output: 28~"b"
+        - 29~30~decisionRef: 31~"second"
+          32~output: 33~"c"

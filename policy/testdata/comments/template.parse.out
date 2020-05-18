@@ -1,0 +1,25 @@
+1~# instance comment
+
+2~# version header
+# version multi-line
+apiVersion: 3~"policy.acme.co/v1" # version inline
+# kind header
+
+4~kind: 5~"CommentsTemplate" # kind inline
+# kind footer
+
+6~# metadata header
+metadata: # metadata inline7~
+  8~# name header
+  name: 9~"CommentPolicy" # name inline
+  # name footer
+  # name footer multi-line
+
+  10~# ns header
+  namespace: 11~"ns" # ns inline
+  # ns footer
+
+# metadata footer
+
+# instance footer
+

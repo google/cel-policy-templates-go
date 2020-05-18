@@ -1,0 +1,9 @@
+1~2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"greeting"
+6~metadata:7~
+  8~name: 9~"backwards-greeting"
+10~rules:11~
+  - 12~13~greeting: 14~"Goodbye"
+  - 15~16~greeting: 17~""
+  - 18~19~greeting: 20~""
+    21~farewell: 22~""

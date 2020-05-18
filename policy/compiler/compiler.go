@@ -863,12 +863,6 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 	switch v := val.(type) {
 	case bool, float64, int64, uint64:
 		return v
-	case float32:
-		return float64(v)
-	case int:
-		return int64(v)
-	case int32:
-		return int64(v)
 	case string, model.PlainTextValue, *model.MultilineStringValue:
 		str := ""
 		switch s := v.(type) {

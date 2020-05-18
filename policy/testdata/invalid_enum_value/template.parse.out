@@ -1,0 +1,7 @@
+1~2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"GrantTemplate"
+6~metadata:7~
+  8~name: 9~"InvalidEnumValue"
+10~selector:11~
+  12~matchExpressions:13~
+    - 14~{15~key: 16~"Test", 17~operator: 18~"NotExists"}

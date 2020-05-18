@@ -1,0 +1,19 @@
+apiVersion: policy.acme.co/v1
+kind: greeting
+metadata:
+  name: errant-greetings
+selector:
+  matchLabels:
+  matchExpressions:
+    - {key: "env", operator: "NotIn", values: ["test", "staging"]}
+    - {key: "env", operator: "In", values: [["test"]]}
+    - {key: "trace", operator: "DoesNotExists"}
+rules:
+  - greeting: "Goodbye"
+  - farewell: "Hello"
+  - greeting: "Happy New Year's!"
+    conditions:
+      - description: Ring in the New Year.
+        expression: >
+          request.time.getMonth() == 0 &&
+          request.time.getDate() == 1"

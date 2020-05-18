@@ -21,14 +21,10 @@ import (
 	"testing"
 
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/interpreter/functions"
 	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/test"
 
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type tc struct {
@@ -57,36 +53,6 @@ type access struct {
 }
 
 var (
-	stdDecls = cel.Declarations(
-		decls.NewIdent("destination.ip", decls.String, nil),
-		decls.NewIdent("origin.ip", decls.String, nil),
-		decls.NewIdent("request.auth.claims", decls.NewMapType(decls.String, decls.Dyn), nil),
-		decls.NewIdent("request.time", decls.Timestamp, nil),
-		decls.NewIdent("resource.name", decls.String, nil),
-		decls.NewIdent("resource.type", decls.String, nil),
-		decls.NewIdent("resource.labels", decls.NewMapType(decls.String, decls.String), nil),
-		decls.NewFunction("locationCode",
-			decls.NewOverload("location_code_string",
-				[]*exprpb.Type{decls.String},
-				decls.String,
-			),
-		),
-	)
-
-	stdFuncs = Functions(&functions.Overload{
-		Operator: "location_code_string",
-		Unary: func(ip ref.Val) ref.Val {
-			switch ip.(types.String) {
-			case types.String("10.0.0.1"):
-				return types.String("us")
-			case types.String("10.0.0.2"):
-				return types.String("de")
-			default:
-				return types.String("ir")
-			}
-		},
-	})
-
 	testCases = []tc{
 		// Sensitive Data
 		{
@@ -285,22 +251,19 @@ var (
 )
 
 func TestEngine(t *testing.T) {
-	env, _ := cel.NewEnv(stdDecls)
+	tr := test.NewReader("testdata")
+	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
-			engine, err := NewEngine(stdFuncs)
+			engine, err := NewEngine(Functions(test.Funcs...))
 			if err != nil {
 				tt.Fatal(err)
 			}
 			engine.AddEnv("", env)
 
-			tmplFile := fmt.Sprintf("examples/%s/template.yaml", tst.policy)
-			tmplBytes, err := ioutil.ReadFile(tmplFile)
-			if err != nil {
-				tt.Fatal(err)
-			}
-			tmplSrc := model.ByteSource(tmplBytes, tmplFile)
+			tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+			tmplSrc := tr.Read(tmplFile)
 			tmpl, iss := engine.CompileTemplate(tmplSrc)
 			if iss.Err() != nil {
 				tt.Fatal(iss.Err())
@@ -310,12 +273,8 @@ func TestEngine(t *testing.T) {
 				tt.Fatal(err)
 			}
 
-			instFile := fmt.Sprintf("examples/%s/instance.yaml", tst.policy)
-			instBytes, err := ioutil.ReadFile(instFile)
-			if err != nil {
-				tt.Fatal(iss.Err())
-			}
-			instSrc := model.ByteSource(instBytes, instFile)
+			instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+			instSrc := tr.Read(instFile)
 			inst, iss := engine.CompileInstance(instSrc)
 			if iss.Err() != nil {
 				tt.Fatal(iss.Err())
@@ -351,8 +310,8 @@ func TestEngine(t *testing.T) {
 func BenchmarkEnforcer(b *testing.B) {
 	for _, tstVal := range testCases {
 		tst := tstVal
-		env, _ := cel.NewEnv(stdDecls)
-		engine, err := NewEngine(stdFuncs)
+		env, _ := cel.NewEnv(test.Decls)
+		engine, err := NewEngine(Functions(test.Funcs...))
 		if err != nil {
 			b.Fatal(err)
 		}

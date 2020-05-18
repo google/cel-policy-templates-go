@@ -1,0 +1,11 @@
+schema:
+  type: array
+  items:
+    type: object
+    properties:
+      - obj: # comment
+          nested: value
+        desc: "hello"
+      - obj:
+          # comment
+          nested: value

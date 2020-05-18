@@ -1,0 +1,4 @@
+selector:
+  matchExpressions:
+    - {key: 1, operator: true, values: none}
+    - {keys: bad, values: []}

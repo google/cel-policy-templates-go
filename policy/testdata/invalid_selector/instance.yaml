@@ -1,0 +1,4 @@
+selector:
+  matchLabels:
+    - first
+  matchExpression:
