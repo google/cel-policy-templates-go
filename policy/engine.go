@@ -40,7 +40,11 @@ type Engine struct {
 	actPool   *activationPool
 }
 
-// NewEngine instantiates a policy.Engine using an environment and a set of options.
+// NewEngine instantiates a policy.Engine with a set of configurable options.
+//
+// Custom functions and policy instance selectors must be provided as functional options to the
+// engine construction if either is intended to be supported within the configured templates and
+// instances.
 func NewEngine(opts ...EngineOption) (*Engine, error) {
 	e := &Engine{
 		evalOpts:  []cel.ProgramOption{},
@@ -80,6 +84,7 @@ func (e *Engine) Eval(ctx map[string]interface{}) ([]*model.DecisionValue, error
 	for tmplName, insts := range e.instances {
 		rt, found := e.runtimes[tmplName]
 		if !found {
+			// Report an error
 			continue
 		}
 		for _, inst := range insts {
@@ -96,6 +101,77 @@ func (e *Engine) Eval(ctx map[string]interface{}) ([]*model.DecisionValue, error
 	return decisions, nil
 }
 
+// AddEnv configures the engine with a named reference to a CEL expression environment.
+func (e *Engine) AddEnv(name string, exprEnv *cel.Env) {
+	e.envs[name] = exprEnv
+}
+
+// AddInstance configures the engine with a given instance.
+//
+// Instances are grouped together by their 'kind' field which corresponds to a template
+// metadata.name value.
+func (e *Engine) AddInstance(inst *model.Instance) {
+	insts, found := e.instances[inst.Kind]
+	if !found {
+		insts = []*model.Instance{}
+	}
+	insts = append(insts, inst)
+	e.instances[inst.Kind] = insts
+}
+
+// AddTemplate configures the engine with a given model.Template.
+//
+// The AddTemplate call will initialize an evaluable runtime.Template as a side-effect.
+func (e *Engine) AddTemplate(tmpl *model.Template) error {
+	e.templates[tmpl.Metadata.Name] = tmpl
+	rtTmpl, err := runtime.NewTemplate(e, tmpl, e.evalOpts...)
+	if err != nil {
+		return err
+	}
+	e.runtimes[tmpl.Metadata.Name] = rtTmpl
+	return nil
+}
+
+// FindEnv returns the cel.Env associated with the given name, if found.
+func (e *Engine) FindEnv(name string) (*cel.Env, bool) {
+	env, found := e.envs[name]
+	return env, found
+}
+
+// FindSchema returns the model.OpenAPISchema instance by its name, if present.
+func (e *Engine) FindSchema(name string) (*model.OpenAPISchema, bool) {
+	schema, found := e.schemas[name]
+	return schema, found
+}
+
+// FindTemplate returns the model.Template object by its metadata.name field, if found.
+func (e *Engine) FindTemplate(name string) (*model.Template, bool) {
+	tmpl, found := e.templates[name]
+	return tmpl, found
+}
+
+// CompileInstance parses, compiles, and validates an input source into a model.Instance.
+// Note, the template referenced in the model.Instance 'kind' field must be configured within
+// the engine before its instances can be compiled.
+func (e *Engine) CompileInstance(src *model.Source) (*model.Instance, *Issues) {
+	ast, iss := parser.ParseYaml(src)
+	if iss.Err() != nil {
+		return nil, iss
+	}
+	c := compiler.NewCompiler(e, e.evalOpts...)
+	return c.CompileInstance(src, ast)
+}
+
+// CompileTemplate parses and compiles an input source into a model.Template.
+func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
+	ast, iss := parser.ParseYaml(src)
+	if iss.Err() != nil {
+		return nil, iss
+	}
+	c := compiler.NewCompiler(e)
+	return c.CompileTemplate(src, ast)
+}
+
 func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activation) bool {
 	if len(inst.Selectors) == 0 || len(e.selectors) == 0 {
 		return true
@@ -108,70 +184,6 @@ func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activati
 		}
 	}
 	return false
-}
-
-func (e *Engine) AddEnv(name string, exprEnv *cel.Env) {
-	e.envs[name] = exprEnv
-}
-
-func (e *Engine) AddInstance(inst *model.Instance) {
-	insts, found := e.instances[inst.Kind]
-	if !found {
-		insts = []*model.Instance{}
-	}
-	insts = append(insts, inst)
-	e.instances[inst.Kind] = insts
-}
-
-func (e *Engine) AddTemplate(tmpl *model.Template) error {
-	e.templates[tmpl.Metadata.Name] = tmpl
-	rtTmpl, err := runtime.NewTemplate(e, tmpl, e.evalOpts...)
-	if err != nil {
-		return err
-	}
-	e.runtimes[tmpl.Metadata.Name] = rtTmpl
-	return nil
-}
-
-func (e *Engine) FindEnv(name string) (*cel.Env, bool) {
-	env, found := e.envs[name]
-	return env, found
-}
-
-func (e *Engine) FindSchema(name string) (*model.OpenAPISchema, bool) {
-	schema, found := e.schemas[name]
-	return schema, found
-}
-
-func (e *Engine) FindTemplate(name string) (*model.Template, bool) {
-	tmpl, found := e.templates[name]
-	return tmpl, found
-}
-
-func (e *Engine) RemoveInstance(name, uid string) {
-
-}
-
-func (e *Engine) RemoveTemplate(name string) {
-	delete(e.templates, name)
-}
-
-func (e *Engine) CompileInstance(src *model.Source) (*model.Instance, *Issues) {
-	ast, iss := parser.ParseYaml(src)
-	if iss.Err() != nil {
-		return nil, iss
-	}
-	c := compiler.NewCompiler(e, e.evalOpts...)
-	return c.CompileInstance(src, ast)
-}
-
-func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
-	ast, iss := parser.ParseYaml(src)
-	if iss.Err() != nil {
-		return nil, iss
-	}
-	c := compiler.NewCompiler(e)
-	return c.CompileTemplate(src, ast)
 }
 
 // EngineOption is a functional option for configuring the policy engine.
@@ -188,8 +200,13 @@ func Functions(funcs ...*functions.Overload) EngineOption {
 	}
 }
 
+// Selector functions take a compiled representation of a policy instance 'selector' and the input
+// argument set to determine whether the policy instance is applicable to the current evaluation
+// context.
 type Selector func(model.Selector, interpreter.Activation) bool
 
+// Selectors is a functional option which may be configured to select a subset of policy instances
+// which are applicable to the current evaluation context.
 func Selectors(selectors ...Selector) EngineOption {
 	return func(e *Engine) (*Engine, error) {
 		e.selectors = selectors
@@ -197,6 +214,7 @@ func Selectors(selectors ...Selector) EngineOption {
 	}
 }
 
+// Issues alias for simplifying the top-level interface of the engine.
 type Issues = cel.Issues
 
 func newActivationPool() *activationPool {

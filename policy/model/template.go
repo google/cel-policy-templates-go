@@ -136,6 +136,9 @@ type Decision struct {
 	Output    *cel.Ast
 }
 
+// NewDecisionValue creates a new named decision with a value, and if configured appropriate a set
+// of evaluation details which contain debug information about the evaluation of the output
+// expression.
 func NewDecisionValue(name string, val ref.Val, det *cel.EvalDetails) *DecisionValue {
 	return &DecisionValue{
 		Name:    name,
@@ -144,6 +147,11 @@ func NewDecisionValue(name string, val ref.Val, det *cel.EvalDetails) *DecisionV
 	}
 }
 
+// DecisionValue represents a named decision and value.
+//
+// If the evaluation of the decision is performed with the cel.EvalOptions(cel.OptTrackState)
+// option, the Details field will be non-nil and contain debug information about the expression
+// evaluation.
 type DecisionValue struct {
 	RuleID  int64
 	Name    string

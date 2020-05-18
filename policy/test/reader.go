@@ -23,24 +23,46 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 )
 
+// Case is a test case for use with parsing, compiling, or evaluating.
 type Case struct {
-	ID   string
+	// ID is a human-readable short-name for the test case.
+	ID string
+
+	// Kind is the type of test case this is, either template or instance.
 	Kind string
-	In   *model.Source
-	Out  string
-	Err  string
+
+	// In contains a reference to the source under test.
+	In *model.Source
+
+	// Out represents the output value expected from the test in a positive case.
+	//
+	// Note, positive test cases bear the '.out' suffix within testdata folders.
+	Out string
+
+	// Err is the error expected from the negative case of the test.
+	//
+	// Note, negative test cases bear the '.err' suffix within testdata folders.
+	Err string
 }
 
-func NewReader(rootDir string) *reader {
-	return &reader{rootDir: rootDir}
+// NewReader constructs a new test reader with the relative location of the testdata.
+func NewReader(relDir string) *reader {
+	return &reader{relDir: relDir}
 }
 
 type reader struct {
-	rootDir string
+	relDir string
 }
 
+// ReadCases returns a set of test cases which match a given execution phase. The test cases for
+// a given folder are sorted such that all templates appear before all instances. This way the
+// successful compilation of a template may be used with subsequent tests for instances.
+//
+// The 'phase' value may be either 'parse' or 'compile'.
+//
+// TODO: support 'eval' phase via ReadCases.
 func (r *reader) ReadCases(phase string) ([]*Case, error) {
-	files, err := ioutil.ReadDir(r.rootDir)
+	files, err := ioutil.ReadDir(r.relDir)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +70,13 @@ func (r *reader) ReadCases(phase string) ([]*Case, error) {
 	for i := 0; i < len(files); i++ {
 		file := files[i]
 		testName := file.Name()
+		if testName == "README.md" {
+			continue
+		}
 		if !file.IsDir() {
 			return nil, fmt.Errorf("file is not a directory: %s", testName)
 		}
-		testDir := fmt.Sprintf("%s/%s", r.rootDir, testName)
+		testDir := fmt.Sprintf("%s/%s", r.relDir, testName)
 		testFiles, err := ioutil.ReadDir(testDir)
 		if err != nil {
 			return nil, err
@@ -111,6 +136,7 @@ func (r *reader) ReadCases(phase string) ([]*Case, error) {
 	return testCases, nil
 }
 
+// Read returns the Source instance for the given file name.
 func (r *reader) Read(fileName string) *model.Source {
 	tmplBytes, err := ioutil.ReadFile(fileName)
 	if err != nil {

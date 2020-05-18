@@ -104,6 +104,7 @@ type CustomRule struct {
 
 func (*CustomRule) isRule() {}
 
+// GetID returns the parse-time generated ID of the rule node.
 func (c *CustomRule) GetID() int64 {
 	return c.ID
 }

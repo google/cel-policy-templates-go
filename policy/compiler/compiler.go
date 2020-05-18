@@ -39,6 +39,7 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
 func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
 	return &Compiler{
 		evalOpts: evalOpts,
@@ -154,7 +155,6 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 	if iss != nil {
 		ic.errors = ic.errors.Append(iss.Errors())
 	}
-	// TODO: handle running the validator on a per-rule basis once the evaluator is implemented.
 	errs := ic.errors.GetErrors()
 	if len(errs) > 0 {
 		return nil, cel.NewIssues(ic.errors)
@@ -540,6 +540,11 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 	return env.Extend(cel.Declarations(termDecls...))
 }
 
+// compileExpr converts a dynamic value to a CEL AST.
+//
+// If the 'strict' flag is true, the value node must be a CEL expression, otherwise the value
+// node for a string-like value may either be a CEL expression (if it parses) or a simple string
+// literal.
 func (tc *templateCompiler) compileExpr(dyn *model.DynValue,
 	env *cel.Env, strict bool) *cel.Ast {
 	loc, _ := tc.info.LocationByID(dyn.ID)
@@ -757,7 +762,7 @@ func (dc *dynCompiler) resolveSchemaRef(dyn *model.DynValue, schema *model.OpenA
 	if schema.TypeRef == "" {
 		return schema
 	}
-	found := false
+	var found bool
 	typeRef := schema.TypeRef
 	schema, found = dc.reg.FindSchema(typeRef)
 	if !found {

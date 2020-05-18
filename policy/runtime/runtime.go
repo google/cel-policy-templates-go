@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package runtime implements the evaluation model for templates / instances.
 package runtime
 
 import (
@@ -30,9 +31,10 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewTemplate creates a validator / evaluator pair for a model.Template.
 func NewTemplate(reg model.Registry,
 	mdl *model.Template,
-	evalOpts... cel.ProgramOption) (*Template, error) {
+	evalOpts ...cel.ProgramOption) (*Template, error) {
 	t := &Template{
 		reg:     reg,
 		mdl:     mdl,
@@ -55,6 +57,7 @@ func NewTemplate(reg model.Registry,
 	return t, nil
 }
 
+// Template represents an evaluable version of a model.Template.
 type Template struct {
 	reg       model.Registry
 	mdl       *model.Template
@@ -63,10 +66,13 @@ type Template struct {
 	actPool   *ruleActivationPool
 }
 
+// Name returns the template's metadata name value.
 func (t *Template) Name() string {
 	return t.mdl.Metadata.Name
 }
 
+// Validate checks the content of an instance to ensure it conforms with the validation rules
+// present within the template, if any.
 func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues {
 	if t.validator == nil {
 		return nil
@@ -102,11 +108,10 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 	return iss
 }
 
-func (t *Template) Eval(inst *model.Instance, vars interpreter.Activation) ([]*model.DecisionValue, error) {
+// Eval returns the evaluation result of a policy instance against a given set of variables.
+func (t *Template) Eval(inst *model.Instance,
+	vars interpreter.Activation) ([]*model.DecisionValue, error) {
 	// TODO: support incremental evaluation, both for debug and for aggregation simplicity.
-	if t.evaluator == nil {
-		return nil, nil
-	}
 	return t.evalInternal(t.evaluator, inst, vars)
 }
 
@@ -130,13 +135,14 @@ func (t *Template) evalInternal(eval *evaluator,
 		decisions = append(decisions, decs...)
 	}
 	if len(errs) != 0 {
+		// TODO: report error
 		fmt.Println(errs)
 	}
 	return decisions, nil
 }
 
 func (t *Template) newEvaluator(mdl *model.Evaluator,
-	evalOpts... cel.ProgramOption) (*evaluator, error) {
+	evalOpts ...cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
 	// Expose the cel EvalOptions as policy.EvalOption functions.
 	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
@@ -242,6 +248,7 @@ func (eval *evaluator) eval(vars interpreter.Activation) ([]*model.DecisionValue
 		}
 	}
 	if len(errs) != 0 {
+		// TODO: report error
 		fmt.Println(errs)
 	}
 	return decisions, nil

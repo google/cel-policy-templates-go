@@ -17,9 +17,12 @@
 6~metadata:7~
   8~name: 9~"restricted_resource_types"
   10~namespace: 11~"acme"
-12~rules:13~
-  - 14~15~mode: 16~"deny"
-    17~resource_types:18~
-      - 19~"sqladmin.googleapis.com/Instance"
-      - 20~"compute.googleapis.com/Instance"
-      - 21~"dataproc.googleapis.com/Job"
+12~selector:13~
+  14~matchLabels:15~
+    16~env: 17~"prod"
+18~rules:19~
+  - 20~21~mode: 22~"deny"
+    23~resource_types:24~
+      - 25~"sqladmin.googleapis.com/Instance"
+      - 26~"compute.googleapis.com/Instance"
+      - 27~"dataproc.googleapis.com/Job"

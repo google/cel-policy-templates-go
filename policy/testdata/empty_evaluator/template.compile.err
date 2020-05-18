@@ -1,15 +1,15 @@
-ERROR: ../testdata/empty_evaluator/template.yaml:9:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
+ERROR: ../testdata/empty_evaluator/template.yaml:23:12: Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
  |     noop: ""
  | ...........^
-ERROR: ../testdata/empty_evaluator/template.yaml:11:7: missing required field(s): [message]
+ERROR: ../testdata/empty_evaluator/template.yaml:25:7: missing required field(s): [message]
  |     - match: noop
  | ......^
-ERROR: ../testdata/empty_evaluator/template.yaml:11:14: expected bool match result, found: !error!
+ERROR: ../testdata/empty_evaluator/template.yaml:25:14: expected bool match result, found: !error!
  |     - match: noop
  | .............^
-ERROR: ../testdata/empty_evaluator/template.yaml:12:11: value not assignable to schema type: value=null_type, schema=map
+ERROR: ../testdata/empty_evaluator/template.yaml:26:11: value not assignable to schema type: value=null_type, schema=map
  | evaluator:
  | ..........^
-ERROR: ../testdata/empty_evaluator/template.yaml:12:11: expected map type, found: null_type
+ERROR: ../testdata/empty_evaluator/template.yaml:26:11: expected map type, found: null_type
  | evaluator:
  | ..........^

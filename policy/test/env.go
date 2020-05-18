@@ -25,14 +25,15 @@ import (
 )
 
 var (
+	// Decls represent the standard variables and functions available for testing templates.
 	Decls = cel.Declarations(
-		decls.NewIdent("destination.ip", decls.String, nil),
-		decls.NewIdent("origin.ip", decls.String, nil),
-		decls.NewIdent("request.auth.claims", decls.NewMapType(decls.String, decls.Dyn), nil),
-		decls.NewIdent("request.time", decls.Timestamp, nil),
-		decls.NewIdent("resource.name", decls.String, nil),
-		decls.NewIdent("resource.type", decls.String, nil),
-		decls.NewIdent("resource.labels", decls.NewMapType(decls.String, decls.String), nil),
+		decls.NewVar("destination.ip", decls.String),
+		decls.NewVar("origin.ip", decls.String),
+		decls.NewVar("request.auth.claims", decls.NewMapType(decls.String, decls.Dyn)),
+		decls.NewVar("request.time", decls.Timestamp),
+		decls.NewVar("resource.name", decls.String),
+		decls.NewVar("resource.type", decls.String),
+		decls.NewVar("resource.labels", decls.NewMapType(decls.String, decls.String)),
 		decls.NewFunction("locationCode",
 			decls.NewOverload("location_code_string",
 				[]*exprpb.Type{decls.String},
@@ -41,6 +42,7 @@ var (
 		),
 	)
 
+	// Funcs are the custom function implementations used within templates.
 	Funcs = []*functions.Overload{
 		&functions.Overload{
 			Operator: "location_code_string",

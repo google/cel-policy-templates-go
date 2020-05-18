@@ -159,7 +159,7 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 	case model.PlainTextType:
 		err = ref.assign(model.PlainTextValue(node.Value))
 	case model.IntType:
-		var val interface{} = nil
+		var val interface{}
 		val, convErr := strconv.ParseInt(node.Value, 10, 64)
 		if convErr != nil {
 			var convErr2 error
