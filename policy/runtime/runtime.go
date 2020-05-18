@@ -135,8 +135,8 @@ func (t *Template) evalInternal(eval *evaluator,
 		decisions = append(decisions, decs...)
 	}
 	if len(errs) != 0 {
-		// TODO: report error
-		fmt.Println(errs)
+		// TODO: report a richer error
+		return nil, errs[0]
 	}
 	return decisions, nil
 }
@@ -249,7 +249,7 @@ func (eval *evaluator) eval(vars interpreter.Activation) ([]*model.DecisionValue
 	}
 	if len(errs) != 0 {
 		// TODO: report error
-		fmt.Println(errs)
+		return nil, errs[0]
 	}
 	return decisions, nil
 }
