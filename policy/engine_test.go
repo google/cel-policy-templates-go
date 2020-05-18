@@ -16,11 +16,11 @@ package policy
 
 import (
 	"fmt"
-	"io/ioutil"
 	"reflect"
 	"testing"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/interpreter"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/test"
 
@@ -231,6 +231,9 @@ var (
 			input: map[string]interface{}{
 				"resource.type": "sqladmin.googleapis.com/Instance",
 				"resource.name": "forbidden-my-sql-instance",
+				"resource.labels": map[string]string{
+					"env": "prod",
+				},
 			},
 			outputs: []interface{}{
 				violation{
@@ -247,6 +250,18 @@ var (
 				},
 			},
 		},
+		{
+			name:   "resource_types_not_selected",
+			policy: "resource_types",
+			input: map[string]interface{}{
+				"resource.type": "sqladmin.googleapis.com/Instance",
+				"resource.name": "forbidden-my-sql-instance",
+				"resource.labels": map[string]string{
+					"env": "dev",
+				},
+			},
+			outputs: []interface{}{},
+		},
 	}
 )
 
@@ -256,7 +271,9 @@ func TestEngine(t *testing.T) {
 	for _, tstVal := range testCases {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
-			engine, err := NewEngine(Functions(test.Funcs...))
+			engine, err := NewEngine(
+				Functions(test.Funcs...),
+				Selectors(labelSelector))
 			if err != nil {
 				tt.Fatal(err)
 			}
@@ -308,20 +325,19 @@ func TestEngine(t *testing.T) {
 }
 
 func BenchmarkEnforcer(b *testing.B) {
+	tr := test.NewReader("testdata")
+	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		env, _ := cel.NewEnv(test.Decls)
-		engine, err := NewEngine(Functions(test.Funcs...))
+		engine, err := NewEngine(
+			Functions(test.Funcs...),
+			Selectors(labelSelector))
 		if err != nil {
 			b.Fatal(err)
 		}
 		engine.AddEnv("", env)
-		tmplFile := fmt.Sprintf("examples/%s/template.yaml", tst.policy)
-		tmplBytes, err := ioutil.ReadFile(tmplFile)
-		if err != nil {
-			b.Fatal(err)
-		}
-		tmplSrc := model.ByteSource(tmplBytes, tmplFile)
+		tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+		tmplSrc := tr.Read(tmplFile)
 		tmpl, iss := engine.CompileTemplate(tmplSrc)
 		if iss.Err() != nil {
 			b.Fatal(iss.Err())
@@ -331,12 +347,8 @@ func BenchmarkEnforcer(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		instFile := fmt.Sprintf("examples/%s/instance.yaml", tst.policy)
-		instBytes, err := ioutil.ReadFile(instFile)
-		if err != nil {
-			b.Fatal(iss.Err())
-		}
-		instSrc := model.ByteSource(instBytes, instFile)
+		instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+		instSrc := tr.Read(instFile)
 		inst, iss := engine.CompileInstance(instSrc)
 		if iss.Err() != nil {
 			b.Fatal(iss.Err())
@@ -351,5 +363,26 @@ func BenchmarkEnforcer(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func labelSelector(sel model.Selector, vars interpreter.Activation) bool {
+	switch s := sel.(type) {
+	case *model.LabelSelector:
+		lbls, found := vars.ResolveName("resource.labels")
+		if !found {
+			return len(s.LabelValues) == 0
+		}
+		l := lbls.(map[string]string)
+		for k, v := range s.LabelValues {
+			lv, found := l[k]
+			if !found || lv != v {
+				return false
+			}
+		}
+		return true
+	default:
+		// TODO: implement
+		return false
 	}
 }

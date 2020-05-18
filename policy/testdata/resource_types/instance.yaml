@@ -17,6 +17,9 @@ kind: resource_types
 metadata:
   name: restricted_resource_types
   namespace: acme
+selector:
+  matchLabels:
+    env: prod
 rules:
   - mode: deny
     resource_types:
