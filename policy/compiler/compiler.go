@@ -146,6 +146,11 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 			cinst.Rules[i] = ic.convertToRule(rule)
 		}
 	}
+	rule, found := m.GetField("rule")
+	if found {
+		r := ic.convertToRule(rule.Ref)
+		cinst.Rules = []model.Rule{r}
+	}
 	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.evalOpts...)
 	if err != nil {
 		// report the error
@@ -492,16 +497,77 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 		tc.reportErrorAtID(envName.Ref.ID, err.Error())
 		return nil, nil
 	}
-	terms, found := eval.GetField("terms")
+	ranges, found := eval.GetField("ranges")
 	productionsEnv := env
 	if found {
-		productionsEnv, err = tc.compileTerms(terms.Ref, env, evaluator)
+		productionsEnv, err = tc.compileRanges(ranges.Ref, env, evaluator)
+		if err != nil {
+			tc.reportErrorAtID(ranges.Ref.ID, err.Error())
+			return nil, nil
+		}
+	}
+	terms, found := eval.GetField("terms")
+	if found {
+		productionsEnv, err = tc.compileTerms(terms.Ref, productionsEnv, evaluator)
 		if err != nil {
 			tc.reportErrorAtID(terms.Ref.ID, err.Error())
 			return nil, nil
 		}
 	}
 	return evaluator, productionsEnv
+}
+
+func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
+	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
+	ranges := tc.listValue(dyn)
+	var rangeDecls []*exprpb.Decl
+	for _, r := range ranges.Entries {
+		rangeEnv, err := env.Extend(cel.Declarations(rangeDecls...))
+		if err != nil {
+			tc.reportErrorAtID(r.ID, err.Error())
+			continue
+		}
+		rv := tc.mapValue(r)
+		inField, found := rv.GetField("in")
+		if !found {
+			// This error would have been caught by schema checking.
+			continue
+		}
+		inAst := tc.compileExpr(inField.Ref, rangeEnv, true)
+		keyType := decls.Error
+		valueType := decls.Error
+		if inAst != nil {
+			inType := inAst.ResultType()
+			switch inType.TypeKind.(type) {
+			case *exprpb.Type_MapType_:
+				inMap := inType.GetMapType()
+				keyType = inMap.GetKeyType()
+				valueType = inMap.GetValueType()
+			case *exprpb.Type_ListType_:
+				inList := inType.GetListType()
+				keyType = decls.Int
+				valueType = inList.GetElemType()
+			}
+		}
+		// TODO: check for valid combinations of key, index, values
+		iterRange := &model.Range{
+			ID:   r.ID,
+			Expr: inAst,
+		}
+		keyField, found := rv.GetField("key")
+		if found {
+			iterRange.Key = decls.NewVar(tc.strValue(keyField.Ref), keyType)
+			rangeDecls = append(rangeDecls, iterRange.Key)
+		}
+		valField, found := rv.GetField("value")
+		if found {
+			iterRange.Value = decls.NewVar(tc.strValue(valField.Ref), valueType)
+			rangeDecls = append(rangeDecls, iterRange.Value)
+		}
+		ceval.Ranges = append(ceval.Ranges, iterRange)
+	}
+	// Return the productions environment which contains all terms and inputs to the template.
+	return env.Extend(cel.Declarations(rangeDecls...))
 }
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,

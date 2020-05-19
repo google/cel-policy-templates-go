@@ -47,6 +47,10 @@ type violation struct {
 	Details *metadata
 }
 
+func (v violation) String() string {
+	return v.Message
+}
+
 type access struct {
 	Deny  bool
 	Allow bool
@@ -54,6 +58,44 @@ type access struct {
 
 var (
 	testCases = []tc{
+		// Binauthz
+		{
+			name:   "binauthz_package_violations",
+			policy: "binauthz",
+			input: map[string]interface{}{
+				"request.packages": []interface{}{
+					map[string]interface{}{
+						"name": "minted-fail",
+						"provenance": map[string]interface{}{
+							"valid":          true,
+							"builder":        "build-secure",
+							"submitted_code": true,
+							"build_target":   "//mint:target_3",
+							"is_mainline":    true,
+							"branch_name":    "master",
+						},
+					},
+					map[string]interface{}{
+						"name": "unminted-fail",
+						"provenance": map[string]interface{}{
+							"valid":          true,
+							"builder":        "build-insecure",
+							"submitted_code": false,
+							"build_target":   "//nonmint:target",
+							"branch_name":    "dev",
+						},
+					},
+				},
+			},
+			outputs: []interface{}{
+				violation{
+					Message: "package minted-fail: disallowed build target",
+				},
+				violation{
+					Message: "package unminted-fail: not verifiably built",
+				},
+			},
+		},
 		// Sensitive Data
 		{
 			name:   "sensitive_data_prefix_same_location",
@@ -306,12 +348,13 @@ func TestEngine(t *testing.T) {
 				for _, out := range tst.outputs {
 					ntv, err := dec.Value.ConvertToNative(reflect.TypeOf(out))
 					if err != nil {
-						tt.Fatalf("out type: %T, err: %v", dec, err)
+						tt.Fatalf("out type: %T, err: %v", dec.Value, err)
 					}
 					if reflect.DeepEqual(ntv, out) {
 						found = true
 						break
 					}
+					tt.Logf("out: %v", dec.Value)
 				}
 				if !found {
 					tt.Fatalf("Got decision %v, wanted one of %v", dec, tst.outputs)

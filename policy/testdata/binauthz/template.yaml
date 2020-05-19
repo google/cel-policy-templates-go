@@ -1,0 +1,72 @@
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: binauthz
+schema:
+  type: object
+  properties:
+    verifiable_builders:
+      type: array
+      items:
+        type: string
+    allowed_nonmint_build_targets:
+      type: array
+      items:
+        type: string
+    allowed_mint_build_targets:
+      type: array
+      items:
+        type: string
+    allow_any_branch:
+      type: boolean
+    allowed_branch_names:
+      type: array
+      items:
+        type: string
+evaluator:
+  ranges:
+    - value: pkg
+      in: request.packages
+  terms:
+    prefix: >
+      'package ' + pkg.name + ':'
+    proven: pkg.provenance
+    proven_verifiable: >
+      proven.builder in rule.verifiable_builders
+    allowed_nonmint_target: >
+      proven.build_target in rule.allowed_nonmint_build_targets
+    allowed_mint_target: >
+      proven.build_target in rule.allowed_mint_build_targets
+    proven_target: >
+      allowed_nonmint_target || allowed_mint_target
+    proven_submitted: >
+      allowed_nonmint_target ||
+      (allowed_mint_target && proven.submitted_code)
+    proven_branch: >
+      allowed_nonmint_target ||
+      (proven.is_mainline ||
+          rule.allow_any_branch ||
+          proven.branch_name in rule.allowed_branch_names)
+  productions:
+    - match: "!proven.valid"
+      decision: policy.violation
+      output:
+        message: prefix + ' lacks provenance'
+    - match: "proven.valid && !proven_verifiable"
+      decision: policy.violation
+      output:
+        message: prefix + ' not verifiably built'
+    - match: "proven.valid && proven_verifiable && !proven_target"
+      decision: policy.violation
+      output:
+        message: prefix + ' disallowed build target'
+    - match: "proven.valid && proven_verifiable && proven_target && !proven_submitted"
+      decision: policy.violation
+      output:
+        message: prefix + ' non-mint build'
+    - match: >
+        proven.valid && proven_verifiable &&
+        proven_target && proven_submitted && !proven_branch
+      decision: policy.violation
+      output:
+        message: prefix + ' disallowed branch'

@@ -1,0 +1,14 @@
+apiVersion: policy.acme.co/v1
+kind: binauthz
+metadata:
+  name: binauthz-example
+rule:
+  verifiable_builders:
+    - build-secure
+  allowed_branch_names:
+    - allowed_branch
+  allowed_mint_build_targets:
+    - "//mint:target_1"
+    - "//mint:target_2"
+  allowed_nonmint_build_targets:
+    - "//nonmint:target"

@@ -31,6 +31,7 @@ var (
 		decls.NewVar("origin.ip", decls.String),
 		decls.NewVar("request.auth.claims", decls.NewMapType(decls.String, decls.Dyn)),
 		decls.NewVar("request.time", decls.Timestamp),
+		decls.NewVar("request.packages", decls.NewListType(decls.Dyn)),
 		decls.NewVar("resource.name", decls.String),
 		decls.NewVar("resource.type", decls.String),
 		decls.NewVar("resource.labels", decls.NewMapType(decls.String, decls.String)),
