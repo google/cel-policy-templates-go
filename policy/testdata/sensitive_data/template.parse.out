@@ -1,0 +1,47 @@
+1~# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"sensitive_data"
+  10~namespace: 11~"acme"
+12~schema:13~
+  14~type: 15~"object"
+  16~properties:17~
+    18~description:19~
+      20~type: 21~"string"
+    22~resource_prefixes:23~
+      24~type: 25~"array"
+      26~items:27~
+        28~type: 29~"string"
+    30~labels:31~
+      32~type: 33~"object"
+      34~additionalProperties:35~
+        36~type: 37~"array"
+        38~items:39~
+          40~type: 41~"string"
+42~evaluator:43~
+  44~description: 45~>
+    Treat resources with certain names and labels as sensitive when
+    accessed outside the country where the resource exists.
+  46~terms:47~
+    48~different_locations: 49~"locationCode(origin.ip) != locationCode(destination.ip)"
+    50~is_sensitive_prefix: 51~"rule.resource_prefixes.exists(prefix, resource.name.startsWith(prefix))"
+    52~is_sensitive_label: 53~>
+      rule.labels.exists(l, l in resource.labels && resource.labels[l] in rule.labels[l])
+  54~productions:55~
+    - 56~57~match: 58~"different_locations && (is_sensitive_prefix || is_sensitive_label)"
+      59~decision: 60~"policy.deny"
+      61~output: 62~true

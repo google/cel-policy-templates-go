@@ -1,0 +1,9 @@
+apiVersion: policy.acme.co/v1
+kind: AdmissionTemplate
+metadata:
+  name: AllTheTypes
+rules:
+  - value: true
+  - value: 1.2
+  - value: "1000"
+  - value:

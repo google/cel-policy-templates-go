@@ -1,0 +1,47 @@
+1~# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~metadata:5~
+  6~name: 7~"ErrantTemplate"
+8~description: 9~>
+  Policy for configuring greetings and farewells.
+10~schema:11~
+  12~type: 13~"object"
+  14~properties:15~
+    16~greeting:17~
+      18~type: 19~"string"
+    20~farewell:21~
+      22~type: 23~"string"
+      24~enum:25~[26~1, 27~3.2, 28~false, 29~"okay"]
+30~validator:31~
+  32~terms:33~
+    34~hi: 35~"rule.grating"
+    36~bye: 37~"rule.farewell"
+    38~uintVal: 39~9223372036854775808
+    40~uintVal: 41~9223372036854775809
+  42~productions:43~
+    - 44~45~match: 46~"hi == '' && byte == ''"
+      47~message: 48~"at least one property must be set on the rule."
+49~evaluator:50~
+  51~terms:52~
+    53~hi: 54~|
+      bye != ''
+      ? rule.greting
+      : ''
+    55~bye: 56~"rule.farewell"
+  57~productions:58~
+    - 59~60~match: 61~"hi != '' && bye == ''"
+      62~decision: 63~"policy.acme.welcome"
+      64~output: 65~"hi"

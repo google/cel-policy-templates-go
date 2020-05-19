@@ -1,0 +1,54 @@
+1~# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"resource_types"
+  10~namespace: 11~"acme"
+12~schema:13~
+  14~type: 15~"object"
+  16~required:17~[18~"resource_types"]
+  19~properties:20~
+    21~mode:22~
+      23~type: 24~"string"
+      25~enum:26~[27~"allow", 28~"deny"]
+      29~default: 30~"allow"
+      31~description: 32~>
+        String identifying the operational mode, allow or deny.
+        In the allow mode, only resource types from the resource_types
+        will be allowed (all other types will raise a violation). In the
+        deny mode, any resource type not in the resource_types will not
+        raise a violation.
+    33~resource_types:34~
+      35~type: 36~"array"
+      37~items:38~
+        39~type: 40~"string"
+      41~description: 42~>
+        Array of resource types that will be either allowed (mode:allow)
+        or denied (mode:deny)
+43~evaluator:44~
+  45~terms:46~
+    47~matches_resource_type: 48~"resource.type in rule.resource_types"
+  49~productions:50~
+    - 51~52~match: 53~>
+        rule.mode == 'allow' && !matches_resource_type ||
+        rule.mode == 'deny' && matches_resource_type
+      54~decision: 55~"policy.violation"
+      56~output:57~
+        58~message: 59~"resource.name + \" is in violation.\""
+        60~details:61~
+          62~resource: 63~"resource.name"
+          64~mode: 65~"rule.mode"
+          66~resourceTypes: 67~"rule.resource_types"

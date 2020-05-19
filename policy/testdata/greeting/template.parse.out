@@ -1,0 +1,104 @@
+1~# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"greeting"
+10~description: 11~>
+  Policy for configuring greetings and farewells.
+12~schema:13~
+  14~type: 15~"object"
+  16~properties:17~
+    18~greeting:19~
+      20~type: 21~"string"
+    22~farewell:23~
+      24~type: 25~"string"
+      26~enum:27~[28~"Aloha", 29~"Adieu", 30~"Bye", 31~"Farewell", 32~!txt "true"]
+    33~computer_greeting:34~
+      35~type: 36~"string"
+      37~format: 38~"byte"
+    39~start_date:40~
+      41~type: 42~"string"
+      43~format: 44~"date-time"
+    45~end_date:46~
+      47~type: 48~"string"
+      49~format: 50~"date-time"
+    51~details:52~
+      53~type: 54~"object"
+      55~default:56~{57~gone: 58~[], 59~next: 60~[]}
+      61~additionalProperties:62~
+        63~type: 64~"array"
+        65~items:66~
+          67~type: 68~"integer"
+    69~conditions:70~
+      71~type: 72~"array"
+      73~items:74~
+        75~type: 76~"object"
+        77~metadata:78~
+          79~protoRef: 80~"google.type.Expr"
+          81~resultType: 82~"bool"
+          83~environment: 84~"standard"
+        85~required:86~
+          - 87~"expression"
+          - 88~"description"
+        89~properties:90~
+          91~expression:92~
+            93~type: 94~"string"
+          95~title:96~
+            97~type: 98~"string"
+          99~description:100~
+            101~type: 102~"string"
+          103~location:104~
+            105~type: 106~"string"
+107~validator:108~
+  109~environment: 110~"standard"
+  111~terms:112~
+    113~hi: 114~"rule.greeting"
+    115~bye: 116~"rule.farewell"
+    117~both: 118~"hi == 'aloha' && bye == 'aloha'"
+    119~doubleVal: 120~-42.42
+    121~emptyNullVal: 122~
+    123~emptyQuotedVal: 124~!txt ""
+    125~falseVal: 126~false
+    127~intVal: 128~-42
+    129~nullVal: 130~
+    131~plainTxtVal: 132~!txt "plain text"
+    133~trueVal: 134~true
+    135~uintVal: 136~9223372036854775808
+  137~productions:138~
+    - 139~140~match: 141~"hi == '' && bye == ''"
+      142~message: 143~>
+        at least one of 'greeting' or 'farewell' must be a non-empty
+        string
+    - 144~145~match: 146~"hi.startsWith(\"Goodbye\")"
+      147~message: 148~"greeting starts with a farewell word"
+      149~details: 150~"hi"
+151~evaluator:152~
+  153~terms:154~
+    155~hi: 156~"rule.greeting"
+    157~bye: 158~"rule.farewell"
+  159~productions:160~
+    - 161~162~match: 163~"hi != '' && bye == ''"
+      164~decision: 165~"policy.acme.welcome"
+      166~output: 167~"hi"
+    - 168~169~match: 170~"bye != '' && hi == ''"
+      171~decision: 172~"policy.acme.depart"
+      173~output: 174~"bye"
+    - 175~176~match: 177~"hi != '' && bye != ''"
+      178~decisions:179~
+        - 180~181~decision: 182~"policy.acme.welcome"
+          183~output: 184~"hi"
+        - 185~186~decision: 187~"policy.acme.depart"
+          188~output: 189~"bye"

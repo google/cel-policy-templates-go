@@ -1,0 +1,68 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: invalid_greeting
+  pluralName: invalid_greetings
+description: >
+  Policy for configuring greetings and farewells.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+    farewell:
+      type: string
+
+validator:
+  environment: standard
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+    both: hi == 'aloha' && bye == 'aloha'
+    doubleVal: -42.42
+    emptyNullVal:
+    emptyQuotedVal: !txt ""
+    falseVal: false
+    intVal: -42
+    nullVal: null
+    plainTxtVal: !txt plain text
+    trueVal: true
+    uintVal: 9223372036854775808
+  productions:
+    - match: hi + bye
+      message: >
+        at least one of 'greeting' or 'farewell' must be a non-empty
+        string
+      details:
+        - hi
+evaluator:
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+  productions:
+    - match: hi != '' && bye == ''
+      decision: policy.acme.welcome
+      output: hi
+    - match: bye != '' && hi == ''
+      decision: policy.acme.depart
+      output: bye
+    - match: hi != '' && bye != ''
+      decisions:
+        - decision: policy.acme.welcome
+          output: hi
+        - decision: policy.acme.depart
+          output: bye

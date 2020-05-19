@@ -1,0 +1,28 @@
+1~# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~evaluator:3~
+  4~terms:5~
+    6~second: 7~"first"
+8~productions:9~
+  - 10~11~match: 12~"a"
+    13~decision: 14~"first"
+    15~decisionRef: 16~"second"
+    17~output: 18~"a"
+  - 19~20~match: 21~"b"
+    22~decisions:23~
+      - 24~25~decision: 26~"first"
+        27~output: 28~"b"
+      - 29~30~decisionRef: 31~"second"
+        32~output: 33~"c"

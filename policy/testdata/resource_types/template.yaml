@@ -1,0 +1,54 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: resource_types
+  namespace: acme
+schema:
+  type: object
+  required: ["resource_types"]
+  properties:
+    mode:
+      type: string
+      enum: ["allow", "deny"]
+      default: "allow"
+      description: >
+        String identifying the operational mode, allow or deny.
+        In the allow mode, only resource types from the resource_types
+        will be allowed (all other types will raise a violation). In the
+        deny mode, any resource type not in the resource_types will not
+        raise a violation.
+    resource_types:
+      type: array
+      items:
+        type: string
+      description: >
+        Array of resource types that will be either allowed (mode:allow)
+        or denied (mode:deny)
+evaluator:
+  terms:
+    matches_resource_type: resource.type in rule.resource_types
+  productions:
+    - match: >
+        rule.mode == 'allow' && !matches_resource_type ||
+        rule.mode == 'deny' && matches_resource_type
+      decision: 'policy.violation'
+      output:
+        message: resource.name + " is in violation."
+        details:
+          resource: resource.name
+          mode: rule.mode
+          resourceTypes: rule.resource_types

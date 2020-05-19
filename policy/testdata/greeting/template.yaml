@@ -1,0 +1,106 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: greeting
+description: >
+  Policy for configuring greetings and farewells.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+    farewell:
+      type: string
+      enum: ["Aloha", "Adieu", "Bye", "Farewell", !txt true]
+    computer_greeting:
+      type: string
+      format: byte
+    start_date:
+      type: string
+      format: date-time
+    end_date:
+      type: string
+      format: date-time
+    details:
+      type: object
+      default: {gone: [], next: []}
+      additionalProperties:
+        type: array
+        items:
+          type: integer
+
+    conditions:
+      type: array
+      items:
+        type: object
+        metadata:
+          protoRef: google.type.Expr
+          resultType: bool
+          environment: standard
+        required:
+          - expression
+          - description
+        properties:
+          expression:
+            type: string
+          title:
+            type: string
+          description:
+            type: string
+          location:
+            type: string
+
+validator:
+  environment: standard
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+    both: hi == 'aloha' && bye == 'aloha'
+    doubleVal: -42.42
+    emptyNullVal:
+    emptyQuotedVal: !txt ""
+    falseVal: false
+    intVal: -42
+    nullVal: null
+    plainTxtVal: !txt plain text
+    trueVal: true
+    uintVal: 9223372036854775808
+  productions:
+    - match: hi == '' && bye == ''
+      message: >
+        at least one of 'greeting' or 'farewell' must be a non-empty
+        string
+    - match: hi.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+      details: hi
+evaluator:
+  terms:
+    hi: rule.greeting
+    bye: rule.farewell
+  productions:
+    - match: hi != '' && bye == ''
+      decision: policy.acme.welcome
+      output: hi
+    - match: bye != '' && hi == ''
+      decision: policy.acme.depart
+      output: bye
+    - match: hi != '' && bye != ''
+      decisions:
+        - decision: policy.acme.welcome
+          output: hi
+        - decision: policy.acme.depart
+          output: bye

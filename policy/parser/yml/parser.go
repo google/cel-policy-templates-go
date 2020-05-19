@@ -23,6 +23,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 )
@@ -33,7 +34,7 @@ import (
 // Specially, the tags used must align with the ones produced by the Go YAML v3 library.
 //
 // Errors in the decoding will result in a nil model.ParsedValue.
-func Parse(src *model.Source) (*model.ParsedValue, *common.Errors) {
+func Parse(src *model.Source) (*model.ParsedValue, *cel.Issues) {
 	// Common objects for decoding an instance.
 	errs := common.NewErrors(src)
 	info := model.NewSourceInfo(src)
@@ -43,10 +44,10 @@ func Parse(src *model.Source) (*model.ParsedValue, *common.Errors) {
 	parser.parseYaml(src, builder)
 	// If there are errors, return a nil instance and the error set.
 	if len(errs.GetErrors()) != 0 {
-		return nil, errs
+		return nil, cel.NewIssues(errs)
 	}
 	// Otherwise, return the instance.
-	return inst, errs
+	return inst, nil
 }
 
 func (p *parser) parseYaml(src *model.Source, builder objRef) {
@@ -158,7 +159,7 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 	case model.PlainTextType:
 		err = ref.assign(model.PlainTextValue(node.Value))
 	case model.IntType:
-		var val interface{} = nil
+		var val interface{}
 		val, convErr := strconv.ParseInt(node.Value, 10, 64)
 		if convErr != nil {
 			var convErr2 error

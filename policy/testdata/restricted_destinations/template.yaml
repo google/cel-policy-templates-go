@@ -1,0 +1,59 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: restricted_destinations
+  namespace: acme
+schema:
+  type: object
+  properties:
+    description:
+      type: string
+    origin:
+      type: string
+    restricted_destinations:
+      type: array
+      items:
+        type: string
+validator:
+  terms:
+    invalid_dests:
+      rule.restricted_destinations.filter(d, d.size() != 2)
+  productions:
+    - match: rule.origin.size() != 2
+      message: >
+        origin must be a two-letter location code
+    - match: invalid_dests.size() > 0
+      message: >
+        restricted_destinations must only contain two-letter
+        location codes
+      details:
+        data: invalid_dests
+evaluator:
+  terms:
+    matches_origin_ip: locationCode(origin.ip) == rule.origin
+    has_nationality: has(request.auth.claims.nationality)
+    matches_nationality: has_nationality && request.auth.claims.nationality == rule.origin
+    matches_dest_ip: locationCode(destination.ip) in rule.restricted_destinations
+    matches_dest_label: resource.labels.location in rule.restricted_destinations
+    matches_dest: matches_dest_ip || matches_dest_label
+  productions:
+    - match: matches_nationality && matches_dest
+      decision: policy.deny
+      output: true
+    - match: "!has_nationality && matches_origin_ip && matches_dest"
+      decision: policy.deny
+      output: true

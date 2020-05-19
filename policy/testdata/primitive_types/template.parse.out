@@ -1,0 +1,9 @@
+1~2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"AdmissionTemplate"
+6~metadata:7~
+  8~name: 9~"AllTheTypes"
+10~rules:11~
+  - 12~13~value: 14~true
+  - 15~16~value: 17~1.2
+  - 18~19~value: 20~"1000"
+  - 21~22~value: 23~

@@ -20,14 +20,11 @@ import (
 	"testing"
 
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/interpreter/functions"
+	"github.com/google/cel-go/interpreter"
+	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/test"
 
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
-
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type tc struct {
@@ -42,12 +39,12 @@ type metadata struct {
 	Resource      string
 	Mode          string
 	ResourceTypes []string
+	Data          []string
 }
 
 type violation struct {
-	Message  string
-	Details  []string
-	Metadata *metadata
+	Message string
+	Details *metadata
 }
 
 type access struct {
@@ -56,58 +53,68 @@ type access struct {
 }
 
 var (
-	stdDecls = cel.Declarations(
-		decls.NewIdent("destination.ip", decls.String, nil),
-		decls.NewIdent("origin.ip", decls.String, nil),
-		decls.NewIdent("request.auth.claims", decls.NewMapType(decls.String, decls.Dyn), nil),
-		decls.NewIdent("request.time", decls.Timestamp, nil),
-		decls.NewIdent("resource.name", decls.String, nil),
-		decls.NewIdent("resource.type", decls.String, nil),
-		decls.NewIdent("resource.labels", decls.NewMapType(decls.String, decls.String), nil),
-		decls.NewFunction("locationCode",
-			decls.NewOverload("location_code_string",
-				[]*exprpb.Type{decls.String},
-				decls.String,
-			),
-		),
-	)
-
-	stdFuncs = Functions(&functions.Overload{
-		Operator: "location_code_string",
-		Unary: func(ip ref.Val) ref.Val {
-			switch ip.(types.String) {
-			case types.String("10.0.0.1"):
-				return types.String("us")
-			case types.String("10.0.0.2"):
-				return types.String("de")
-			default:
-				return types.String("ir")
-			}
-		},
-	})
-
 	testCases = []tc{
-		// Required labels
+		// Sensitive Data
 		{
-			name:   "required_label_violation",
-			policy: "required_labels",
+			name:   "sensitive_data_prefix_same_location",
+			policy: "sensitive_data",
 			input: map[string]interface{}{
+				"destination.ip":  "10.0.0.1",
+				"origin.ip":       "10.0.0.1",
+				"resource.name":   "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{},
+			},
+			outputs: []interface{}{},
+		},
+		{
+			name:   "sensitive_data_prefix_diff_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip":  "10.0.0.1",
+				"origin.ip":       "10.0.0.2",
+				"resource.name":   "/company/acme/secrets/doomsday-device",
+				"resource.labels": map[string]string{},
+			},
+			outputs: []interface{}{true},
+		},
+		{
+			name:   "sensitive_data_label_same_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.1",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/seems-normal/but-isnt",
 				"resource.labels": map[string]string{
-					"env":    "dev",
-					"ssh":    "enabled",
-					"random": "bar",
+					"sensitivity": "secret",
 				},
 			},
-			outputs: []interface{}{
-				violation{
-					Message: "missing one or more required labels",
-					Details: []string{"verified"},
-				},
-				violation{
-					Message: "invalid values provided on one or more labels",
-					Details: []string{"verified"},
+			outputs: []interface{}{},
+		},
+		{
+			name:   "sensitive_data_label_diff_location",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.2",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/seems-normal/but-isnt",
+				"resource.labels": map[string]string{
+					"sensitivity": "secret",
 				},
 			},
+			outputs: []interface{}{true},
+		},
+		{
+			name:   "sensitive_data_diff_location_not_sensitive",
+			policy: "sensitive_data",
+			input: map[string]interface{}{
+				"destination.ip": "10.0.0.2",
+				"origin.ip":      "10.0.0.1",
+				"resource.name":  "/company/acme/biz-as-usual",
+				"resource.labels": map[string]string{
+					"sensitivity": "public",
+				},
+			},
+			outputs: []interface{}{},
 		},
 		// Timed contracts
 		{
@@ -135,81 +142,7 @@ var (
 				"resource.name": "/company/warneranimstudios/goodbye",
 				"request.time":  &tpb.Timestamp{Seconds: 1646416000},
 			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		// Sensitive Data
-		{
-			name:   "sensitive_data_prefix_same_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.1",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
-			},
-			outputs: []interface{}{},
-		},
-		{
-			name:   "sensitive_data_prefix_diff_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip":  "10.0.0.1",
-				"origin.ip":       "10.0.0.2",
-				"resource.name":   "/company/acme/secrets/doomsday-device",
-				"resource.labels": map[string]string{},
-			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		{
-			name:   "sensitive_data_label_same_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.1",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/seems-normal/but-isnt",
-				"resource.labels": map[string]string{
-					"sensitivity": "secret",
-				},
-			},
-			outputs: []interface{}{},
-		},
-		{
-			name:   "sensitive_data_label_diff_location",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.2",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/seems-normal/but-isnt",
-				"resource.labels": map[string]string{
-					"sensitivity": "secret",
-				},
-			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
-		},
-		{
-			name:   "sensitive_data_diff_location_not_sensitive",
-			policy: "sensitive_data",
-			input: map[string]interface{}{
-				"destination.ip": "10.0.0.2",
-				"origin.ip":      "10.0.0.1",
-				"resource.name":  "/company/acme/biz-as-usual",
-				"resource.labels": map[string]string{
-					"sensitivity": "public",
-				},
-			},
-			outputs: []interface{}{},
+			outputs: []interface{}{true},
 		},
 		// Restricted Destinations
 		{
@@ -237,11 +170,7 @@ var (
 				},
 				"resource.labels": map[string]string{},
 			},
-			outputs: []interface{}{
-				access{
-					Deny: true,
-				},
-			},
+			outputs: []interface{}{true},
 		},
 		{
 			name:   "restricted_destinations_restricted_location_ir_national",
@@ -257,7 +186,7 @@ var (
 			outputs: []interface{}{},
 		},
 		{
-			name:   "restricted_destinations_valic_location_ir_label",
+			name:   "restricted_destinations_valid_location_ir_label",
 			policy: "restricted_destinations",
 			input: map[string]interface{}{
 				"destination.ip":      "10.0.0.2",
@@ -267,24 +196,49 @@ var (
 					"location": "ir",
 				},
 			},
+			outputs: []interface{}{true},
+		},
+		// Required labels
+		{
+			name:   "required_labels_violation",
+			policy: "required_labels",
+			input: map[string]interface{}{
+				"resource.labels": map[string]string{
+					"env":    "dev",
+					"ssh":    "enabled",
+					"random": "bar",
+				},
+			},
 			outputs: []interface{}{
-				access{
-					Deny: true,
+				violation{
+					Message: "missing one or more required labels",
+					Details: &metadata{
+						Data: []string{"verified"},
+					},
+				},
+				violation{
+					Message: "invalid values provided on one or more labels",
+					Details: &metadata{
+						Data: []string{"verified"},
+					},
 				},
 			},
 		},
-		// Allowed Resource Types
+		// Resource Types
 		{
-			name:   "allowed_resource_types_denied_request",
-			policy: "allowed_resource_types",
+			name:   "resource_types_denied_request",
+			policy: "resource_types",
 			input: map[string]interface{}{
 				"resource.type": "sqladmin.googleapis.com/Instance",
 				"resource.name": "forbidden-my-sql-instance",
+				"resource.labels": map[string]string{
+					"env": "prod",
+				},
 			},
 			outputs: []interface{}{
 				violation{
 					Message: "forbidden-my-sql-instance is in violation.",
-					Metadata: &metadata{
+					Details: &metadata{
 						Resource: "forbidden-my-sql-instance",
 						Mode:     "deny",
 						ResourceTypes: []string{
@@ -296,32 +250,61 @@ var (
 				},
 			},
 		},
+		{
+			name:   "resource_types_not_selected",
+			policy: "resource_types",
+			input: map[string]interface{}{
+				"resource.type": "sqladmin.googleapis.com/Instance",
+				"resource.name": "forbidden-my-sql-instance",
+				"resource.labels": map[string]string{
+					"env": "dev",
+				},
+			},
+			outputs: []interface{}{},
+		},
 	}
 )
 
-func TestEnforcer(t *testing.T) {
+func TestEngine(t *testing.T) {
+	tr := test.NewReader("testdata")
+	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		env, _ := cel.NewEnv(stdDecls)
 		t.Run(tst.name, func(tt *testing.T) {
-			enfOpts := []EngineOption{
-				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
-				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
-				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
-				stdFuncs,
-			}
-			enforcer, err := NewEngine(env, enfOpts...)
+			engine, err := NewEngine(
+				Functions(test.Funcs...),
+				Selectors(labelSelector))
 			if err != nil {
 				tt.Fatal(err)
 			}
-			decisions, err := enforcer.Evaluate(tst.input)
+			engine.AddEnv("", env)
+
+			tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+			tmplSrc := tr.Read(tmplFile)
+			tmpl, iss := engine.CompileTemplate(tmplSrc)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
+			}
+			err = engine.AddTemplate(tmpl)
+			if err != nil {
+				tt.Fatal(err)
+			}
+
+			instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+			instSrc := tr.Read(instFile)
+			inst, iss := engine.CompileInstance(instSrc)
+			if iss.Err() != nil {
+				tt.Fatal(iss.Err())
+			}
+			engine.AddInstance(inst)
+			decisions, err := engine.Eval(tst.input)
 			if err != nil {
 				tt.Error(err)
 			}
 			found := false
 			for _, dec := range decisions {
 				for _, out := range tst.outputs {
-					ntv, err := dec.ConvertToNative(reflect.TypeOf(out))
+					ntv, err := dec.Value.ConvertToNative(reflect.TypeOf(out))
 					if err != nil {
 						tt.Fatalf("out type: %T, err: %v", dec, err)
 					}
@@ -342,26 +325,64 @@ func TestEnforcer(t *testing.T) {
 }
 
 func BenchmarkEnforcer(b *testing.B) {
+	tr := test.NewReader("testdata")
+	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		env, _ := cel.NewEnv(stdDecls)
+		engine, err := NewEngine(
+			Functions(test.Funcs...),
+			Selectors(labelSelector))
+		if err != nil {
+			b.Fatal(err)
+		}
+		engine.AddEnv("", env)
+		tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+		tmplSrc := tr.Read(tmplFile)
+		tmpl, iss := engine.CompileTemplate(tmplSrc)
+		if iss.Err() != nil {
+			b.Fatal(iss.Err())
+		}
+		err = engine.AddTemplate(tmpl)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+		instSrc := tr.Read(instFile)
+		inst, iss := engine.CompileInstance(instSrc)
+		if iss.Err() != nil {
+			b.Fatal(iss.Err())
+		}
+		engine.AddInstance(inst)
+
 		b.Run(tst.name, func(bb *testing.B) {
-			enfOpts := []EngineOption{
-				SourceFile(EvaluatorFile, fmt.Sprintf("examples/%s/evaluator.yaml", tst.policy)),
-				SourceFile(TemplateFile, fmt.Sprintf("examples/%s/template.yaml", tst.policy)),
-				SourceFile(InstanceFile, fmt.Sprintf("examples/%s/instance.yaml", tst.policy)),
-				stdFuncs,
-			}
-			enforcer, err := NewEngine(env, enfOpts...)
-			if err != nil {
-				bb.Fatal(err)
-			}
 			for i := 0; i < bb.N; i++ {
-				_, err := enforcer.Evaluate(tst.input)
+				_, err := engine.Eval(tst.input)
 				if err != nil {
 					bb.Fatal(err)
 				}
 			}
 		})
+	}
+}
+
+func labelSelector(sel model.Selector, vars interpreter.Activation) bool {
+	switch s := sel.(type) {
+	case *model.LabelSelector:
+		lbls, found := vars.ResolveName("resource.labels")
+		if !found {
+			return len(s.LabelValues) == 0
+		}
+		l := lbls.(map[string]string)
+		for k, v := range s.LabelValues {
+			lv, found := l[k]
+			if !found || lv != v {
+				return false
+			}
+		}
+		return true
+	default:
+		// TODO: implement
+		return false
 	}
 }

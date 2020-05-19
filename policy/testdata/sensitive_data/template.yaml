@@ -1,0 +1,47 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: sensitive_data
+  namespace: acme
+schema:
+  type: object
+  properties:
+    description:
+      type: string
+    resource_prefixes:
+      type: array
+      items:
+        type: string
+    labels:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+evaluator:
+  description: >
+    Treat resources with certain names and labels as sensitive when
+    accessed outside the country where the resource exists.
+  terms:
+    different_locations: locationCode(origin.ip) != locationCode(destination.ip)
+    is_sensitive_prefix: rule.resource_prefixes.exists(prefix, resource.name.startsWith(prefix))
+    is_sensitive_label: >
+      rule.labels.exists(l, l in resource.labels && resource.labels[l] in rule.labels[l])
+  productions:
+    - match: different_locations && (is_sensitive_prefix || is_sensitive_label)
+      decision: policy.deny
+      output: true

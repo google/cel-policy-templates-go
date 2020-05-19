@@ -44,6 +44,7 @@ type RuleTypes struct {
 	ref.TypeProvider
 	Schema          *OpenAPISchema
 	ruleSchemaTypes *schemaTypeProvider
+	typeAdapter     ref.TypeAdapter
 }
 
 // EnvOptions returns a set of cel.EnvOption values which includes the Template's declaration set
@@ -57,12 +58,20 @@ func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
 	if rt == nil {
 		return []cel.EnvOption{}
 	}
+	var ta ref.TypeAdapter = types.DefaultTypeAdapter
+	tpa, ok := tp.(ref.TypeAdapter)
+	if ok {
+		ta = tpa
+	}
+	rtWithTypes := &RuleTypes{
+		TypeProvider:    tp,
+		typeAdapter:     ta,
+		Schema:          rt.Schema,
+		ruleSchemaTypes: rt.ruleSchemaTypes,
+	}
 	return []cel.EnvOption{
-		cel.CustomTypeProvider(&RuleTypes{
-			TypeProvider:    tp,
-			Schema:          rt.Schema,
-			ruleSchemaTypes: rt.ruleSchemaTypes,
-		}),
+		cel.CustomTypeProvider(rtWithTypes),
+		cel.CustomTypeAdapter(rtWithTypes),
 		cel.Declarations(
 			decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
 		),
@@ -122,18 +131,29 @@ func (rt *RuleTypes) ConvertToRule(dyn *DynValue) Rule {
 	ruleSchemaType := rt.ruleSchemaTypes.root
 	// TODO: handle conversions to protobuf types.
 	dyn = rt.convertToCustomType(dyn, ruleSchemaType)
-	rule := CustomRule(*dyn)
-	return &rule
+	return &CustomRule{DynValue: dyn}
 }
 
-func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType) *DynValue {
+// NativeToValue is an implementation of the ref.TypeAdapater interface which supports conversion
+// of policy template values to CEL ref.Val instances.
+func (rt *RuleTypes) NativeToValue(val interface{}) ref.Val {
+	switch v := val.(type) {
+	case *CustomRule:
+		return v.ExprValue()
+	default:
+		return rt.typeAdapter.NativeToValue(val)
+	}
+}
+
+func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType,
+	observers ...RuleConversionObserver) *DynValue {
 	switch v := dyn.Value.(type) {
 	case *MapValue:
 		if schemaType.isObject() {
 			obj := v.ConvertToObject(schemaType)
 			for name, f := range obj.fieldMap {
 				fieldType := schemaType.fields[name]
-				f.Ref = rt.convertToCustomType(f.Ref, fieldType)
+				f.Ref = rt.convertToCustomType(f.Ref, fieldType, observers...)
 			}
 			dyn.Value = obj
 			return dyn
@@ -141,13 +161,13 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType) 
 		// TODO: handle complex map types which have non-string keys.
 		fieldType := schemaType.elemType
 		for _, f := range v.fieldMap {
-			f.Ref = rt.convertToCustomType(f.Ref, fieldType)
+			f.Ref = rt.convertToCustomType(f.Ref, fieldType, observers...)
 		}
 		return dyn
 	case *ListValue:
 		for i := 0; i < len(v.Entries); i++ {
 			elem := v.Entries[i]
-			elem = rt.convertToCustomType(elem, schemaType.elemType)
+			elem = rt.convertToCustomType(elem, schemaType.elemType, observers...)
 			v.Entries[i] = elem
 		}
 		return dyn
@@ -155,6 +175,8 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType) 
 		return dyn
 	}
 }
+
+type RuleConversionObserver func(dyn *DynValue) (*DynValue, error)
 
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) *schemaTypeProvider {
 	root := &schemaType{
