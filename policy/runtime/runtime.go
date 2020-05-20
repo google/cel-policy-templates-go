@@ -20,6 +20,9 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/google/cel-policy-templates-go/policy/limits"
+	"github.com/google/cel-policy-templates-go/policy/model"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
@@ -28,18 +31,18 @@ import (
 	"github.com/google/cel-go/common/types/traits"
 	"github.com/google/cel-go/interpreter"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
-
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 // NewTemplate creates a validator / evaluator pair for a model.Template.
 func NewTemplate(reg model.Registry,
 	mdl *model.Template,
+	limits *limits.Limits,
 	evalOpts ...cel.ProgramOption) (*Template, error) {
 	t := &Template{
 		reg:     reg,
 		mdl:     mdl,
+		limits:  limits,
 		actPool: newRuleActivationPool(),
 	}
 	if mdl.Validator != nil {
@@ -63,6 +66,7 @@ func NewTemplate(reg model.Registry,
 type Template struct {
 	reg       model.Registry
 	mdl       *model.Template
+	limits    *limits.Limits
 	validator *evaluator
 	evaluator *evaluator
 	actPool   *ruleActivationPool
@@ -123,6 +127,9 @@ func (t *Template) evalInternal(eval *evaluator,
 	defer t.actPool.Put(ruleAct)
 	var errs []error
 	var decisions []*model.DecisionValue
+	if t.mdl.RuleTypes == nil {
+		return eval.eval(ruleAct)
+	}
 	for _, r := range inst.Rules {
 		ruleAct.rule = r
 		decs, err := eval.eval(ruleAct)
@@ -145,14 +152,20 @@ func (t *Template) evalInternal(eval *evaluator,
 func (t *Template) newEvaluator(mdl *model.Evaluator,
 	evalOpts ...cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
-	// Expose the cel EvalOptions as policy.EvalOption functions.
+	// TODO: Expose the cel EvalOptions as policy.EvalOption functions.
 	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
 	env, err := t.newEnv(mdl.Environment)
 	if err != nil {
 		return nil, err
 	}
-	termDecls := make([]*exprpb.Decl, 0, len(mdl.Terms)+2*len(mdl.Ranges))
-	ranges := make([]iterable, len(mdl.Ranges))
+	rangeCnt := len(mdl.Ranges)
+	if rangeCnt > t.limits.RangeLimit {
+		return nil, fmt.Errorf(
+			"range limit set to %d, but %d found",
+			t.limits.RangeLimit, rangeCnt)
+	}
+	termDecls := make([]*exprpb.Decl, 0, len(mdl.Terms)+2*rangeCnt)
+	ranges := make([]iterable, rangeCnt)
 	for i, r := range mdl.Ranges {
 		rangeType := r.Expr.ResultType()
 		if r.Key != nil {
@@ -338,7 +351,12 @@ type rangeEvalIterator struct {
 }
 
 func (it *rangeEvalIterator) hasNext() bool {
-	return it.first.hasNext()
+	for _, i := range it.iters {
+		if i.hasNext() {
+			return true
+		}
+	}
+	return false
 }
 
 func (it *rangeEvalIterator) next(vars *ruleActivation) {
@@ -477,7 +495,7 @@ func (it *listIterator) next(vars *ruleActivation) {
 }
 
 func (it *listIterator) reset(vars *ruleActivation) {
-	// TODO: make this sanely handle bounds and errors
+	// Errors are packaged up into the 'val' element.
 	val, _, _ := it.listRange.prg.Eval(vars)
 	it.listVal = val.(traits.Lister)
 	it.idx = types.Int(0)

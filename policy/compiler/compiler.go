@@ -26,24 +26,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/google/cel-policy-templates-go/policy/limits"
+	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/runtime"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
-	"github.com/google/cel-policy-templates-go/policy/runtime"
+	"github.com/golang/protobuf/proto"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 // NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
-func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
+func NewCompiler(reg model.Registry,
+	l *limits.Limits,
+	evalOpts ...cel.ProgramOption) *Compiler {
 	return &Compiler{
 		evalOpts: evalOpts,
 		reg:      reg,
+		limits:   l,
 	}
 }
 
@@ -52,6 +57,7 @@ func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
 type Compiler struct {
 	evalOpts []cel.ProgramOption
 	reg      model.Registry
+	limits   *limits.Limits
 }
 
 // CompileInstance type-checks and validates a parsed representation of a policy instance whose
@@ -109,6 +115,7 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 		reg: &compReg{
 			Registry: c.reg,
 		},
+		limits: c.limits,
 		src:    src,
 		info:   pv.Info,
 		errors: common.NewErrors(src),
@@ -151,7 +158,7 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 		r := ic.convertToRule(rule.Ref)
 		cinst.Rules = []model.Rule{r}
 	}
-	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.evalOpts...)
+	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.limits, ic.evalOpts...)
 	if err != nil {
 		// report the error
 		ic.reportError(err.Error())
@@ -520,6 +527,11 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
 	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
 	ranges := tc.listValue(dyn)
+	if len(ranges.Entries) > tc.limits.RangeLimit {
+		tc.reportErrorAtID(dyn.ID,
+			"range limit set to %d, but %d found",
+			tc.limits.RangeLimit, len(ranges.Entries))
+	}
 	var rangeDecls []*exprpb.Decl
 	for _, r := range ranges.Entries {
 		rangeEnv, err := env.Extend(cel.Declarations(rangeDecls...))
@@ -528,8 +540,8 @@ func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
 			continue
 		}
 		rv := tc.mapValue(r)
-		inField, found := rv.GetField("in")
-		if !found {
+		inField, keyFound := rv.GetField("in")
+		if !keyFound {
 			// This error would have been caught by schema checking.
 			continue
 		}
@@ -549,18 +561,28 @@ func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
 				valueType = inList.GetElemType()
 			}
 		}
-		// TODO: check for valid combinations of key, index, values
 		iterRange := &model.Range{
 			ID:   r.ID,
 			Expr: inAst,
 		}
-		keyField, found := rv.GetField("key")
-		if found {
+		idxField, idxFound := rv.GetField("index")
+		keyField, keyFound := rv.GetField("key")
+		valField, valFound := rv.GetField("value")
+		if !idxFound && !keyFound && !valFound {
+			tc.reportErrorAtID(r.ID, "one of 'index', 'key', or 'value' fields must be set")
+		}
+		if idxFound && keyFound {
+			tc.reportErrorAtID(r.ID, "either set 'index' or 'key', but not both")
+		}
+		if idxFound {
+			iterRange.Key = decls.NewVar(tc.strValue(idxField.Ref), keyType)
+			rangeDecls = append(rangeDecls, iterRange.Key)
+		}
+		if keyFound {
 			iterRange.Key = decls.NewVar(tc.strValue(keyField.Ref), keyType)
 			rangeDecls = append(rangeDecls, iterRange.Key)
 		}
-		valField, found := rv.GetField("value")
-		if found {
+		if valFound {
 			iterRange.Value = decls.NewVar(tc.strValue(valField.Ref), valueType)
 			rangeDecls = append(rangeDecls, iterRange.Value)
 		}
@@ -746,6 +768,7 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.
 
 type dynCompiler struct {
 	reg    *compReg
+	limits *limits.Limits
 	src    *model.Source
 	info   *model.SourceInfo
 	errors *common.Errors

@@ -32,6 +32,7 @@ type tc struct {
 	policy  string
 	input   map[string]interface{}
 	outputs []interface{}
+	opts    []EngineOption
 	e       string
 }
 
@@ -94,6 +95,20 @@ var (
 				violation{
 					Message: "package unminted-fail: not verifiably built",
 				},
+			},
+		},
+		// multiple ranges
+		{
+			name:   "multiple_ranges_behavior",
+			policy: "multiple_ranges",
+			input: map[string]interface{}{},
+			outputs: []interface{}{
+				"b", "c",
+				"a", "c",
+				"a", "b",
+			},
+			opts: []EngineOption{
+				RangeLimit(2),
 			},
 		},
 		// Sensitive Data
@@ -313,9 +328,15 @@ func TestEngine(t *testing.T) {
 	for _, tstVal := range testCases {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
-			engine, err := NewEngine(
+			opts := []EngineOption{
 				Functions(test.Funcs...),
-				Selectors(labelSelector))
+				Selectors(labelSelector),
+				RangeLimit(1),
+			}
+			if tst.opts != nil {
+				opts = append(opts, tst.opts...)
+			}
+			engine, err := NewEngine(opts...)
 			if err != nil {
 				tt.Fatal(err)
 			}
@@ -372,9 +393,15 @@ func BenchmarkEnforcer(b *testing.B) {
 	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		engine, err := NewEngine(
+		opts := []EngineOption{
 			Functions(test.Funcs...),
-			Selectors(labelSelector))
+			Selectors(labelSelector),
+			RangeLimit(1),
+		}
+		if tst.opts != nil {
+			opts = append(opts, tst.opts...)
+		}
+		engine, err := NewEngine(opts...)
 		if err != nil {
 			b.Fatal(err)
 		}

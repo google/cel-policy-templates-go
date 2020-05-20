@@ -13,16 +13,27 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: binauthz
+kind: PolicyTemplate
 metadata:
-  name: binauthz-example
-rule:
-  verifiable_builders:
-    - build-secure
-  allowed_branch_names:
-    - allowed_branch
-  allowed_mint_build_targets:
-    - "//mint:target_1"
-    - "//mint:target_2"
-  allowed_nonmint_build_targets:
-    - "//nonmint:target"
+  name: multiple_ranges
+evaluator:
+  description: >
+    Multiple ranges form a cross product. In the example, the
+    pattern 'a', 'b', 'c' is emitted unless the index of the
+    letter is equal to the index value in the outer range:
+        /  b  c
+        a  /  c
+        a  b  /
+
+  ranges:
+    - value: idx
+      in: >
+        [0, 1, 2]
+    - index: letterIdx
+      value: letter
+      in: >
+        ["a", "b", "c"]
+  productions:
+    - match: idx != letterIdx
+      decision: policy.report
+      output: letter
