@@ -97,11 +97,24 @@ var (
 				},
 			},
 		},
+		// dependent ranges
+		{
+			name:   "dependent_ranges_behavior",
+			policy: "dependent_ranges",
+			input:  map[string]interface{}{},
+			outputs: []interface{}{
+				[]int64{2, 3, 6},
+				[]int64{3, 2, 6},
+			},
+			opts: []EngineOption{
+				RangeLimit(2),
+			},
+		},
 		// multiple ranges
 		{
 			name:   "multiple_ranges_behavior",
 			policy: "multiple_ranges",
-			input: map[string]interface{}{},
+			input:  map[string]interface{}{},
 			outputs: []interface{}{
 				"b", "c",
 				"a", "c",
