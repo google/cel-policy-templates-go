@@ -26,24 +26,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/google/cel-policy-templates-go/policy/limits"
+	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/runtime"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 
-	"github.com/google/cel-policy-templates-go/policy/model"
-	"github.com/google/cel-policy-templates-go/policy/runtime"
+	"github.com/golang/protobuf/proto"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 // NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
-func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
+func NewCompiler(reg model.Registry,
+	l *limits.Limits,
+	evalOpts ...cel.ProgramOption) *Compiler {
 	return &Compiler{
 		evalOpts: evalOpts,
 		reg:      reg,
+		limits:   l,
 	}
 }
 
@@ -52,6 +57,7 @@ func NewCompiler(reg model.Registry, evalOpts ...cel.ProgramOption) *Compiler {
 type Compiler struct {
 	evalOpts []cel.ProgramOption
 	reg      model.Registry
+	limits   *limits.Limits
 }
 
 // CompileInstance type-checks and validates a parsed representation of a policy instance whose
@@ -109,6 +115,7 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 		reg: &compReg{
 			Registry: c.reg,
 		},
+		limits: c.limits,
 		src:    src,
 		info:   pv.Info,
 		errors: common.NewErrors(src),
@@ -146,7 +153,12 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 			cinst.Rules[i] = ic.convertToRule(rule)
 		}
 	}
-	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.evalOpts...)
+	rule, found := m.GetField("rule")
+	if found {
+		r := ic.convertToRule(rule.Ref)
+		cinst.Rules = []model.Rule{r}
+	}
+	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.limits, ic.evalOpts...)
 	if err != nil {
 		// report the error
 		ic.reportError(err.Error())
@@ -492,16 +504,92 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 		tc.reportErrorAtID(envName.Ref.ID, err.Error())
 		return nil, nil
 	}
-	terms, found := eval.GetField("terms")
+	ranges, found := eval.GetField("ranges")
 	productionsEnv := env
 	if found {
-		productionsEnv, err = tc.compileTerms(terms.Ref, env, evaluator)
+		productionsEnv, err = tc.compileRanges(ranges.Ref, env, evaluator)
+		if err != nil {
+			tc.reportErrorAtID(ranges.Ref.ID, err.Error())
+			return nil, nil
+		}
+	}
+	terms, found := eval.GetField("terms")
+	if found {
+		productionsEnv, err = tc.compileTerms(terms.Ref, productionsEnv, evaluator)
 		if err != nil {
 			tc.reportErrorAtID(terms.Ref.ID, err.Error())
 			return nil, nil
 		}
 	}
 	return evaluator, productionsEnv
+}
+
+func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
+	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
+	ranges := tc.listValue(dyn)
+	if len(ranges.Entries) > tc.limits.RangeLimit {
+		tc.reportErrorAtID(dyn.ID,
+			"range limit set to %d, but %d found",
+			tc.limits.RangeLimit, len(ranges.Entries))
+	}
+	var rangeDecls []*exprpb.Decl
+	for _, r := range ranges.Entries {
+		rangeEnv, err := env.Extend(cel.Declarations(rangeDecls...))
+		if err != nil {
+			tc.reportErrorAtID(r.ID, err.Error())
+			continue
+		}
+		rv := tc.mapValue(r)
+		inField, keyFound := rv.GetField("in")
+		if !keyFound {
+			// This error would have been caught by schema checking.
+			continue
+		}
+		inAst := tc.compileExpr(inField.Ref, rangeEnv, true)
+		keyType := decls.Error
+		valueType := decls.Error
+		if inAst != nil {
+			inType := inAst.ResultType()
+			switch inType.TypeKind.(type) {
+			case *exprpb.Type_MapType_:
+				inMap := inType.GetMapType()
+				keyType = inMap.GetKeyType()
+				valueType = inMap.GetValueType()
+			case *exprpb.Type_ListType_:
+				inList := inType.GetListType()
+				keyType = decls.Int
+				valueType = inList.GetElemType()
+			}
+		}
+		iterRange := &model.Range{
+			ID:   r.ID,
+			Expr: inAst,
+		}
+		idxField, idxFound := rv.GetField("index")
+		keyField, keyFound := rv.GetField("key")
+		valField, valFound := rv.GetField("value")
+		if !idxFound && !keyFound && !valFound {
+			tc.reportErrorAtID(r.ID, "one of 'index', 'key', or 'value' fields must be set")
+		}
+		if idxFound && keyFound {
+			tc.reportErrorAtID(r.ID, "either set 'index' or 'key', but not both")
+		}
+		if idxFound {
+			iterRange.Key = decls.NewVar(tc.strValue(idxField.Ref), keyType)
+			rangeDecls = append(rangeDecls, iterRange.Key)
+		}
+		if keyFound {
+			iterRange.Key = decls.NewVar(tc.strValue(keyField.Ref), keyType)
+			rangeDecls = append(rangeDecls, iterRange.Key)
+		}
+		if valFound {
+			iterRange.Value = decls.NewVar(tc.strValue(valField.Ref), valueType)
+			rangeDecls = append(rangeDecls, iterRange.Value)
+		}
+		ceval.Ranges = append(ceval.Ranges, iterRange)
+	}
+	// Return the productions environment which contains all terms and inputs to the template.
+	return env.Extend(cel.Declarations(rangeDecls...))
 }
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
@@ -680,6 +768,7 @@ func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.
 
 type dynCompiler struct {
 	reg    *compReg
+	limits *limits.Limits
 	src    *model.Source
 	info   *model.SourceInfo
 	errors *common.Errors

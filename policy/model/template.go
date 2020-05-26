@@ -17,6 +17,8 @@ package model
 import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
+
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 // NewTemplate produces an empty policy Template instance.
@@ -82,8 +84,16 @@ func NewEvaluator() *Evaluator {
 // Term order matters, and no cycles are permitted among terms by design and convention.
 type Evaluator struct {
 	Environment string
+	Ranges      []*Range
 	Terms       []*Term
 	Productions []*Production
+}
+
+type Range struct {
+	ID    int64
+	Key   *exprpb.Decl
+	Value *exprpb.Decl
+	Expr  *cel.Ast
 }
 
 // NewTerm produces a named Term instance associated with a CEL Ast and a list of the input

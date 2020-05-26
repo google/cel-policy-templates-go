@@ -32,6 +32,7 @@ type tc struct {
 	policy  string
 	input   map[string]interface{}
 	outputs []interface{}
+	opts    []EngineOption
 	e       string
 }
 
@@ -47,6 +48,10 @@ type violation struct {
 	Details *metadata
 }
 
+func (v violation) String() string {
+	return v.Message
+}
+
 type access struct {
 	Deny  bool
 	Allow bool
@@ -54,6 +59,71 @@ type access struct {
 
 var (
 	testCases = []tc{
+		// Binauthz
+		{
+			name:   "binauthz_package_violations",
+			policy: "binauthz",
+			input: map[string]interface{}{
+				"request.packages": []interface{}{
+					map[string]interface{}{
+						"name": "minted-fail",
+						"provenance": map[string]interface{}{
+							"valid":          true,
+							"builder":        "build-secure",
+							"submitted_code": true,
+							"build_target":   "//mint:target_3",
+							"is_mainline":    true,
+							"branch_name":    "master",
+						},
+					},
+					map[string]interface{}{
+						"name": "unminted-fail",
+						"provenance": map[string]interface{}{
+							"valid":          true,
+							"builder":        "build-insecure",
+							"submitted_code": false,
+							"build_target":   "//nonmint:target",
+							"branch_name":    "dev",
+						},
+					},
+				},
+			},
+			outputs: []interface{}{
+				violation{
+					Message: "package minted-fail: disallowed build target",
+				},
+				violation{
+					Message: "package unminted-fail: not verifiably built",
+				},
+			},
+		},
+		// dependent ranges
+		{
+			name:   "dependent_ranges_behavior",
+			policy: "dependent_ranges",
+			input:  map[string]interface{}{},
+			outputs: []interface{}{
+				[]int64{2, 3, 6},
+				[]int64{3, 2, 6},
+			},
+			opts: []EngineOption{
+				RangeLimit(2),
+			},
+		},
+		// multiple ranges
+		{
+			name:   "multiple_ranges_behavior",
+			policy: "multiple_ranges",
+			input:  map[string]interface{}{},
+			outputs: []interface{}{
+				"b", "c",
+				"a", "c",
+				"a", "b",
+			},
+			opts: []EngineOption{
+				RangeLimit(2),
+			},
+		},
 		// Sensitive Data
 		{
 			name:   "sensitive_data_prefix_same_location",
@@ -271,9 +341,15 @@ func TestEngine(t *testing.T) {
 	for _, tstVal := range testCases {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
-			engine, err := NewEngine(
+			opts := []EngineOption{
 				Functions(test.Funcs...),
-				Selectors(labelSelector))
+				Selectors(labelSelector),
+				RangeLimit(1),
+			}
+			if tst.opts != nil {
+				opts = append(opts, tst.opts...)
+			}
+			engine, err := NewEngine(opts...)
 			if err != nil {
 				tt.Fatal(err)
 			}
@@ -306,12 +382,13 @@ func TestEngine(t *testing.T) {
 				for _, out := range tst.outputs {
 					ntv, err := dec.Value.ConvertToNative(reflect.TypeOf(out))
 					if err != nil {
-						tt.Fatalf("out type: %T, err: %v", dec, err)
+						tt.Fatalf("out type: %T, err: %v", dec.Value, err)
 					}
 					if reflect.DeepEqual(ntv, out) {
 						found = true
 						break
 					}
+					tt.Logf("out: %v", dec.Value)
 				}
 				if !found {
 					tt.Fatalf("Got decision %v, wanted one of %v", dec, tst.outputs)
@@ -329,9 +406,15 @@ func BenchmarkEnforcer(b *testing.B) {
 	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
-		engine, err := NewEngine(
+		opts := []EngineOption{
 			Functions(test.Funcs...),
-			Selectors(labelSelector))
+			Selectors(labelSelector),
+			RangeLimit(1),
+		}
+		if tst.opts != nil {
+			opts = append(opts, tst.opts...)
+		}
+		engine, err := NewEngine(opts...)
 		if err != nil {
 			b.Fatal(err)
 		}

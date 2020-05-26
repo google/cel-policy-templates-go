@@ -19,19 +19,20 @@ import (
 	"sync"
 
 	"github.com/google/cel-policy-templates-go/policy/compiler"
+	"github.com/google/cel-policy-templates-go/policy/limits"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
 	"github.com/google/cel-policy-templates-go/policy/runtime"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-go/interpreter/functions"
 )
 
 // Engine evaluates context against policy instances to produce decisions.
 type Engine struct {
 	evalOpts  []cel.ProgramOption
 	selectors []Selector
+	limits    *limits.Limits
 	envs      map[string]*cel.Env
 	schemas   map[string]*model.OpenAPISchema
 	templates map[string]*model.Template
@@ -49,6 +50,7 @@ func NewEngine(opts ...EngineOption) (*Engine, error) {
 	e := &Engine{
 		evalOpts:  []cel.ProgramOption{},
 		selectors: []Selector{},
+		limits:    limits.NewLimits(),
 		envs: map[string]*cel.Env{
 			"": stdEnv,
 		},
@@ -124,7 +126,7 @@ func (e *Engine) AddInstance(inst *model.Instance) {
 // The AddTemplate call will initialize an evaluable runtime.Template as a side-effect.
 func (e *Engine) AddTemplate(tmpl *model.Template) error {
 	e.templates[tmpl.Metadata.Name] = tmpl
-	rtTmpl, err := runtime.NewTemplate(e, tmpl, e.evalOpts...)
+	rtTmpl, err := runtime.NewTemplate(e, tmpl, e.limits, e.evalOpts...)
 	if err != nil {
 		return err
 	}
@@ -158,7 +160,7 @@ func (e *Engine) CompileInstance(src *model.Source) (*model.Instance, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e, e.evalOpts...)
+	c := compiler.NewCompiler(e, e.limits, e.evalOpts...)
 	return c.CompileInstance(src, ast)
 }
 
@@ -168,7 +170,7 @@ func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e)
+	c := compiler.NewCompiler(e, e.limits, e.evalOpts...)
 	return c.CompileTemplate(src, ast)
 }
 
@@ -184,34 +186,6 @@ func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activati
 		}
 	}
 	return false
-}
-
-// EngineOption is a functional option for configuring the policy engine.
-type EngineOption func(*Engine) (*Engine, error)
-
-// Functions provides custom function implementations for functions expected by policy evaluators.
-func Functions(funcs ...*functions.Overload) EngineOption {
-	return func(e *Engine) (*Engine, error) {
-		if len(funcs) == 0 {
-			return e, nil
-		}
-		e.evalOpts = append(e.evalOpts, cel.Functions(funcs...))
-		return e, nil
-	}
-}
-
-// Selector functions take a compiled representation of a policy instance 'selector' and the input
-// argument set to determine whether the policy instance is applicable to the current evaluation
-// context.
-type Selector func(model.Selector, interpreter.Activation) bool
-
-// Selectors is a functional option which may be configured to select a subset of policy instances
-// which are applicable to the current evaluation context.
-func Selectors(selectors ...Selector) EngineOption {
-	return func(e *Engine) (*Engine, error) {
-		e.selectors = selectors
-		return e, nil
-	}
 }
 
 // Issues alias for simplifying the top-level interface of the engine.

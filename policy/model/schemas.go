@@ -258,6 +258,21 @@ properties:
         type: string
       environment:
         type: string
+      ranges:
+        type: array
+        items:
+          type: object
+          required:
+            - in
+          properties:
+            in:
+              type: string
+            key:
+              type: string
+            index:
+              type: string
+            value:
+              type: string
       terms:
         type: object
         additionalProperties:

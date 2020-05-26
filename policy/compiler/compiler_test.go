@@ -19,10 +19,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/cel-go/cel"
+	"github.com/google/cel-policy-templates-go/policy/limits"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
 	"github.com/google/cel-policy-templates-go/policy/test"
+
+	"github.com/google/cel-go/cel"
 )
 
 func TestCompiler(t *testing.T) {
@@ -40,7 +42,9 @@ func TestCompiler(t *testing.T) {
 		},
 		templates: map[string]*model.Template{},
 	}
-	comp := NewCompiler(reg)
+	limits := limits.NewLimits()
+	limits.RangeLimit = 1
+	comp := NewCompiler(reg, limits)
 	for _, tc := range tests {
 		tst := tc
 		t.Run(tst.ID, func(tt *testing.T) {

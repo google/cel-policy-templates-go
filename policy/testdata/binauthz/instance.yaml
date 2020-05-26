@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,16 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: restricted_destinations
+kind: binauthz
 metadata:
-  name: us-economic-sanctions
-  namespace: acme
-rules:
-  - description: >
-      Prevent US access to data within countries currently under
-      economic sanction.
-    origin: "us"
-    restricted_destinations:
-      - "cu"
-      - "ir"
-      - "kp"
-      - "sd"
-      - "sy"
+  name: binauthz-example
+rule:
+  verifiable_builders:
+    - build-secure
+  allowed_branch_names:
+    - allowed_branch
+  allowed_mint_build_targets:
+    - "//mint:target_1"
+    - "//mint:target_2"
+  allowed_nonmint_build_targets:
+    - "//nonmint:target"

@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,21 @@
 # limitations under the License.
 
 apiVersion: policy.acme.co/v1
-kind: restricted_destinations
+kind: PolicyTemplate
 metadata:
-  name: us-economic-sanctions
-  namespace: acme
-rules:
-  - description: >
-      Prevent US access to data within countries currently under
-      economic sanction.
-    origin: "us"
-    restricted_destinations:
-      - "cu"
-      - "ir"
-      - "kp"
-      - "sd"
-      - "sy"
+  name: dependent_ranges
+evaluator:
+  description: >
+    Ranges may depend on prior ranges as input arguments within the 'in'
+    expression. In the example below, the values in 'i' are multiplied
+    to produce the values for j. The result should be:
+      [2, 3, 6], [3, 2, 6]
+
+  ranges:
+    - {value: i, in: "[1, 2, 3]"}
+    - {index: idx, value: j, in: "[i, i * 2, i * 3]"}
+  productions:
+    - match: j % 6 == 0
+      decision: policy.report
+      output: >
+        [i, idx + 1, j]

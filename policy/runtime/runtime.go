@@ -20,13 +20,15 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/google/cel-policy-templates-go/policy/limits"
+	"github.com/google/cel-policy-templates-go/policy/model"
+
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/common/types/traits"
 	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-policy-templates-go/policy/model"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -34,10 +36,12 @@ import (
 // NewTemplate creates a validator / evaluator pair for a model.Template.
 func NewTemplate(reg model.Registry,
 	mdl *model.Template,
+	limits *limits.Limits,
 	evalOpts ...cel.ProgramOption) (*Template, error) {
 	t := &Template{
 		reg:     reg,
 		mdl:     mdl,
+		limits:  limits,
 		actPool: newRuleActivationPool(),
 	}
 	if mdl.Validator != nil {
@@ -61,6 +65,7 @@ func NewTemplate(reg model.Registry,
 type Template struct {
 	reg       model.Registry
 	mdl       *model.Template
+	limits    *limits.Limits
 	validator *evaluator
 	evaluator *evaluator
 	actPool   *ruleActivationPool
@@ -102,7 +107,6 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 		} else {
 			errs.ReportError(loc, "%s", violationMap["message"])
 		}
-
 	}
 	iss := cel.NewIssues(errs)
 	return iss
@@ -122,6 +126,11 @@ func (t *Template) evalInternal(eval *evaluator,
 	defer t.actPool.Put(ruleAct)
 	var errs []error
 	var decisions []*model.DecisionValue
+	// Singleton policy without a schema.
+	if t.mdl.RuleTypes == nil {
+		return eval.eval(ruleAct)
+	}
+	// One or more rules present in the policy.
 	for _, r := range inst.Rules {
 		ruleAct.rule = r
 		decs, err := eval.eval(ruleAct)
@@ -144,34 +153,59 @@ func (t *Template) evalInternal(eval *evaluator,
 func (t *Template) newEvaluator(mdl *model.Evaluator,
 	evalOpts ...cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
-	// Expose the cel EvalOptions as policy.EvalOption functions.
+	// TODO: Expose the cel EvalOptions as policy.EvalOption functions.
 	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
 	env, err := t.newEnv(mdl.Environment)
 	if err != nil {
 		return nil, err
 	}
-	termDecls := make([]*exprpb.Decl, len(mdl.Terms))
-	for i, t := range mdl.Terms {
+	rangeCnt := len(mdl.Ranges)
+	if rangeCnt > t.limits.RangeLimit {
+		return nil, fmt.Errorf(
+			"range limit set to %d, but %d found",
+			t.limits.RangeLimit, rangeCnt)
+	}
+	ranges := make([]iterable, rangeCnt)
+	for i, r := range mdl.Ranges {
+		rangeType := r.Expr.ResultType()
+		rangePrg, err := env.Program(r.Expr)
+		if err != nil {
+			return nil, err
+		}
+		switch rangeType.TypeKind.(type) {
+		case *exprpb.Type_MapType_:
+			mr := &mapRange{
+				key: r.Key,
+				val: r.Value,
+				prg: rangePrg,
+			}
+			ranges[i] = mr
+		case *exprpb.Type_ListType_:
+			lr := &listRange{
+				idx: r.Key,
+				val: r.Value,
+				prg: rangePrg,
+			}
+			ranges[i] = lr
+		}
+	}
+	for _, t := range mdl.Terms {
 		term, err := env.Program(t.Expr, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
 		terms[t.Name] = term
-		termDecls[i] = decls.NewIdent(t.Name, t.Expr.ResultType(), nil)
 	}
-	prodEnv, err := env.Extend(cel.Declarations(termDecls...))
-	if err != nil {
-		return nil, err
-	}
+
 	prods := make([]*prod, len(mdl.Productions))
 	for i, p := range mdl.Productions {
-		match, err := prodEnv.Program(p.Match, evalOpts...)
+		match, err := env.Program(p.Match, evalOpts...)
 		if err != nil {
 			return nil, err
 		}
 		decs := make([]*decision, len(p.Decisions))
 		for i, d := range p.Decisions {
-			dec, err := prodEnv.Program(d.Output, evalOpts...)
+			dec, err := env.Program(d.Output, evalOpts...)
 			if err != nil {
 				return nil, err
 			}
@@ -188,6 +222,7 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 	eval := &evaluator{
 		mdl:     mdl,
 		env:     env,
+		ranges:  ranges,
 		terms:   terms,
 		prods:   prods,
 		actPool: newEvalActivationPool(terms),
@@ -213,18 +248,45 @@ func (t *Template) newEnv(name string) (*cel.Env, error) {
 }
 
 type evaluator struct {
-	mdl *model.Evaluator
-	env *cel.Env
+	mdl    *model.Evaluator
+	env    *cel.Env
+	ranges []iterable
 	// TODO: change this to an array and rewrite terms to be register functions
 	terms   map[string]cel.Program
 	prods   []*prod
 	actPool *evalActivationPool
 }
 
-func (eval *evaluator) eval(vars interpreter.Activation) ([]*model.DecisionValue, error) {
-	act := eval.actPool.Setup(vars)
-	defer eval.actPool.Put(act)
+func (eval *evaluator) eval(vars *ruleActivation) ([]*model.DecisionValue, error) {
+	// Fast-path evaluation without ranges.
+	if len(eval.ranges) == 0 {
+		act := eval.actPool.Setup(vars)
+		defer eval.actPool.Put(act)
+		return eval.evalProductions(act)
+	}
+	// Range-based evaluation.
+	var errs []error
+	var decisions []*model.DecisionValue
+	rangeIt := eval.rangeIterator(vars)
+	err := rangeIt.init(vars)
+	if err != nil {
+		return nil, err
+	}
+	for rangeIt.hasNext() {
+		rangeIt.next(vars)
+		act := eval.actPool.Setup(vars)
+		dv, err := eval.evalProductions(act)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		decisions = append(decisions, dv...)
+		eval.actPool.Put(act)
+	}
+	return decisions, nil
+}
 
+func (eval *evaluator) evalProductions(act interpreter.Activation) ([]*model.DecisionValue, error) {
 	var errs []error
 	var decisions []*model.DecisionValue
 	// TODO: track which decisions have been finalized.
@@ -248,10 +310,202 @@ func (eval *evaluator) eval(vars interpreter.Activation) ([]*model.DecisionValue
 		}
 	}
 	if len(errs) != 0 {
-		// TODO: report error
+		// TODO: report a better multi-error
 		return nil, errs[0]
 	}
 	return decisions, nil
+}
+
+func (eval *evaluator) rangeIterator(vars *ruleActivation) *rangeEvalIterator {
+	var iters []rangeIterator
+	for _, r := range eval.ranges {
+		iters = append(iters, r.iter(vars))
+	}
+	return &rangeEvalIterator{
+		iters: iters,
+		count: len(iters),
+	}
+}
+
+type rangeEvalIterator struct {
+	hasFirst  bool
+	firstIter bool
+	iters     []rangeIterator
+	count     int
+}
+
+func (it *rangeEvalIterator) init(vars *ruleActivation) error {
+	// Ensure ranges are initialized with values appropriately.
+	for _, i := range it.iters {
+		err := i.reset(vars)
+		if err != nil {
+			return err
+		}
+		if i.hasNext() {
+			err = i.next(vars)
+			if err != nil {
+				return err
+			}
+			it.firstIter = true
+			it.hasFirst = true
+		}
+	}
+	return nil
+}
+
+func (it *rangeEvalIterator) hasNext() bool {
+	// After the first iteration, the hasNext() works as expected, but on the first pass the
+	// initialization value represents the first iteration step.
+	if it.firstIter {
+		return it.hasFirst
+	}
+	for _, i := range it.iters {
+		if i.hasNext() {
+			return true
+		}
+	}
+	return false
+}
+
+func (it *rangeEvalIterator) next(vars *ruleActivation) error {
+	// There's a bit of an initialization challenge here where the ranges need to be initialized
+	// in order to have _a_ value and for dependent ranges to be evaluated properly. After the
+	// first iteration, the ranges and iterators are properly initialized and properly reset
+	// when the inner ranges are reach the end of iteration.
+	if it.firstIter {
+		it.firstIter = false
+		return nil
+	}
+	last := it.iters[it.count-1]
+	if last.hasNext() {
+		return last.next(vars)
+	}
+	for i := it.count - 2; i >= 0; i-- {
+		prev := it.iters[i]
+		if prev.hasNext() {
+			prev.next(vars)
+			for j := it.count - 1; j > i; j-- {
+				next := it.iters[j]
+				next.reset(vars)
+				if next.hasNext() {
+					next.next(vars)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (it *rangeEvalIterator) reset(*ruleActivation) error {
+	// do nothing.
+	return nil
+}
+
+type iterable interface {
+	iter(*ruleActivation) rangeIterator
+}
+
+type rangeIterator interface {
+	hasNext() bool
+	next(*ruleActivation) error
+	reset(*ruleActivation) error
+}
+
+type mapRange struct {
+	key *exprpb.Decl
+	val *exprpb.Decl
+	prg cel.Program
+}
+
+func (mr *mapRange) iter(vars *ruleActivation) rangeIterator {
+	return &mapIterator{
+		mapRange: mr,
+	}
+}
+
+type mapIterator struct {
+	*mapRange
+	mapVal traits.Mapper
+	mapIt  traits.Iterator
+}
+
+func (it *mapIterator) hasNext() bool {
+	return it.mapIt.HasNext() == types.True
+}
+
+func (it *mapIterator) next(vars *ruleActivation) error {
+	key := it.mapIt.Next()
+	if it.mapRange.key != nil {
+		vars.rangeVars[it.mapRange.key.GetName()] = key
+	}
+	if it.mapRange.val != nil {
+		vars.rangeVars[it.mapRange.val.GetName()] = it.mapVal.Get(key)
+	}
+	return nil
+}
+
+func (it *mapIterator) reset(vars *ruleActivation) error {
+	val, _, err := it.mapRange.prg.Eval(vars)
+	if err != nil {
+		return err
+	}
+	mapVal, ok := val.(traits.Mapper)
+	if !ok {
+		return fmt.Errorf("iterator reset failed: got %T, wanted map", val)
+	}
+	it.mapVal = mapVal
+	it.mapIt = mapVal.Iterator().(traits.Iterator)
+	return nil
+}
+
+type listRange struct {
+	idx *exprpb.Decl
+	val *exprpb.Decl
+	prg cel.Program
+}
+
+func (lr *listRange) iter(vars *ruleActivation) rangeIterator {
+	return &listIterator{
+		listRange: lr,
+	}
+}
+
+type listIterator struct {
+	*listRange
+	listVal traits.Indexer
+	idx     types.Int
+	sz      types.Int
+}
+
+func (it *listIterator) hasNext() bool {
+	return it.idx < it.sz
+}
+
+func (it *listIterator) next(vars *ruleActivation) error {
+	if it.listRange.idx != nil {
+		vars.rangeVars[it.listRange.idx.GetName()] = it.idx
+	}
+	if it.listRange.val != nil {
+		vars.rangeVars[it.listRange.val.GetName()] = it.listVal.Get(it.idx)
+	}
+	it.idx++
+	return nil
+}
+
+func (it *listIterator) reset(vars *ruleActivation) error {
+	// Errors are packaged up into the 'val' element.
+	val, _, err := it.listRange.prg.Eval(vars)
+	if err != nil {
+		return err
+	}
+	listVal, ok := val.(traits.Lister)
+	if !ok {
+		return fmt.Errorf("reset iterator failed: got %T, wanted list", val)
+	}
+	it.listVal = listVal
+	it.idx = types.Int(0)
+	it.sz = listVal.Size().(types.Int)
+	return nil
 }
 
 type prod struct {
@@ -265,13 +519,20 @@ type decision struct {
 }
 
 type ruleActivation struct {
-	input interpreter.Activation
-	rule  model.Rule
+	input     interpreter.Activation
+	rangeVars map[string]ref.Val
+	rule      model.Rule
 }
 
 func (ctx *ruleActivation) ResolveName(name string) (interface{}, bool) {
 	if name == "rule" {
 		return ctx.rule, true
+	}
+	if ctx.rangeVars != nil {
+		val, found := ctx.rangeVars[name]
+		if found {
+			return val, true
+		}
 	}
 	return ctx.input.ResolveName(name)
 }
@@ -284,7 +545,9 @@ func newRuleActivationPool() *ruleActivationPool {
 	return &ruleActivationPool{
 		Pool: sync.Pool{
 			New: func() interface{} {
-				return &ruleActivation{}
+				return &ruleActivation{
+					rangeVars: map[string]ref.Val{},
+				}
 			},
 		},
 	}
