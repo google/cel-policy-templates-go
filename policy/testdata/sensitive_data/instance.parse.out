@@ -21,7 +21,7 @@
   - 14~15~resource_prefixes:16~
       - 17~"/company/acme/secrets/"
       - 18~"/company/acme/research/anvils/"
-      - 19~"/company/acme/contracts/*"
+      - 19~"/company/acme/contracts/"
     20~labels:21~
       22~sensitivity:23~
         - 24~"secret"

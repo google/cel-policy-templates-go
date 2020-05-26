@@ -45,8 +45,7 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 
 	members := model.NewField(4, "members")
 	memberList := model.NewListValue()
-	memberList.Entries = append(memberList.Entries,
-		model.NewDynValue(6, "user:wiley@acme.co"))
+	memberList.Append(model.NewDynValue(6, "user:wiley@acme.co"))
 	members.Ref = model.NewDynValue(5, memberList)
 
 	want := model.NewMapValue()

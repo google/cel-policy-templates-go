@@ -31,10 +31,13 @@ type objRef interface {
 	// If the object is not a primitive value, return an error.
 	assign(value interface{}) error
 
+	// encodeStyle indicates the encoding style for the value as a hint for string serialization.
 	encodeStyle(value model.EncodeStyle)
 
+	// initMap configures the builder to construct a model.MapValue
 	initMap() error
 
+	// initList configures the builder to construct a model.ListValue.
 	initList() error
 
 	// field creates an objRef for the field with the given name for building nested objects.
@@ -48,6 +51,9 @@ type objRef interface {
 	// If the object is not a list or the index is not between 0 and the length of the list, the
 	// function will return an error.
 	entry(idx interface{}) (objRef, error)
+
+	// finalize indicates that the value has been fully parsed.
+	finalize()
 }
 
 // newBaseBuilder returns a base builder which implements the core methods of the objRef interface.
@@ -86,6 +92,9 @@ func (b *baseBuilder) field(id int64, name string) (objRef, error) {
 func (b *baseBuilder) entry(idx interface{}) (objRef, error) {
 	return nil, typeNotAssignableToType(b.typeName, model.ListType)
 }
+
+// finalize is a noop implementation of the objRef interface method.
+func (b *baseBuilder) finalize() {}
 
 func newParsedValueBuilder(pv *model.ParsedValue) *parsedValueBuilder {
 	pv.Value = model.NewMapValue()
@@ -160,7 +169,7 @@ func (b *listBuilder) entry(idx interface{}) (objRef, error) {
 		return nil, err
 	}
 	dyn := model.NewEmptyDynValue()
-	b.listVal.Entries = append(b.listVal.Entries, dyn)
+	b.listVal.Append(dyn)
 	return newDynValueBuilder(dyn), nil
 }
 
@@ -251,6 +260,13 @@ func (b *dynValueBuilder) entry(idx interface{}) (objRef, error) {
 		return nil, noSuchProperty("dyn", "[]")
 	}
 	return b.lb.entry(idx)
+}
+
+// finalize calls the Finalize method of model.ValueNode instances that support finalizing.
+func (b *dynValueBuilder) finalize() {
+	if b.lb != nil {
+		b.lb.listVal.Finalize()
+	}
 }
 
 // helper methods for formatting builder-related error messages.
