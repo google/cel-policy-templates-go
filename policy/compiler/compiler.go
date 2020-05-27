@@ -335,6 +335,44 @@ func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	if found {
 		schema.DefaultValue = tc.convertToSchemaType(elem.Ref.ID, elem.Ref.Value, schema)
 	}
+
+	tc.validateOpenAPISchema(dyn, schema)
+}
+
+func (tc *templateCompiler) validateOpenAPISchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
+	m := tc.mapValue(dyn)
+	p, hasProps := m.GetField("properties")
+	ap, hasAdditionalProps := m.GetField("additionalProperties")
+
+	if hasProps && hasAdditionalProps {
+		tc.reportErrorAtID(ap.Ref.ID,
+			"invalid schema. properties set, additionalProperties must not be set.")
+	}
+	if hasProps && schema.Type != "object" {
+		tc.reportErrorAtID(p.Ref.ID,
+			"invalid schema. properties set, expected object type, found: %s.",
+			schema.Type)
+	}
+	if hasAdditionalProps && schema.Type != "object" {
+		tc.reportErrorAtID(ap.Ref.ID,
+			"invalid schema. additionalProperties set, expected object type, found: %s.",
+			schema.Type)
+	}
+	if schema.Items != nil {
+		if schema.Type != "array" {
+			tc.reportErrorAtID(dyn.ID,
+				"invalid schema. items set, expected array type, found: %s.",
+				schema.Type)
+		}
+		if hasProps {
+			tc.reportErrorAtID(p.Ref.ID,
+				"invalid schema. items set, properties must not be set.")
+		}
+		if hasAdditionalProps {
+			tc.reportErrorAtID(ap.Ref.ID,
+				"invalid schema. items set, additionalProperties must not be set.")
+		}
+	}
 }
 
 func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.Template) {
