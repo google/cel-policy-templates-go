@@ -16,25 +16,13 @@ package policy
 
 import (
 	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/runtime"
 
-	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-go/interpreter/functions"
 )
 
 // EngineOption is a functional option for configuring the policy engine.
 type EngineOption func(*Engine) (*Engine, error)
-
-// Functions provides custom function implementations for functions expected by policy evaluators.
-func Functions(funcs ...*functions.Overload) EngineOption {
-	return func(e *Engine) (*Engine, error) {
-		if len(funcs) == 0 {
-			return e, nil
-		}
-		e.evalOpts = append(e.evalOpts, cel.Functions(funcs...))
-		return e, nil
-	}
-}
 
 // Selector functions take a compiled representation of a policy instance 'selector' and the input
 // argument set to determine whether the policy instance is applicable to the current evaluation
@@ -54,6 +42,15 @@ func Selectors(selectors ...Selector) EngineOption {
 func RangeLimit(limit int) EngineOption {
 	return func(e *Engine) (*Engine, error) {
 		e.limits.RangeLimit = limit
+		return e, nil
+	}
+}
+
+// RuntimeTemplateOptions collects a set of runtime specific options to be configured on runtime
+// templates.
+func RuntimeTemplateOptions(rtOpts ...runtime.TemplateOption) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.rtOpts = append(e.rtOpts, rtOpts...)
 		return e, nil
 	}
 }

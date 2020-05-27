@@ -158,7 +158,10 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 		r := ic.convertToRule(rule.Ref)
 		cinst.Rules = []model.Rule{r}
 	}
-	exec, err := runtime.NewTemplate(ic.reg, ic.tmpl, ic.limits, ic.evalOpts...)
+	exec, err := runtime.NewTemplate(ic.reg,
+		ic.tmpl,
+		runtime.Limits(ic.limits),
+		runtime.ExprOptions(ic.evalOpts...))
 	if err != nil {
 		// report the error
 		ic.reportError(err.Error())

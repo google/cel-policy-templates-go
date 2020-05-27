@@ -72,6 +72,7 @@ type DynValue struct {
 	ID          int64
 	Value       interface{}
 	EncodeStyle EncodeStyle
+	exprValue   ref.Val
 }
 
 // ModelType returns the policy model type of the dyn value.
@@ -147,6 +148,19 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 
 // ExprValue converts the DynValue into a CEL value.
 func (dv *DynValue) ExprValue() ref.Val {
+	if dv.exprValue == nil {
+		// Note: probably needs a concurrency guard.
+		dv.exprValue = exprValue(dv)
+	}
+	return dv.exprValue
+}
+
+// Type returns the CEL type for the given value.
+func (dv *DynValue) Type() ref.Type {
+	return dv.ExprValue().Type()
+}
+
+func exprValue(dv *DynValue) ref.Val {
 	switch v := dv.Value.(type) {
 	case ref.Val:
 		return v
@@ -175,29 +189,6 @@ func (dv *DynValue) ExprValue() ref.Val {
 	default:
 		return types.NewErr("no such expr type: %T", v)
 	}
-}
-
-// Type returns the CEL type for the given value.
-func (dv *DynValue) Type() ref.Type {
-	switch v := dv.Value.(type) {
-	case ref.Val:
-		return v.Type()
-	case bool:
-		return types.BoolType
-	case []byte:
-		return types.BytesType
-	case float64:
-		return types.DoubleType
-	case int64:
-		return types.IntType
-	case string, PlainTextValue, *MultilineStringValue:
-		return types.StringType
-	case uint64:
-		return types.UintType
-	case time.Time:
-		return types.TimestampType
-	}
-	return types.ErrType
 }
 
 // PlainTextValue is a text string literal which must not be treated as an expression.

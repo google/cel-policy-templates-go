@@ -16,6 +16,7 @@
 package policy
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/google/cel-policy-templates-go/policy/compiler"
@@ -31,6 +32,7 @@ import (
 // Engine evaluates context against policy instances to produce decisions.
 type Engine struct {
 	evalOpts  []cel.ProgramOption
+	rtOpts    []runtime.TemplateOption
 	selectors []Selector
 	limits    *limits.Limits
 	envs      map[string]*cel.Env
@@ -49,6 +51,7 @@ type Engine struct {
 func NewEngine(opts ...EngineOption) (*Engine, error) {
 	e := &Engine{
 		evalOpts:  []cel.ProgramOption{},
+		rtOpts:    []runtime.TemplateOption{},
 		selectors: []Selector{},
 		limits:    limits.NewLimits(),
 		envs: map[string]*cel.Env{
@@ -78,29 +81,17 @@ func NewEngine(opts ...EngineOption) (*Engine, error) {
 //
 // Which decisions are produced depends on the active set of policy instances and whether any rules
 // within these policies apply to the context.
-func (e *Engine) Eval(ctx map[string]interface{}) ([]*model.DecisionValue, error) {
-	input := e.actPool.Get().(*activation)
-	defer e.actPool.Put(input)
-	input.vars = ctx
-	var decisions []*model.DecisionValue
-	for tmplName, insts := range e.instances {
-		rt, found := e.runtimes[tmplName]
-		if !found {
-			// Report an error
-			continue
-		}
-		for _, inst := range insts {
-			if !e.selectInstance(inst, input) {
-				continue
-			}
-			decs, err := rt.Eval(inst, input)
-			if err != nil {
-				return nil, err
-			}
-			decisions = append(decisions, decs...)
-		}
-	}
-	return decisions, nil
+func (e *Engine) EvalAll(vars map[string]interface{}) ([]model.DecisionValue, error) {
+	return e.evalInternal(vars, nil)
+}
+
+// Eval accepts an input context and produces a set of decisions as output.
+//
+// Which decisions are produced depends on the active set of policy instances and whether any rules
+// within these policies apply to the context.
+func (e *Engine) Eval(vars map[string]interface{},
+	selector runtime.DecisionSelector) ([]model.DecisionValue, error) {
+	return e.evalInternal(vars, selector)
 }
 
 // AddEnv configures the engine with a named reference to a CEL expression environment.
@@ -112,13 +103,20 @@ func (e *Engine) AddEnv(name string, exprEnv *cel.Env) {
 //
 // Instances are grouped together by their 'kind' field which corresponds to a template
 // metadata.name value.
-func (e *Engine) AddInstance(inst *model.Instance) {
+func (e *Engine) AddInstance(inst *model.Instance) error {
+	_, found := e.templates[inst.Kind]
+	if !found {
+		return fmt.Errorf(
+			"template not found: instance=%s, template=%s",
+			inst.Kind, inst.Metadata.Name)
+	}
 	insts, found := e.instances[inst.Kind]
 	if !found {
 		insts = []*model.Instance{}
 	}
 	insts = append(insts, inst)
 	e.instances[inst.Kind] = insts
+	return nil
 }
 
 // AddTemplate configures the engine with a given model.Template.
@@ -126,7 +124,12 @@ func (e *Engine) AddInstance(inst *model.Instance) {
 // The AddTemplate call will initialize an evaluable runtime.Template as a side-effect.
 func (e *Engine) AddTemplate(tmpl *model.Template) error {
 	e.templates[tmpl.Metadata.Name] = tmpl
-	rtTmpl, err := runtime.NewTemplate(e, tmpl, e.limits, e.evalOpts...)
+	rtOpts := []runtime.TemplateOption{
+		runtime.Limits(e.limits),
+		runtime.ExprOptions(e.evalOpts...),
+	}
+	rtOpts = append(rtOpts, e.rtOpts...)
+	rtTmpl, err := runtime.NewTemplate(e, tmpl, rtOpts...)
 	if err != nil {
 		return err
 	}
@@ -174,6 +177,32 @@ func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
 	return c.CompileTemplate(src, ast)
 }
 
+func (e *Engine) evalInternal(vars map[string]interface{},
+	selector runtime.DecisionSelector) ([]model.DecisionValue, error) {
+	input := e.actPool.Get().(*activation)
+	defer e.actPool.Put(input)
+	input.vars = vars
+	var decisions []model.DecisionValue
+	for tmplName, insts := range e.instances {
+		rt, found := e.runtimes[tmplName]
+		if !found {
+			// Report an error
+			continue
+		}
+		for _, inst := range insts {
+			if !e.selectInstance(inst, input) {
+				continue
+			}
+			decs, err := rt.Eval(inst, input, selector)
+			if err != nil {
+				return nil, err
+			}
+			decisions = append(decisions, decs...)
+		}
+	}
+	return decisions, nil
+}
+
 func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activation) bool {
 	if len(inst.Selectors) == 0 || len(e.selectors) == 0 {
 		return true
@@ -186,6 +215,36 @@ func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activati
 		}
 	}
 	return false
+}
+
+// DecisionNames filters the decision set which can be produced by the engine to a specific set
+// of named decisions.
+func DecisionNames(selected ...string) runtime.DecisionSelector {
+	return func(decision string) bool {
+		for _, s := range selected {
+			if s == decision {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// UnfinalizedDecisions filters the decisions down to the set of decisions which has not yet
+// been finalized.
+//
+// Note, it is up to the caller to determine whether the policy instances have been completely
+// evaluated as it is possible to shard the instances into different Engine instances and use
+// the output of one evaluation as a filter into the next shard.
+func UnfinalizedDecisions(values []model.DecisionValue) runtime.DecisionSelector {
+	return func(decision string) bool {
+		for _, v := range values {
+			if v.Name() == decision {
+				return !v.IsFinal()
+			}
+		}
+		return true
+	}
 }
 
 // Issues alias for simplifying the top-level interface of the engine.

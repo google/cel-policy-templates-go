@@ -42,6 +42,6 @@ evaluator:
     - match: invalid.size() > 0
       decision: policy.violation
       output:
-        message: invalid values provided on one or more label
+        message: invalid values provided on one or more labels
         details:
           data: invalid

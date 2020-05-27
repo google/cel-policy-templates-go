@@ -159,6 +159,8 @@ const (
 	schemaDefYaml = `
 type: object
 properties:
+  $ref:
+    type: string
   type:
     type: string
   format:

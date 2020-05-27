@@ -23,3 +23,8 @@
     17~resource_prefix: 18~"/company/warneranimstudios/"
     19~start: 20~"2019-01-01T00:00:00Z"
     21~end: 22~"2020-01-01T00:00:00Z"
+  - 23~24~description: 25~>
+      "Yearly Disney license to Marvel products"
+    26~resource_prefix: 27~"/company/disneymarvel/"
+    28~start: 29~"2019-06-01T00:00:00Z"
+    30~end: 31~"2020-06-01T00:00:00Z"

@@ -23,3 +23,8 @@ rules:
     resource_prefix: "/company/warneranimstudios/"
     start: "2019-01-01T00:00:00Z"
     end: "2020-01-01T00:00:00Z"
+  - description: >
+      "Yearly Disney license to Marvel products"
+    resource_prefix: "/company/disneymarvel/"
+    start: "2019-06-01T00:00:00Z"
+    end: "2020-06-01T00:00:00Z"
