@@ -513,13 +513,15 @@ type Field struct {
 // NewListValue returns an empty ListValue instance.
 func NewListValue() *ListValue {
 	return &ListValue{
-		Entries: []*DynValue{},
+		Entries:  []*DynValue{},
+		valueSet: map[ref.Val]struct{}{},
 	}
 }
 
 // ListValue contains a list of dynamically typed entries.
 type ListValue struct {
-	Entries []*DynValue
+	Entries  []*DynValue
+	valueSet map[ref.Val]struct{}
 }
 
 // Add concatenates two lists together to produce a new CEL list value.
@@ -541,6 +543,11 @@ func (lv *ListValue) Add(other ref.Val) ref.Val {
 	return types.NewValueList(types.DefaultTypeAdapter, combo)
 }
 
+// Append adds another entry into the ListValue.
+func (lv *ListValue) Append(entry *DynValue) {
+	lv.Entries = append(lv.Entries, entry)
+}
+
 // Contains returns whether the input `val` is equal to an element in the list.
 //
 // If any pair-wise comparison between the input value and the list element is an error, the
@@ -548,6 +555,13 @@ func (lv *ListValue) Add(other ref.Val) ref.Val {
 func (lv *ListValue) Contains(val ref.Val) ref.Val {
 	if types.IsUnknownOrError(val) {
 		return val
+	}
+	if lv.valueSet != nil {
+		_, found := lv.valueSet[val]
+		if found {
+			return types.True
+		}
+		return types.False
 	}
 	var err ref.Val
 	sz := len(lv.Entries)
@@ -629,6 +643,20 @@ func (lv *ListValue) Equal(other ref.Val) ref.Val {
 		}
 	}
 	return types.True
+}
+
+// Finalize inspects the ListValue entries in order to make internal optimizations once all list
+// entries are known.
+func (lv *ListValue) Finalize() {
+	for _, e := range lv.Entries {
+		switch e.Value.(type) {
+		case bool, float64, int64, string, uint64, types.Null, PlainTextValue:
+			lv.valueSet[e.ExprValue()] = struct{}{}
+		default:
+			lv.valueSet = nil
+			return
+		}
+	}
 }
 
 // Get returns the value at the given index.

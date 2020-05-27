@@ -21,7 +21,7 @@ rules:
   - resource_prefixes:
       - "/company/acme/secrets/"
       - "/company/acme/research/anvils/"
-      - "/company/acme/contracts/*"
+      - "/company/acme/contracts/"
     labels:
       sensitivity:
         - "secret"

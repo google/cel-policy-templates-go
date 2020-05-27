@@ -1001,7 +1001,7 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 			ev := dc.convertToSchemaType(id, e, schema.Items)
 			elem := model.NewEmptyDynValue()
 			elem.Value = ev
-			lv.Entries = append(lv.Entries, elem)
+			lv.Append(elem)
 		}
 		return lv
 	case map[string]interface{}:
