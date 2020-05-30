@@ -1,0 +1,3 @@
+ERROR: ../../test/testdata/multiple_ranges/template.yaml:29:5: range limit set to 1, but 2 found
+ |     - value: idx
+ | ....^

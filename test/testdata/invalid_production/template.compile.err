@@ -1,0 +1,3 @@
+ERROR: ../../test/testdata/invalid_production/template.yaml:46:14: expected bool match result, found: string
+ |     - match: hi + bye
+ | .............^

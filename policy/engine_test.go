@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/runtime"
-	"github.com/google/cel-policy-templates-go/policy/test"
+	"github.com/google/cel-policy-templates-go/test"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -379,7 +379,7 @@ var (
 )
 
 func TestEngine(t *testing.T) {
-	tr := test.NewReader("testdata")
+	tr := test.NewReader("../test/testdata")
 	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
@@ -403,7 +403,7 @@ func TestEngine(t *testing.T) {
 			}
 			engine.AddEnv("", env)
 
-			tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+			tmplFile := fmt.Sprintf("../test/testdata/%s/template.yaml", tst.policy)
 			tmplSrc := tr.Read(tmplFile)
 			tmpl, iss := engine.CompileTemplate(tmplSrc)
 			if iss.Err() != nil {
@@ -414,7 +414,7 @@ func TestEngine(t *testing.T) {
 				tt.Fatal(err)
 			}
 
-			instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+			instFile := fmt.Sprintf("../test/testdata/%s/instance.yaml", tst.policy)
 			instSrc := tr.Read(instFile)
 			inst, iss := engine.CompileInstance(instSrc)
 			if iss.Err() != nil {
@@ -470,7 +470,7 @@ func TestEngine(t *testing.T) {
 }
 
 func BenchmarkEnforcer(b *testing.B) {
-	tr := test.NewReader("testdata")
+	tr := test.NewReader("../test/testdata")
 	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
@@ -492,7 +492,7 @@ func BenchmarkEnforcer(b *testing.B) {
 			b.Fatal(err)
 		}
 		engine.AddEnv("", env)
-		tmplFile := fmt.Sprintf("testdata/%s/template.yaml", tst.policy)
+		tmplFile := fmt.Sprintf("../test/testdata/%s/template.yaml", tst.policy)
 		tmplSrc := tr.Read(tmplFile)
 		tmpl, iss := engine.CompileTemplate(tmplSrc)
 		if iss.Err() != nil {
@@ -503,7 +503,7 @@ func BenchmarkEnforcer(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		instFile := fmt.Sprintf("testdata/%s/instance.yaml", tst.policy)
+		instFile := fmt.Sprintf("../test/testdata/%s/instance.yaml", tst.policy)
 		instSrc := tr.Read(instFile)
 		inst, iss := engine.CompileInstance(instSrc)
 		if iss.Err() != nil {

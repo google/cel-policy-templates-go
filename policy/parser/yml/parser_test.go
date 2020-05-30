@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/google/cel-policy-templates-go/policy/test"
+	"github.com/google/cel-policy-templates-go/test"
 )
 
 func TestParse(t *testing.T) {
-	tr := test.NewReader("../../testdata")
+	tr := test.NewReader("../../../test/testdata")
 	tests, err := tr.ReadCases("parse")
 	if err != nil {
 		t.Fatal(err)
