@@ -1,0 +1,27 @@
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:15:1: missing required field(s): [kind]
+ | apiVersion: policy.acme.co/v1
+ | ^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:27:14: value not assignable to schema type: value=int, schema=string
+ |       enum: [1, 3.2, false, "okay"]
+ | .............^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:27:17: value not assignable to schema type: value=double, schema=string
+ |       enum: [1, 3.2, false, "okay"]
+ | ................^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:27:22: value not assignable to schema type: value=bool, schema=string
+ |       enum: [1, 3.2, false, "okay"]
+ | .....................^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:30:13: undefined field 'grating'
+ |     hi: rule.grating
+ | ............^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:33:5: field redeclaration error: uintVal
+ |     uintVal: 9223372036854775809
+ | ....^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:35:26: undeclared reference to 'byte' (in container '')
+ |     - match: hi == '' && byte == ''
+ | .........................^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:40:7: undeclared reference to 'bye' (in container '')
+ |       bye != ''
+ | ......^
+ERROR: ../../test/testdata/invalid_expressions/template.yaml:41:13: undefined field 'greting'
+ |       ? rule.greting
+ | ............^

@@ -22,13 +22,13 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/limits"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
-	"github.com/google/cel-policy-templates-go/policy/test"
+	"github.com/google/cel-policy-templates-go/test"
 
 	"github.com/google/cel-go/cel"
 )
 
 func TestCompiler(t *testing.T) {
-	tr := test.NewReader("../testdata")
+	tr := test.NewReader("../../test/testdata")
 	tests, err := tr.ReadCases("compile")
 	if err != nil {
 		t.Fatal(err)

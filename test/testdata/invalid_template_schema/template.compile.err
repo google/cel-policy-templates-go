@@ -1,0 +1,24 @@
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:31:29: invalid schema. properties set, additionalProperties must not be set.
+ |       additionalProperties: {}
+ | ............................^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:35:9: invalid schema. properties set, expected object type, found: notobject.
+ |         p2:
+ | ........^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:38:7: invalid schema. items set, expected array type, found: notarray.
+ |       type: notarray
+ | ......^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:42:9: invalid schema. properties set, expected object type, found: notarray.
+ |         p3:
+ | ........^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:42:9: invalid schema. items set, properties must not be set.
+ |         p3:
+ | ........^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:44:29: invalid schema. properties set, additionalProperties must not be set.
+ |       additionalProperties: {}
+ | ............................^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:44:29: invalid schema. additionalProperties set, expected object type, found: notarray.
+ |       additionalProperties: {}
+ | ............................^
+ERROR: ../../test/testdata/invalid_template_schema/template.yaml:44:29: invalid schema. items set, additionalProperties must not be set.
+ |       additionalProperties: {}
+ | ............................^
