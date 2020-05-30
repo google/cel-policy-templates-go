@@ -42,6 +42,6 @@
     - 52~53~match: 54~"invalid.size() > 0"
       55~decision: 56~"policy.violation"
       57~output:58~
-        59~message: 60~"invalid values provided on one or more label"
+        59~message: 60~"invalid values provided on one or more labels"
         61~details:62~
           63~data: 64~"invalid"

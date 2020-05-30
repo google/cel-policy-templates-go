@@ -19,22 +19,16 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/interpreter"
 	"github.com/google/cel-policy-templates-go/policy/model"
+	"github.com/google/cel-policy-templates-go/policy/runtime"
 	"github.com/google/cel-policy-templates-go/policy/test"
+
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/interpreter"
 
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
-
-type tc struct {
-	name    string
-	policy  string
-	input   map[string]interface{}
-	outputs []interface{}
-	opts    []EngineOption
-	e       string
-}
 
 type metadata struct {
 	Resource      string
@@ -58,7 +52,17 @@ type access struct {
 }
 
 var (
-	testCases = []tc{
+	testCases = []struct {
+		name             string
+		policy           string
+		input            map[string]interface{}
+		outputs          []interface{}
+		opts             []EngineOption
+		selectorsOutputs []struct {
+			selector runtime.DecisionSelector
+			outputs  []interface{}
+		}
+	}{
 		// Binauthz
 		{
 			name:   "binauthz_package_violations",
@@ -146,6 +150,45 @@ var (
 				"resource.labels": map[string]string{},
 			},
 			outputs: []interface{}{true},
+			selectorsOutputs: []struct {
+				selector runtime.DecisionSelector
+				outputs  []interface{}
+			}{
+				{
+					outputs: []interface{}{true},
+				},
+				{
+					selector: DecisionNames("policy.deny"),
+					outputs:  []interface{}{true},
+				},
+				{
+					selector: DecisionNames("policy.report"),
+					outputs:  []interface{}{},
+				},
+				{
+					selector: UnfinalizedDecisions([]model.DecisionValue{}),
+					outputs:  []interface{}{true},
+				},
+				{
+					selector: UnfinalizedDecisions([]model.DecisionValue{
+						model.NewBoolDecisionValue("policy.deny", types.True).Finalize(nil, nil),
+					}),
+					outputs: []interface{}{},
+				},
+				{
+					selector: UnfinalizedDecisions([]model.DecisionValue{
+						model.NewBoolDecisionValue("policy.deny", types.False),
+					}),
+					outputs: []interface{}{true},
+				},
+				{
+					selector: UnfinalizedDecisions([]model.DecisionValue{
+						model.NewBoolDecisionValue("policy.allow", types.True),
+						model.NewBoolDecisionValue("policy.shadow", types.True),
+					}),
+					outputs: []interface{}{true},
+				},
+			},
 		},
 		{
 			name:   "sensitive_data_label_same_location",
@@ -289,7 +332,7 @@ var (
 				violation{
 					Message: "invalid values provided on one or more labels",
 					Details: &metadata{
-						Data: []string{"verified"},
+						Data: []string{"env"},
 					},
 				},
 			},
@@ -342,9 +385,14 @@ func TestEngine(t *testing.T) {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
 			opts := []EngineOption{
-				Functions(test.Funcs...),
 				Selectors(labelSelector),
 				RangeLimit(1),
+				RuntimeTemplateOptions(
+					runtime.Functions(test.Funcs...),
+					runtime.NewCollectAggregator("policy.violation"),
+					runtime.NewCollectAggregator("policy.report"),
+					runtime.NewOrAggregator("policy.deny"),
+				),
 			}
 			if tst.opts != nil {
 				opts = append(opts, tst.opts...)
@@ -373,29 +421,49 @@ func TestEngine(t *testing.T) {
 				tt.Fatal(iss.Err())
 			}
 			engine.AddInstance(inst)
-			decisions, err := engine.Eval(tst.input)
+			decisions, err := engine.EvalAll(tst.input)
 			if err != nil {
 				tt.Error(err)
 			}
-			found := false
 			for _, dec := range decisions {
 				for _, out := range tst.outputs {
-					ntv, err := dec.Value.ConvertToNative(reflect.TypeOf(out))
+					eq, err := decisionMatchesOutput(dec, out)
 					if err != nil {
-						tt.Fatalf("out type: %T, err: %v", dec.Value, err)
+						tt.Fatalf("out type: %v, err: %v", dec, err)
 					}
-					if reflect.DeepEqual(ntv, out) {
-						found = true
-						break
+					if !eq {
+						tt.Errorf("decision %v missing output: %v", dec, out)
 					}
-					tt.Logf("out: %v", dec.Value)
-				}
-				if !found {
-					tt.Fatalf("Got decision %v, wanted one of %v", dec, tst.outputs)
 				}
 			}
-			if len(decisions) != len(tst.outputs) {
-				tt.Fatalf("Got decisions %v, but expected %v", decisions, tst.outputs)
+			if len(tst.outputs) != 0 && len(decisions) == 0 {
+				tt.Errorf("got an empty decision set, expected outputs: %v", tst.outputs)
+			}
+			if tst.selectorsOutputs == nil {
+				return
+			}
+			for i, selOut := range tst.selectorsOutputs {
+				so := selOut
+				tt.Run(fmt.Sprintf("selector[%d]", i), func(ttt *testing.T) {
+					decisions, err := engine.Eval(tst.input, so.selector)
+					if err != nil {
+						ttt.Error(err)
+					}
+					for _, dec := range decisions {
+						for _, out := range so.outputs {
+							eq, err := decisionMatchesOutput(dec, out)
+							if err != nil {
+								ttt.Fatalf("out type: %v, err: %v", dec, err)
+							}
+							if !eq {
+								ttt.Errorf("decision %v missing output: %v", dec, out)
+							}
+						}
+					}
+					if len(so.outputs) != 0 && len(decisions) == 0 {
+						ttt.Errorf("got an empty decision set, expected outputs: %v", so.outputs)
+					}
+				})
 			}
 		})
 	}
@@ -407,9 +475,14 @@ func BenchmarkEnforcer(b *testing.B) {
 	for _, tstVal := range testCases {
 		tst := tstVal
 		opts := []EngineOption{
-			Functions(test.Funcs...),
 			Selectors(labelSelector),
 			RangeLimit(1),
+			RuntimeTemplateOptions(
+				runtime.Functions(test.Funcs...),
+				runtime.NewCollectAggregator("policy.violation"),
+				runtime.NewCollectAggregator("policy.report"),
+				runtime.NewOrAggregator("policy.deny"),
+			),
 		}
 		if tst.opts != nil {
 			opts = append(opts, tst.opts...)
@@ -440,13 +513,49 @@ func BenchmarkEnforcer(b *testing.B) {
 
 		b.Run(tst.name, func(bb *testing.B) {
 			for i := 0; i < bb.N; i++ {
-				_, err := engine.Eval(tst.input)
+				_, err := engine.EvalAll(tst.input)
 				if err != nil {
 					bb.Fatal(err)
 				}
 			}
 		})
+		if tst.selectorsOutputs != nil {
+			for i, selOut := range tst.selectorsOutputs {
+				so := selOut
+				b.Run(fmt.Sprintf("%s/selector[%d]", tst.name, i), func(bb *testing.B) {
+					for i := 0; i < bb.N; i++ {
+						_, err := engine.Eval(tst.input, so.selector)
+						if err != nil {
+							bb.Error(err)
+						}
+					}
+				})
+			}
+		}
 	}
+}
+
+func decisionMatchesOutput(dec model.DecisionValue, out interface{}) (bool, error) {
+	switch dv := dec.(type) {
+	case *model.BoolDecisionValue:
+		ntv, err := dv.Value().ConvertToNative(reflect.TypeOf(out))
+		if err != nil {
+			return false, err
+		}
+		return reflect.DeepEqual(ntv, out), nil
+	case *model.ListDecisionValue:
+		vals := dv.Values()
+		for _, val := range vals {
+			ntv, err := val.ConvertToNative(reflect.TypeOf(out))
+			if err != nil {
+				return false, err
+			}
+			if reflect.DeepEqual(ntv, out) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func labelSelector(sel model.Selector, vars interpreter.Activation) bool {

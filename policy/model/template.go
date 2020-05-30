@@ -16,7 +16,6 @@ package model
 
 import (
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types/ref"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -40,6 +39,12 @@ type Template struct {
 	Validator   *Evaluator
 	Evaluator   *Evaluator
 	Info        *SourceInfo
+}
+
+// EvaluatorDecisionCount returns the number of decisions which can be produced by the template
+// evaluator production rules.
+func (t *Template) EvaluatorDecisionCount() int {
+	return t.Evaluator.DecisionCount()
 }
 
 // NewTemplateMetadata returns an empty *TemplateMetadata instance.
@@ -89,6 +94,19 @@ type Evaluator struct {
 	Productions []*Production
 }
 
+// DecisionCount returns the number of possible decisions which could be emitted by this evaluator.
+func (e *Evaluator) DecisionCount() int {
+	decMap := map[string]struct{}{}
+	for _, p := range e.Productions {
+		for _, d := range p.Decisions {
+			decMap[d.Name] = struct{}{}
+		}
+	}
+	return len(decMap)
+}
+
+// Range expresses a looping condition where the key (or index) and value can be extracted from the
+// range CEL expression.
 type Range struct {
 	ID    int64
 	Key   *exprpb.Decl
@@ -132,39 +150,4 @@ type Production struct {
 	ID        int64
 	Match     *cel.Ast
 	Decisions []*Decision
-}
-
-// NewDecision returns an empty Decision instance.
-func NewDecision() *Decision {
-	return &Decision{}
-}
-
-// Decision contains a decision name, or reference to a decision name, and an output expression.
-type Decision struct {
-	Name      string
-	Reference *cel.Ast
-	Output    *cel.Ast
-}
-
-// NewDecisionValue creates a new named decision with a value, and if configured appropriate a set
-// of evaluation details which contain debug information about the evaluation of the output
-// expression.
-func NewDecisionValue(name string, val ref.Val, det *cel.EvalDetails) *DecisionValue {
-	return &DecisionValue{
-		Name:    name,
-		Value:   val,
-		Details: det,
-	}
-}
-
-// DecisionValue represents a named decision and value.
-//
-// If the evaluation of the decision is performed with the cel.EvalOptions(cel.OptTrackState)
-// option, the Details field will be non-nil and contain debug information about the expression
-// evaluation.
-type DecisionValue struct {
-	RuleID  int64
-	Name    string
-	Value   ref.Val
-	Details *cel.EvalDetails
 }

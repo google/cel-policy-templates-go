@@ -36,23 +36,33 @@ import (
 // NewTemplate creates a validator / evaluator pair for a model.Template.
 func NewTemplate(reg model.Registry,
 	mdl *model.Template,
-	limits *limits.Limits,
-	evalOpts ...cel.ProgramOption) (*Template, error) {
+	opts ...TemplateOption) (*Template, error) {
 	t := &Template{
-		reg:     reg,
-		mdl:     mdl,
-		limits:  limits,
-		actPool: newRuleActivationPool(),
+		reg:          reg,
+		mdl:          mdl,
+		decAggMap:    map[string]Aggregator{},
+		exprOpts:     []cel.ProgramOption{},
+		limits:       limits.NewLimits(),
+		actPool:      newRuleActivationPool(),
+		valSlotPool:  newDecisionSlotPool(1),
+		evalSlotPool: newDecisionSlotPool(mdl.EvaluatorDecisionCount()),
+	}
+	var err error
+	for _, opt := range opts {
+		t, err = opt(t)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if mdl.Validator != nil {
-		val, err := t.newEvaluator(mdl.Validator, evalOpts...)
+		val, err := t.newEvaluator(mdl.Validator, t.exprOpts...)
 		if err != nil {
 			return nil, err
 		}
 		t.validator = val
 	}
 	if mdl.Evaluator != nil {
-		eval, err := t.newEvaluator(mdl.Evaluator, evalOpts...)
+		eval, err := t.newEvaluator(mdl.Evaluator, t.exprOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -66,9 +76,29 @@ type Template struct {
 	reg       model.Registry
 	mdl       *model.Template
 	limits    *limits.Limits
-	validator *evaluator
-	evaluator *evaluator
-	actPool   *ruleActivationPool
+	decAggMap map[string]Aggregator
+	exprOpts  []cel.ProgramOption
+
+	validator    *evaluator
+	evaluator    *evaluator
+	actPool      *ruleActivationPool
+	valSlotPool  *decisionSlotPool
+	evalSlotPool *decisionSlotPool
+}
+
+// Eval returns the evaluation result of a policy instance against a given set of variables.
+func (t *Template) Eval(inst *model.Instance,
+	vars interpreter.Activation,
+	selector DecisionSelector) ([]model.DecisionValue, error) {
+	slots := t.evalSlotPool.Setup()
+	defer t.evalSlotPool.Put(slots)
+	return t.evalInternal(t.evaluator, inst, vars, selector, slots)
+}
+
+// FindAggregator returns the Aggregator for the decision if one is found.
+func (t *Template) FindAggregator(name string) (Aggregator, bool) {
+	agg, found := t.decAggMap[name]
+	return agg, found
 }
 
 // Name returns the template's metadata name value.
@@ -83,7 +113,11 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 		return nil
 	}
 	errs := common.NewErrors(src)
-	decs, err := t.evalInternal(t.validator, inst, interpreter.EmptyActivation())
+	slots := t.valSlotPool.Setup()
+	defer t.valSlotPool.Put(slots)
+
+	noVars := interpreter.EmptyActivation()
+	decs, err := t.evalInternal(t.validator, inst, noVars, nil, slots)
 	if err != nil {
 		errs.ReportError(common.NoLocation, err.Error())
 		return cel.NewIssues(errs)
@@ -91,69 +125,66 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 	if decs == nil || len(decs) == 0 {
 		return nil
 	}
+	if len(decs) > 1 {
+		errs.ReportError(common.NoLocation,
+			"multiple decisions reported, expected only one. values=%v",
+			decs)
+	}
 	for _, d := range decs {
-		loc, found := inst.Info.LocationByID(d.RuleID)
-		if !found {
-			loc = common.NoLocation
-		}
-		violation, err := d.Value.ConvertToNative(mapStrIface)
-		violationMap := violation.(map[string]interface{})
-		if err != nil {
-			errs.ReportError(loc, err.Error())
-		}
-		det, found := violationMap["details"]
-		if found {
-			errs.ReportError(loc, "%s. details: %v", violationMap["message"], det)
-		} else {
-			errs.ReportError(loc, "%s", violationMap["message"])
+		listDec := d.(*model.ListDecisionValue)
+		vals := listDec.Values()
+		rules := listDec.RuleIDs()
+		for i, v := range vals {
+			loc, found := inst.Info.LocationByID(rules[i])
+			if !found {
+				loc = common.NoLocation
+			}
+			violation, err := v.ConvertToNative(mapStrIface)
+			violationMap := violation.(map[string]interface{})
+			if err != nil {
+				errs.ReportError(loc, err.Error())
+			}
+			det, found := violationMap["details"]
+			if found {
+				errs.ReportError(loc, "%s. details: %v", violationMap["message"], det)
+			} else {
+				errs.ReportError(loc, "%s", violationMap["message"])
+			}
 		}
 	}
 	iss := cel.NewIssues(errs)
 	return iss
 }
 
-// Eval returns the evaluation result of a policy instance against a given set of variables.
-func (t *Template) Eval(inst *model.Instance,
-	vars interpreter.Activation) ([]*model.DecisionValue, error) {
-	// TODO: support incremental evaluation, both for debug and for aggregation simplicity.
-	return t.evalInternal(t.evaluator, inst, vars)
-}
-
 func (t *Template) evalInternal(eval *evaluator,
 	inst *model.Instance,
-	vars interpreter.Activation) ([]*model.DecisionValue, error) {
+	vars interpreter.Activation,
+	selector DecisionSelector,
+	slots decisionSlots) ([]model.DecisionValue, error) {
 	ruleAct := t.actPool.Setup(vars)
 	defer t.actPool.Put(ruleAct)
-	var errs []error
-	var decisions []*model.DecisionValue
+
 	// Singleton policy without a schema.
 	if t.mdl.RuleTypes == nil {
-		return eval.eval(ruleAct)
+		err := eval.eval(nil, selector, ruleAct, slots)
+		if err != nil {
+			return nil, err
+		}
+		return slotsToDecisions(slots), nil
 	}
 	// One or more rules present in the policy.
-	for _, r := range inst.Rules {
-		ruleAct.rule = r
-		decs, err := eval.eval(ruleAct)
+	for _, rule := range inst.Rules {
+		err := eval.eval(rule, selector, ruleAct, slots)
 		if err != nil {
-			errs = append(errs, err)
-			continue
+			return nil, err
 		}
-		for _, d := range decs {
-			d.RuleID = r.GetID()
-		}
-		decisions = append(decisions, decs...)
 	}
-	if len(errs) != 0 {
-		// TODO: report a richer error
-		return nil, errs[0]
-	}
-	return decisions, nil
+	return slotsToDecisions(slots), nil
 }
 
 func (t *Template) newEvaluator(mdl *model.Evaluator,
 	evalOpts ...cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
-	// TODO: Expose the cel EvalOptions as policy.EvalOption functions.
 	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
 	env, err := t.newEnv(mdl.Environment)
 	if err != nil {
@@ -198,6 +229,8 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 	}
 
 	prods := make([]*prod, len(mdl.Productions))
+	decSlotMap := make(map[string]int)
+	nextSlot := 0
 	for i, p := range mdl.Productions {
 		match, err := env.Program(p.Match, evalOpts...)
 		if err != nil {
@@ -209,9 +242,21 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 			if err != nil {
 				return nil, err
 			}
+			slot, found := decSlotMap[d.Name]
+			if !found {
+				slot = nextSlot
+				decSlotMap[d.Name] = nextSlot
+				nextSlot++
+			}
+			agg, found := t.FindAggregator(d.Name)
+			if !found {
+				agg = &CollectAggregator{name: d.Name}
+			}
 			decs[i] = &decision{
 				name: d.Name,
+				slot: slot,
 				prg:  dec,
+				agg:  agg,
 			}
 		}
 		prods[i] = &prod{
@@ -257,40 +302,50 @@ type evaluator struct {
 	actPool *evalActivationPool
 }
 
-func (eval *evaluator) eval(vars *ruleActivation) ([]*model.DecisionValue, error) {
+func (eval *evaluator) eval(rule model.Rule,
+	selector DecisionSelector,
+	vars *ruleActivation,
+	slots decisionSlots) error {
+	vars.rule = rule
 	// Fast-path evaluation without ranges.
 	if len(eval.ranges) == 0 {
 		act := eval.actPool.Setup(vars)
 		defer eval.actPool.Put(act)
-		return eval.evalProductions(act)
+		eval.evalProductions(rule, selector, act, slots)
+		return nil
 	}
 	// Range-based evaluation.
 	var errs []error
-	var decisions []*model.DecisionValue
 	rangeIt := eval.rangeIterator(vars)
 	err := rangeIt.init(vars)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for rangeIt.hasNext() {
 		rangeIt.next(vars)
 		act := eval.actPool.Setup(vars)
-		dv, err := eval.evalProductions(act)
+		err := eval.evalProductions(rule, selector, act, slots)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		decisions = append(decisions, dv...)
 		eval.actPool.Put(act)
 	}
-	return decisions, nil
+	return nil
 }
 
-func (eval *evaluator) evalProductions(act interpreter.Activation) ([]*model.DecisionValue, error) {
+func (eval *evaluator) evalProductions(rule model.Rule,
+	selector DecisionSelector,
+	act interpreter.Activation,
+	slots decisionSlots) error {
 	var errs []error
-	var decisions []*model.DecisionValue
-	// TODO: track which decisions have been finalized.
 	for _, p := range eval.prods {
+		// TODO: update this to support finalization on a per-rule basis
+		// as this will support fine-tuning of the aggregation as a per-rule,
+		// per-policy, or per-policy set.
+		if !p.hasMoreDecisions(slots, selector) {
+			continue
+		}
 		matches, _, err := p.match.Eval(act)
 		if err != nil {
 			errs = append(errs, err)
@@ -300,20 +355,27 @@ func (eval *evaluator) evalProductions(act interpreter.Activation) ([]*model.Dec
 			continue
 		}
 		for _, d := range p.decisions {
-			out, det, err := d.prg.Eval(act)
-			if err != nil {
-				errs = append(errs, err)
+			if selector != nil && !selector(d.name) {
 				continue
 			}
-			dv := model.NewDecisionValue(d.name, out, det)
-			decisions = append(decisions, dv)
+			// initialize the slot
+			dv := slots[d.slot]
+			if dv == nil {
+				dv = d.agg.DefaultDecision()
+			}
+			dv, err = d.agg.Aggregate(d.prg, act, dv, rule)
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				slots[d.slot] = dv
+			}
 		}
 	}
 	if len(errs) != 0 {
 		// TODO: report a better multi-error
-		return nil, errs[0]
+		return errs[0]
 	}
-	return decisions, nil
+	return nil
 }
 
 func (eval *evaluator) rangeIterator(vars *ruleActivation) *rangeEvalIterator {
@@ -511,11 +573,69 @@ func (it *listIterator) reset(vars *ruleActivation) error {
 type prod struct {
 	match     cel.Program
 	decisions []*decision
+	// TODO: support references. When references are present, they need to be accumulated
+	// separately from the decisions since the referenced name may be derived from the instance.
+}
+
+func (p *prod) hasMoreDecisions(slots decisionSlots, selector DecisionSelector) bool {
+	for _, d := range p.decisions {
+		if d == nil {
+			continue
+		}
+		if selector != nil && !selector(d.name) {
+			continue
+		}
+		if !d.isFinal(slots) {
+			return true
+		}
+	}
+	return false
 }
 
 type decision struct {
 	name string
+	slot int
 	prg  cel.Program
+	agg  Aggregator
+}
+
+func (d *decision) isFinal(slots decisionSlots) bool {
+	dv := slots[d.slot]
+	return dv != nil && dv.IsFinal()
+}
+
+type decisionSlots []model.DecisionValue
+
+func slotsToDecisions(slots decisionSlots) []model.DecisionValue {
+	var decisions []model.DecisionValue
+	for _, dv := range slots {
+		if dv != nil {
+			decisions = append(decisions, dv)
+		}
+	}
+	return decisions
+}
+
+func newDecisionSlotPool(size int) *decisionSlotPool {
+	return &decisionSlotPool{
+		Pool: &sync.Pool{
+			New: func() interface{} {
+				return make(decisionSlots, size)
+			},
+		},
+	}
+}
+
+type decisionSlotPool struct {
+	*sync.Pool
+}
+
+func (pool *decisionSlotPool) Setup() decisionSlots {
+	slots := pool.Get().(decisionSlots)
+	for i := range slots {
+		slots[i] = nil
+	}
+	return slots
 }
 
 type ruleActivation struct {
