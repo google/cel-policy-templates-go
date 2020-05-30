@@ -89,7 +89,7 @@ func NewBoolDecisionValue(name string, value types.Bool) *BoolDecisionValue {
 	}
 }
 
-// BoolDecisionValue represents the decision value type associated with
+// BoolDecisionValue represents the decision value type associated with a decision.
 type BoolDecisionValue struct {
 	name    string
 	value   ref.Val

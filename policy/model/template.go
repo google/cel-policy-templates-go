@@ -41,7 +41,7 @@ type Template struct {
 	Info        *SourceInfo
 }
 
-// EvaluatorDecisionCount returns the number of decisions which can be produced byt the template
+// EvaluatorDecisionCount returns the number of decisions which can be produced by the template
 // evaluator production rules.
 func (t *Template) EvaluatorDecisionCount() int {
 	return t.Evaluator.DecisionCount()
