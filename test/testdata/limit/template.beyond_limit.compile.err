@@ -1,0 +1,15 @@
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:48:5: term limit set to 20, but 21 found
+ |     hi20: rule.greeting
+ | ....^
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:80:7: validator production limit set to 15, but 17 found
+ |     - match: hi15.startsWith("Goodbye")
+ | ......^
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:101:5: term limit set to 15, but 21 found
+ |     hi15: rule.greeting
+ | ....^
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:138:7: evaluator production limit set to 10, but 11 found
+ |     - match: hi10 != ''
+ | ......^
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:146:11: evaluator decision limit set to 3, but 4 found
+ |         - decision: policy.acme.welcome
+ | ..........^

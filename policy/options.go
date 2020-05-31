@@ -46,6 +46,60 @@ func RangeLimit(limit int) EngineOption {
 	}
 }
 
+// EvaluatorTermLimit sets the evaluator term limit supported by the compilation and runtime
+// components.
+func EvaluatorTermLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.EvaluatorTermLimit = limit
+		return e, nil
+	}
+}
+
+// EvaluatorProductionLimit set the evaluator production limit supported by the compilation and
+// runtime components.
+func EvaluatorProductionLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.EvaluatorProductionLimit = limit
+		return e, nil
+	}
+}
+
+// EvaluatorDecisionLimit set the evaluator decision limit within a single production supported by
+// the compilation and runtime components.
+func EvaluatorDecisionLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.EvaluatorDecisionLimit = limit
+		return e, nil
+	}
+}
+
+// ValidatorTermLimit sets the validator term limit supported by the compilation and runtime
+// components.
+func ValidatorTermLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.ValidatorTermLimit = limit
+		return e, nil
+	}
+}
+
+// ValidatorProductionLimit set the validator production limit supported by the compilation and
+// runtime components.
+func ValidatorProductionLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.ValidatorProductionLimit = limit
+		return e, nil
+	}
+}
+
+// RuleLimit sets the rule limit within a policy instance supported by the compilation and runtime
+// components.
+func RuleLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.RuleLimit = limit
+		return e, nil
+	}
+}
+
 // RuntimeTemplateOptions collects a set of runtime specific options to be configured on runtime
 // templates.
 func RuntimeTemplateOptions(rtOpts ...runtime.TemplateOption) EngineOption {

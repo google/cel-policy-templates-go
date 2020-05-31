@@ -1,0 +1,147 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: limit
+description: >
+  Policy with limit violations.
+schema:
+  type: object
+  properties:
+    greeting:
+      type: string
+validator:
+  terms:
+    hi0: rule.greeting
+    hi1: rule.greeting
+    hi2: rule.greeting
+    hi3: rule.greeting
+    hi4: rule.greeting
+    hi5: rule.greeting
+    hi6: rule.greeting
+    hi7: rule.greeting
+    hi8: rule.greeting
+    hi9: rule.greeting
+    hi10: rule.greeting
+    hi11: rule.greeting
+    hi12: rule.greeting
+    hi13: rule.greeting
+    hi14: rule.greeting
+    hi15: rule.greeting
+    hi16: rule.greeting
+    hi17: rule.greeting
+    hi18: rule.greeting
+    hi19: rule.greeting
+    hi20: rule.greeting
+  productions:
+    - match: hi0.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi1.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi2.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi3.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi4.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi5.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi6.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi7.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi8.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi9.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi10.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi11.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi12.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi13.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi14.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi15.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+    - match: hi16.startsWith("Goodbye")
+      message: greeting starts with a farewell word
+evaluator:
+  terms:
+    hi0: rule.greeting
+    hi1: rule.greeting
+    hi2: rule.greeting
+    hi3: rule.greeting
+    hi4: rule.greeting
+    hi5: rule.greeting
+    hi6: rule.greeting
+    hi7: rule.greeting
+    hi8: rule.greeting
+    hi9: rule.greeting
+    hi10: rule.greeting
+    hi11: rule.greeting
+    hi12: rule.greeting
+    hi13: rule.greeting
+    hi14: rule.greeting
+    hi15: rule.greeting
+    hi16: rule.greeting
+    hi17: rule.greeting
+    hi18: rule.greeting
+    hi19: rule.greeting
+    hi20: rule.greeting
+  productions:
+    - match: hi0 != ''
+      decision: policy.acme.welcome
+      output: hi0
+    - match: hi1 != ''
+      decision: policy.acme.welcome
+      output: hi1
+    - match: hi2 != ''
+      decision: policy.acme.welcome
+      output: hi2
+    - match: hi3 != ''
+      decision: policy.acme.welcome
+      output: hi3
+    - match: hi4 != ''
+      decision: policy.acme.welcome
+      output: hi4
+    - match: hi5 != ''
+      decision: policy.acme.welcome
+      output: hi5
+    - match: hi6 != ''
+      decision: policy.acme.welcome
+      output: hi6
+    - match: hi7 != ''
+      decision: policy.acme.welcome
+      output: hi7
+    - match: hi8 != ''
+      decision: policy.acme.welcome
+      output: hi8
+    - match: hi9 != ''
+      decision: policy.acme.welcome
+      output: hi9
+    - match: hi10 != ''
+      decisions:
+        - decision: policy.acme.welcome
+          output: hi10
+        - decision: policy.acme.welcome
+          output: hi11
+        - decision: policy.acme.welcome
+          output: hi12
+        - decision: policy.acme.welcome
+          output: hi13

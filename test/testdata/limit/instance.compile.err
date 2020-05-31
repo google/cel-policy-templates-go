@@ -1,0 +1,3 @@
+ERROR: ../../test/testdata/limit/instance.yaml:24:5: rule limit set to 4, but 5 found
+ |   - greeting: "Good night"
+ | ....^

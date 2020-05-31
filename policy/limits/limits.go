@@ -18,7 +18,15 @@ package limits
 
 // NewLimits returns a Limits object configured with the default limits.
 func NewLimits() *Limits {
-	return &Limits{}
+	return &Limits{
+		RangeLimit:               0,
+		EvaluatorTermLimit:       20,
+		EvaluatorProductionLimit: 10,
+		EvaluatorDecisionLimit:   3,
+		ValidatorTermLimit:       40,
+		ValidatorProductionLimit: 20,
+		RuleLimit:                10,
+	}
 }
 
 // Limits holds the set of shared limits used to configure different components of CEL policy
@@ -32,6 +40,38 @@ type Limits struct {
 	// Defaults to 0.
 	RangeLimit int
 
-	// TODO: Add term, production, and expression size limits
-}
+	// EvaluatorTermLimit limits the number of terms which may appear within a template evaluator.
+	//
+	// Defaults to 20.
+	EvaluatorTermLimit int
 
+	// EvaluatorProductionLimit limits the number of productions which may appear within
+	// a template evaluator.
+	//
+	// Defaults to 10.
+	EvaluatorProductionLimit int
+
+	// EvaluatorDecisionLimit limits the number of decisions which may appear within a single
+	// production.
+	//
+	// Defaults to 3.
+	EvaluatorDecisionLimit int
+
+	// ValidatorTermLimit limits the number of terms which may appear within a template validator.
+	//
+	// Defaults to 40.
+	ValidatorTermLimit int
+
+	// ValidatorProductionLimit limits the number of productions which may appear within a template
+	// validator.
+	//
+	// Defaults to 20.
+	ValidatorProductionLimit int
+
+	// RuleLimit limits the number of rules which may appear within a policy instance.
+	//
+	// Defaults to 10.
+	RuleLimit int
+
+	// TODO: expression size limits
+}
