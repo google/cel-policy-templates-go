@@ -55,6 +55,18 @@ func NewTemplate(reg model.Registry,
 		}
 	}
 	if mdl.Validator != nil {
+		termCnt := len(mdl.Validator.Terms)
+		if termCnt > t.limits.ValidatorTermLimit {
+			return nil, fmt.Errorf(
+				"validator term limit set to %d, but %d found",
+				t.limits.ValidatorTermLimit, termCnt)
+		}
+		prodCnt := len(mdl.Validator.Productions)
+		if prodCnt > t.limits.ValidatorProductionLimit {
+			return nil, fmt.Errorf(
+				"validator production limit set to %d, but %d found",
+				t.limits.ValidatorProductionLimit, prodCnt)
+		}
 		val, err := t.newEvaluator(mdl.Validator, t.exprOpts...)
 		if err != nil {
 			return nil, err
@@ -62,6 +74,18 @@ func NewTemplate(reg model.Registry,
 		t.validator = val
 	}
 	if mdl.Evaluator != nil {
+		termCnt := len(mdl.Evaluator.Terms)
+		if termCnt > t.limits.EvaluatorTermLimit {
+			return nil, fmt.Errorf(
+				"evaluator term limit set to %d, but %d found",
+				t.limits.EvaluatorTermLimit, termCnt)
+		}
+		prodCnt := len(mdl.Evaluator.Productions)
+		if prodCnt > t.limits.EvaluatorProductionLimit {
+			return nil, fmt.Errorf(
+				"evaluator production limit set to %d, but %d found",
+				t.limits.EvaluatorProductionLimit, prodCnt)
+		}
 		eval, err := t.newEvaluator(mdl.Evaluator, t.exprOpts...)
 		if err != nil {
 			return nil, err
@@ -173,6 +197,11 @@ func (t *Template) evalInternal(eval *evaluator,
 		return slotsToDecisions(slots), nil
 	}
 	// One or more rules present in the policy.
+	if len(inst.Rules) > t.limits.RuleLimit {
+		return nil, fmt.Errorf(
+			"rule limit set to %d, but %d found",
+			t.limits.RuleLimit, len(inst.Rules))
+	}
 	for _, rule := range inst.Rules {
 		err := eval.eval(rule, selector, ruleAct, slots)
 		if err != nil {
@@ -236,7 +265,13 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		if err != nil {
 			return nil, err
 		}
-		decs := make([]*decision, len(p.Decisions))
+		decCnt := len(p.Decisions)
+		if decCnt > t.limits.EvaluatorDecisionLimit {
+			return nil, fmt.Errorf(
+				"decision limit set to %d, but %d found",
+				t.limits.EvaluatorDecisionLimit, decCnt)
+		}
+		decs := make([]*decision, decCnt)
 		for i, d := range p.Decisions {
 			dec, err := env.Program(d.Output, evalOpts...)
 			if err != nil {

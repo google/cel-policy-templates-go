@@ -145,18 +145,28 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 	if found {
 		ic.compileSelectors(selector.Ref, cinst)
 	}
-	rules, found := m.GetField("rules")
-	if found {
+	rules, rsfound := m.GetField("rules")
+	if rsfound {
 		ruleSet := ic.listValue(rules.Ref)
 		cinst.Rules = make([]model.Rule, len(ruleSet.Entries))
 		for i, rule := range ruleSet.Entries {
 			cinst.Rules[i] = ic.convertToRule(rule)
 		}
 	}
-	rule, found := m.GetField("rule")
-	if found {
+	rule, rfound := m.GetField("rule")
+	if rfound {
 		r := ic.convertToRule(rule.Ref)
 		cinst.Rules = []model.Rule{r}
+	}
+	if rsfound && rfound {
+		ic.reportErrorAtID(rules.ID,
+			"only one of the fields may be set: [rule, rules]")
+	}
+	if len(cinst.Rules) > ic.limits.RuleLimit {
+		reportID := cinst.Rules[ic.limits.RuleLimit].GetID()
+		ic.reportErrorAtID(reportID,
+			"rule limit set to %d, but %d found",
+			ic.limits.RuleLimit, len(cinst.Rules))
 	}
 	exec, err := runtime.NewTemplate(ic.reg,
 		ic.tmpl,
@@ -384,7 +394,7 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.T
 		// TODO: maybe not intentional that the validator is empty.
 		return
 	}
-	validator, productionsEnv := tc.buildProductionsEnv(dyn, ctmpl)
+	validator, productionsEnv := tc.buildProductionsEnv(dyn, ctmpl, tc.limits.ValidatorTermLimit)
 	if validator == nil {
 		// error occurred, will have been recorded elsewhere.
 		return
@@ -401,6 +411,12 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.T
 func (tc *templateCompiler) compileValidatorOutputDecisions(
 	prods *model.DynValue, env *cel.Env, ceval *model.Evaluator) {
 	productions := tc.listValue(prods)
+	if len(productions.Entries) > tc.limits.ValidatorProductionLimit {
+		reportID := productions.Entries[tc.limits.ValidatorProductionLimit].ID
+		tc.reportErrorAtID(reportID,
+			"validator production limit set to %d, but %d found",
+			tc.limits.ValidatorProductionLimit, len(productions.Entries))
+	}
 	prodRules := make([]*model.Production, len(productions.Entries))
 	for i, p := range productions.Entries {
 		prod := tc.mapValue(p)
@@ -449,7 +465,7 @@ func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue, ctmpl *model.T
 	if len(eval.Fields) == 0 {
 		return
 	}
-	evaluator, productionsEnv := tc.buildProductionsEnv(dyn, ctmpl)
+	evaluator, productionsEnv := tc.buildProductionsEnv(dyn, ctmpl, tc.limits.EvaluatorTermLimit)
 	if evaluator == nil {
 		// Error occurred, would have been reported elsewhere.
 		return
@@ -466,6 +482,12 @@ func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue, ctmpl *model.T
 func (tc *templateCompiler) compileEvaluatorOutputDecisions(
 	prods *model.DynValue, env *cel.Env, ceval *model.Evaluator) {
 	productions := tc.listValue(prods)
+	if len(productions.Entries) > tc.limits.EvaluatorProductionLimit {
+		reportID := productions.Entries[tc.limits.EvaluatorProductionLimit].ID
+		tc.reportErrorAtID(reportID,
+			"evaluator production limit set to %d, but %d found",
+			tc.limits.EvaluatorProductionLimit, len(productions.Entries))
+	}
 	prodRules := make([]*model.Production, len(productions.Entries))
 	for i, p := range productions.Entries {
 		prod := tc.mapValue(p)
@@ -488,6 +510,12 @@ func (tc *templateCompiler) compileEvaluatorOutputDecisions(
 		}
 		if decsFound {
 			decsList := tc.listValue(decs.Ref)
+			if len(decsList.Entries) > tc.limits.EvaluatorDecisionLimit {
+				reportID := decsList.Entries[tc.limits.EvaluatorDecisionLimit].ID
+				tc.reportErrorAtID(reportID,
+					"evaluator decision limit set to %d, but %d found",
+					tc.limits.EvaluatorDecisionLimit, len(decsList.Entries))
+			}
 			for _, elem := range decsList.Entries {
 				outDec, found := tc.compileOutputDecision(elem, env)
 				if found && outDec != nil {
@@ -534,7 +562,7 @@ func (tc *templateCompiler) compileOutputDecision(
 }
 
 func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
-	ctmpl *model.Template) (*model.Evaluator, *cel.Env) {
+	ctmpl *model.Template, termLimit int) (*model.Evaluator, *cel.Env) {
 	eval := tc.mapValue(dyn)
 	evaluator := model.NewEvaluator()
 	evaluator.Environment = tc.mapFieldStringValueOrEmpty(dyn, "environment")
@@ -556,7 +584,7 @@ func (tc *templateCompiler) buildProductionsEnv(dyn *model.DynValue,
 	}
 	terms, found := eval.GetField("terms")
 	if found {
-		productionsEnv, err = tc.compileTerms(terms.Ref, productionsEnv, evaluator)
+		productionsEnv, err = tc.compileTerms(terms.Ref, productionsEnv, evaluator, termLimit)
 		if err != nil {
 			tc.reportErrorAtID(terms.Ref.ID, err.Error())
 			return nil, nil
@@ -569,7 +597,8 @@ func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
 	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
 	ranges := tc.listValue(dyn)
 	if len(ranges.Entries) > tc.limits.RangeLimit {
-		tc.reportErrorAtID(dyn.ID,
+		reportID := ranges.Entries[tc.limits.RangeLimit].ID
+		tc.reportErrorAtID(reportID,
 			"range limit set to %d, but %d found",
 			tc.limits.RangeLimit, len(ranges.Entries))
 	}
@@ -634,8 +663,14 @@ func (tc *templateCompiler) compileRanges(dyn *model.DynValue,
 }
 
 func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
-	env *cel.Env, ceval *model.Evaluator) (*cel.Env, error) {
+	env *cel.Env, ceval *model.Evaluator, termLimit int) (*cel.Env, error) {
 	terms := tc.mapValue(dyn)
+	if len(terms.Fields) > termLimit {
+		reportID := terms.Fields[termLimit].ID
+		tc.reportErrorAtID(reportID,
+			"term limit set to %d, but %d found",
+			termLimit, len(terms.Fields))
+	}
 	termMap := make(map[string]*model.Term)
 	var termDecls []*exprpb.Decl
 	for _, t := range terms.Fields {
