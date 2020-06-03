@@ -31,13 +31,11 @@ import (
 
 // Engine evaluates context against policy instances to produce decisions.
 type Engine struct {
+	*model.Registry
 	evalOpts  []cel.ProgramOption
 	rtOpts    []runtime.TemplateOption
 	selectors []Selector
 	limits    *limits.Limits
-	envs      map[string]*cel.Env
-	schemas   map[string]*model.OpenAPISchema
-	templates map[string]*model.Template
 	instances map[string][]*model.Instance
 	runtimes  map[string]*runtime.Template
 	actPool   *activationPool
@@ -49,20 +47,13 @@ type Engine struct {
 // engine construction if either is intended to be supported within the configured templates and
 // instances.
 func NewEngine(opts ...EngineOption) (*Engine, error) {
+	// TODO: Make the base environment more easily configurable.
 	e := &Engine{
+		Registry:  model.NewRegistry(stdEnv),
 		evalOpts:  []cel.ProgramOption{},
 		rtOpts:    []runtime.TemplateOption{},
 		selectors: []Selector{},
 		limits:    limits.NewLimits(),
-		envs: map[string]*cel.Env{
-			"": stdEnv,
-		},
-		schemas: map[string]*model.OpenAPISchema{
-			"#openAPISchema":  model.SchemaDef,
-			"#instanceSchema": model.InstanceSchema,
-			"#templateSchema": model.TemplateSchema,
-		},
-		templates: map[string]*model.Template{},
 		instances: map[string][]*model.Instance{},
 		runtimes:  map[string]*runtime.Template{},
 		actPool:   newActivationPool(),
@@ -77,7 +68,7 @@ func NewEngine(opts ...EngineOption) (*Engine, error) {
 	return e, nil
 }
 
-// Eval accepts an input context and produces a set of decisions as output.
+// EvalAll accepts an input context and produces a set of decisions as output.
 //
 // Which decisions are produced depends on the active set of policy instances and whether any rules
 // within these policies apply to the context.
@@ -90,13 +81,8 @@ func (e *Engine) EvalAll(vars map[string]interface{}) ([]model.DecisionValue, er
 // Which decisions are produced depends on the active set of policy instances and whether any rules
 // within these policies apply to the context.
 func (e *Engine) Eval(vars map[string]interface{},
-	selector runtime.DecisionSelector) ([]model.DecisionValue, error) {
+	selector model.DecisionSelector) ([]model.DecisionValue, error) {
 	return e.evalInternal(vars, selector)
-}
-
-// AddEnv configures the engine with a named reference to a CEL expression environment.
-func (e *Engine) AddEnv(name string, exprEnv *cel.Env) {
-	e.envs[name] = exprEnv
 }
 
 // AddInstance configures the engine with a given instance.
@@ -104,7 +90,7 @@ func (e *Engine) AddEnv(name string, exprEnv *cel.Env) {
 // Instances are grouped together by their 'kind' field which corresponds to a template
 // metadata.name value.
 func (e *Engine) AddInstance(inst *model.Instance) error {
-	_, found := e.templates[inst.Kind]
+	_, found := e.FindTemplate(inst.Kind)
 	if !found {
 		return fmt.Errorf(
 			"template not found: instance=%s, template=%s",
@@ -119,17 +105,17 @@ func (e *Engine) AddInstance(inst *model.Instance) error {
 	return nil
 }
 
-// AddTemplate configures the engine with a given model.Template.
-//
-// The AddTemplate call will initialize an evaluable runtime.Template as a side-effect.
-func (e *Engine) AddTemplate(tmpl *model.Template) error {
-	e.templates[tmpl.Metadata.Name] = tmpl
+func (e *Engine) SetTemplate(name string, tmpl *model.Template) error {
+	err := e.Registry.SetTemplate(name, tmpl)
+	if err != nil {
+		return err
+	}
 	rtOpts := []runtime.TemplateOption{
 		runtime.Limits(e.limits),
 		runtime.ExprOptions(e.evalOpts...),
 	}
 	rtOpts = append(rtOpts, e.rtOpts...)
-	rtTmpl, err := runtime.NewTemplate(e, tmpl, rtOpts...)
+	rtTmpl, err := runtime.NewTemplate(e.Registry, tmpl, rtOpts...)
 	if err != nil {
 		return err
 	}
@@ -137,22 +123,14 @@ func (e *Engine) AddTemplate(tmpl *model.Template) error {
 	return nil
 }
 
-// FindEnv returns the cel.Env associated with the given name, if found.
-func (e *Engine) FindEnv(name string) (*cel.Env, bool) {
-	env, found := e.envs[name]
-	return env, found
-}
-
-// FindSchema returns the model.OpenAPISchema instance by its name, if present.
-func (e *Engine) FindSchema(name string) (*model.OpenAPISchema, bool) {
-	schema, found := e.schemas[name]
-	return schema, found
-}
-
-// FindTemplate returns the model.Template object by its metadata.name field, if found.
-func (e *Engine) FindTemplate(name string) (*model.Template, bool) {
-	tmpl, found := e.templates[name]
-	return tmpl, found
+// CompileEnv parses and compiles an input source into a model.Env.
+func (e *Engine) CompileEnv(src *model.Source) (*model.Env, *Issues) {
+	ast, iss := parser.ParseYaml(src)
+	if iss.Err() != nil {
+		return nil, iss
+	}
+	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
+	return c.CompileEnv(src, ast)
 }
 
 // CompileInstance parses, compiles, and validates an input source into a model.Instance.
@@ -163,7 +141,7 @@ func (e *Engine) CompileInstance(src *model.Source) (*model.Instance, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e, e.limits, e.evalOpts...)
+	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
 	return c.CompileInstance(src, ast)
 }
 
@@ -173,14 +151,13 @@ func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e, e.limits, e.evalOpts...)
+	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
 	return c.CompileTemplate(src, ast)
 }
 
 func (e *Engine) evalInternal(vars map[string]interface{},
-	selector runtime.DecisionSelector) ([]model.DecisionValue, error) {
+	selector model.DecisionSelector) ([]model.DecisionValue, error) {
 	input := e.actPool.Get().(*activation)
-	defer e.actPool.Put(input)
 	input.vars = vars
 	var decisions []model.DecisionValue
 	for tmplName, insts := range e.instances {
@@ -195,11 +172,13 @@ func (e *Engine) evalInternal(vars map[string]interface{},
 			}
 			decs, err := rt.Eval(inst, input, selector)
 			if err != nil {
+				e.actPool.Put(input)
 				return nil, err
 			}
 			decisions = append(decisions, decs...)
 		}
 	}
+	e.actPool.Put(input)
 	return decisions, nil
 }
 
@@ -219,7 +198,7 @@ func (e *Engine) selectInstance(inst *model.Instance, input interpreter.Activati
 
 // DecisionNames filters the decision set which can be produced by the engine to a specific set
 // of named decisions.
-func DecisionNames(selected ...string) runtime.DecisionSelector {
+func DecisionNames(selected ...string) model.DecisionSelector {
 	return func(decision string) bool {
 		for _, s := range selected {
 			if s == decision {
@@ -236,7 +215,7 @@ func DecisionNames(selected ...string) runtime.DecisionSelector {
 // Note, it is up to the caller to determine whether the policy instances have been completely
 // evaluated as it is possible to shard the instances into different Engine instances and use
 // the output of one evaluation as a filter into the next shard.
-func UnfinalizedDecisions(values []model.DecisionValue) runtime.DecisionSelector {
+func UnfinalizedDecisions(values []model.DecisionValue) model.DecisionSelector {
 	return func(decision string) bool {
 		for _, v := range values {
 			if v.Name() == decision {

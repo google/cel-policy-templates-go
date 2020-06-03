@@ -42,8 +42,7 @@ import (
 )
 
 // NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
-func NewCompiler(reg model.Registry,
-	l *limits.Limits,
+func NewCompiler(reg *model.Registry, l *limits.Limits,
 	evalOpts ...cel.ProgramOption) *Compiler {
 	return &Compiler{
 		evalOpts: evalOpts,
@@ -56,28 +55,45 @@ func NewCompiler(reg model.Registry,
 // representation of a template or policy instance.
 type Compiler struct {
 	evalOpts []cel.ProgramOption
-	reg      model.Registry
+	reg      *model.Registry
 	limits   *limits.Limits
+}
+
+func (c *Compiler) CompileEnv(src *model.Source,
+	parsedEnv *model.ParsedValue) (*model.Env, *cel.Issues) {
+	return c.newEnvCompiler(src, parsedEnv).compile()
 }
 
 // CompileInstance type-checks and validates a parsed representation of a policy instance whose
 // format and validation logic is also determined by policy template referenced in the policy
 // instance 'kind' field.
 func (c *Compiler) CompileInstance(src *model.Source,
-	inst *model.ParsedValue) (*model.Instance, *cel.Issues) {
-	return c.newInstanceCompiler(src, inst).compile()
+	parsedInst *model.ParsedValue) (*model.Instance, *cel.Issues) {
+	return c.newInstanceCompiler(src, parsedInst).compile()
 }
 
 // CompileTemplate type-checks and validates a parsed representation of a policy template.
 func (c *Compiler) CompileTemplate(src *model.Source,
-	tmpl *model.ParsedValue) (*model.Template, *cel.Issues) {
-	return c.newTemplateCompiler(src, tmpl).compile()
+	parsedTmpl *model.ParsedValue) (*model.Template, *cel.Issues) {
+	return c.newTemplateCompiler(src, parsedTmpl).compile()
+}
+
+func (c *Compiler) newEnvCompiler(src *model.Source,
+	parsedEnv *model.ParsedValue) *envCompiler {
+	dc := c.newDynCompiler(src, parsedEnv)
+	dyn := model.NewDynValue(parsedEnv.ID, parsedEnv.Value)
+	envSchema, _ := c.reg.FindSchema("#envSchema")
+	dc.checkSchema(dyn, envSchema)
+	return &envCompiler{
+		dynCompiler: dc,
+		dyn:         dyn,
+	}
 }
 
 func (c *Compiler) newInstanceCompiler(src *model.Source,
-	inst *model.ParsedValue) *instanceCompiler {
-	dc := c.newDynCompiler(src, inst)
-	dyn := model.NewDynValue(inst.ID, inst.Value)
+	parsedInst *model.ParsedValue) *instanceCompiler {
+	dc := c.newDynCompiler(src, parsedInst)
+	dyn := model.NewDynValue(parsedInst.ID, parsedInst.Value)
 	tmplName := dc.mapFieldStringValueOrEmpty(dyn, "kind")
 	tmpl, found := dc.reg.FindTemplate(tmplName)
 	if !found {
@@ -88,7 +104,8 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 	if tmpl.RuleTypes != nil {
 		dc.reg.ruleSchema = tmpl.RuleTypes.Schema
 	}
-	dc.checkSchema(dyn, model.InstanceSchema)
+	instSchema, _ := c.reg.FindSchema("#instanceSchema")
+	dc.checkSchema(dyn, instSchema)
 	return &instanceCompiler{
 		dynCompiler: dc,
 		dyn:         dyn,
@@ -99,10 +116,11 @@ func (c *Compiler) newInstanceCompiler(src *model.Source,
 }
 
 func (c *Compiler) newTemplateCompiler(src *model.Source,
-	tmpl *model.ParsedValue) *templateCompiler {
-	dc := c.newDynCompiler(src, tmpl)
-	dyn := model.NewDynValue(tmpl.ID, tmpl.Value)
-	dc.checkSchema(dyn, model.TemplateSchema)
+	parsedTmpl *model.ParsedValue) *templateCompiler {
+	dc := c.newDynCompiler(src, parsedTmpl)
+	dyn := model.NewDynValue(parsedTmpl.ID, parsedTmpl.Value)
+	tmplSchema, _ := c.reg.FindSchema("#templateSchema")
+	dc.checkSchema(dyn, tmplSchema)
 	return &templateCompiler{
 		dynCompiler: dc,
 		dyn:         dyn,
@@ -120,6 +138,157 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 		info:   pv.Info,
 		errors: common.NewErrors(src),
 	}
+}
+
+type envCompiler struct {
+	*dynCompiler
+	dyn *model.DynValue
+}
+
+func (ec *envCompiler) compile() (*model.Env, *cel.Issues) {
+	m := ec.mapValue(ec.dyn)
+	name := ec.mapFieldStringValueOrEmpty(ec.dyn, "name")
+	cenv := model.NewEnv(name)
+	container := ec.mapFieldStringValueOrEmpty(ec.dyn, "container")
+	cenv.Container = container
+	vars, found := m.GetField("variables")
+	if found {
+		// Compile the variables
+		varMap := ec.mapValue(vars.Ref)
+		for _, f := range varMap.Fields {
+			ec.compileVar(cenv, f.Name, f.Ref)
+		}
+	}
+	funcs, found := m.GetField("functions")
+	if found {
+		// Compile the functions
+		funcMap := ec.mapValue(funcs.Ref)
+		ec.compileFunctions(cenv, funcMap)
+	}
+	errs := ec.errors.GetErrors()
+	if len(errs) > 0 {
+		return nil, cel.NewIssues(ec.errors)
+	}
+	return cenv, nil
+}
+
+func (ec *envCompiler) compileVar(env *model.Env, name string, dyn *model.DynValue) {
+	varType := ec.compileDeclType(env, dyn)
+	if varType.TypeParam {
+		ec.reportErrorAtID(dyn.ID, "variable must not be type-param type")
+	}
+	v := model.NewVar(name, varType)
+	env.Vars = append(env.Vars, v)
+}
+
+func (ec *envCompiler) compileFunctions(env *model.Env, funcMap *model.MapValue) {
+	exts, found := funcMap.GetField("extensions")
+	if !found {
+		return
+	}
+	extMap := ec.mapValue(exts.Ref)
+	for _, f := range extMap.Fields {
+		overloadMap := ec.mapValue(f.Ref)
+		overloads := make([]*model.Overload, 0, len(overloadMap.Fields))
+		for _, o := range overloadMap.Fields {
+			oName := o.Name
+			obj := ec.mapValue(o.Ref)
+			namespaced := false
+			ns, found := obj.GetField("namespaced")
+			if found {
+				namespaced = ec.boolValue(ns.Ref)
+			}
+			args, found := obj.GetField("args")
+			argVals := []*model.DeclType{}
+			if found {
+				argList := ec.listValue(args.Ref)
+				for _, a := range argList.Entries {
+					argVal := ec.compileDeclType(env, a)
+					argVals = append(argVals, argVal)
+				}
+			}
+			ret, found := obj.GetField("return")
+			if found {
+				retType := ec.compileDeclType(env, ret.Ref)
+				argVals = append(argVals, retType)
+			}
+			if namespaced {
+				if len(argVals) == 1 {
+					overloads = append(overloads, model.NewNamespacedOverload(oName, argVals[0]))
+				} else {
+					overloads = append(overloads,
+						model.NewNamespacedOverload(oName, argVals[0], argVals[1:]...))
+				}
+			} else {
+				if len(argVals) == 1 {
+					overloads = append(overloads, model.NewOverload(oName, argVals[0]))
+				} else {
+					overloads = append(overloads,
+						model.NewOverload(oName, argVals[0], argVals[1:]...))
+				}
+			}
+		}
+		fn := model.NewFunction(f.Name, overloads...)
+		env.Functions = append(env.Functions, fn)
+	}
+}
+
+func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *model.DeclType {
+	m := ec.mapValue(dyn)
+	tp, found := m.GetField("type_param")
+	if found {
+		typeParam := ec.strValue(tp.Ref)
+		return model.NewTypeParam(typeParam)
+	}
+	typ, found := m.GetField("type")
+	if !found {
+		return model.NewObjectType("*error*", map[string]*model.DeclType{})
+	}
+	typeName := ec.strValue(typ.Ref)
+	ot, objFound := m.GetField("properties")
+	mt, mapFound := m.GetField("additionalProperties")
+	lt, listFound := m.GetField("items")
+	if listFound && mapFound && objFound ||
+		listFound && objFound ||
+		listFound && mapFound ||
+		mapFound && objFound {
+		ec.reportErrorAtID(mt.ID, "type must only be one of 'array', 'object', or a concrete type name.")
+		return model.NewObjectType("*error*", map[string]*model.DeclType{})
+	}
+	if objFound {
+		otFields := ec.mapValue(ot.Ref)
+		otFieldMap := map[string]*model.DeclType{}
+		for _, f := range otFields.Fields {
+			fType := ec.compileDeclType(env, f.Ref)
+			otFieldMap[f.Name] = fType
+		}
+		obj := model.NewObjectType(typeName, otFieldMap)
+		env.Types[typeName] = obj
+		return obj
+	}
+	if mapFound {
+		if typeName != "object" {
+			ec.reportErrorAtID(
+				typ.Ref.ID, "type must be 'object' to have additionalProperties")
+		}
+		return model.NewMapType(model.StringType, ec.compileDeclType(env, mt.Ref))
+	}
+	if listFound {
+		if typeName != "array" {
+			ec.reportErrorAtID(
+				typ.Ref.ID, "type must be 'array' to have items")
+		}
+		return model.NewListType(ec.compileDeclType(env, lt.Ref))
+	}
+	declType, found := ec.reg.FindType(typeName)
+	if found {
+		return declType
+	}
+	declType, found = model.SchemaTypeToDeclType(typeName)
+	if found {
+		return declType
+	}
+	return model.NewObjectTypeRef(typeName)
 }
 
 type instanceCompiler struct {
@@ -168,7 +337,8 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 			"rule limit set to %d, but %d found",
 			ic.limits.RuleLimit, len(cinst.Rules))
 	}
-	exec, err := runtime.NewTemplate(ic.reg,
+	exec, err := runtime.NewTemplate(
+		ic.reg,
 		ic.tmpl,
 		runtime.Limits(ic.limits),
 		runtime.ExprOptions(ic.evalOpts...))
@@ -220,11 +390,13 @@ func (ic *instanceCompiler) compileSelectors(dyn *model.DynValue,
 				k := ic.mapFieldStringValueOrEmpty(tuple, "key")
 				op := ic.mapFieldStringValueOrEmpty(tuple, "operator")
 				mv := ic.mapValue(tuple)
-				valsField, _ := mv.GetField("values")
-				valList := ic.listValue(valsField.Ref)
-				vals := make([]interface{}, len(valList.Entries))
-				for i, v := range valList.Entries {
-					vals[i] = ic.convertToPrimitive(v)
+				valsField, found := mv.GetField("values")
+				var vals []interface{}
+				if found {
+					valList := ic.listValue(valsField.Ref)
+					for _, v := range valList.Entries {
+						vals = append(vals, ic.convertToPrimitive(v))
+					}
 				}
 				sel := &model.ExpressionSelector{
 					Label:    k,
@@ -258,7 +430,14 @@ func (tc *templateCompiler) compile() (*model.Template, *cel.Issues) {
 		tc.compileOpenAPISchema(schemaDef.Ref, schema)
 		// TODO: attempt schema type unification post-compile
 		// hashSchema(ctmpl.RuleSchema)
-		ctmpl.RuleTypes = model.NewRuleTypes(ctmpl.Metadata.Name, schema)
+		var err error
+		ctmpl.RuleTypes, err = model.NewRuleTypes(
+			ctmpl.Metadata.Name,
+			schema,
+			tc.reg)
+		if err != nil {
+			tc.reportError(err.Error())
+		}
 	}
 	val, found := m.GetField("validator")
 	if found {
@@ -285,106 +464,6 @@ func (tc *templateCompiler) compileMetadata(dyn *model.DynValue, cmeta *model.Te
 		cmeta.PluralName = string(tc.strValue(plural.Ref))
 	} else {
 		cmeta.PluralName = cmeta.Name + "s"
-	}
-}
-
-func (tc *templateCompiler) compileOpenAPISchema(dyn *model.DynValue,
-	schema *model.OpenAPISchema) {
-	schema.Title = tc.mapFieldStringValueOrEmpty(dyn, "title")
-	schema.Description = tc.mapFieldStringValueOrEmpty(dyn, "description")
-	schema.Type = tc.mapFieldStringValueOrEmpty(dyn, "type")
-	schema.TypeRef = tc.mapFieldStringValueOrEmpty(dyn, "$ref")
-	schema.Format = tc.mapFieldStringValueOrEmpty(dyn, "format")
-	m := tc.mapValue(dyn)
-	elem, found := m.GetField("items")
-	if found {
-		nested := model.NewOpenAPISchema()
-		schema.Items = nested
-		tc.compileOpenAPISchema(elem.Ref, nested)
-	}
-	elem, found = m.GetField("enum")
-	if found {
-		enums := tc.listValue(elem.Ref)
-		for _, e := range enums.Entries {
-			schema.Enum = append(schema.Enum, tc.convertToPrimitive(e))
-		}
-	}
-	elem, found = m.GetField("metadata")
-	if found {
-		meta := tc.mapValue(elem.Ref)
-		for _, mf := range meta.Fields {
-			val := tc.strValue(mf.Ref)
-			if len(val) != 0 {
-				schema.Metadata[mf.Name] = string(val)
-			}
-		}
-	}
-	elem, found = m.GetField("required")
-	if found {
-		reqs := tc.listValue(elem.Ref)
-		for _, el := range reqs.Entries {
-			req := tc.strValue(el)
-			if len(req) != 0 {
-				schema.Required = append(schema.Required, string(req))
-			}
-		}
-	}
-	elem, found = m.GetField("properties")
-	if found {
-		obj := tc.mapValue(elem.Ref)
-		for _, field := range obj.Fields {
-			nested := model.NewOpenAPISchema()
-			schema.Properties[field.Name] = nested
-			tc.compileOpenAPISchema(field.Ref, nested)
-		}
-	}
-	elem, found = m.GetField("additionalProperties")
-	if found {
-		nested := model.NewOpenAPISchema()
-		schema.AdditionalProperties = nested
-		tc.compileOpenAPISchema(elem.Ref, nested)
-	}
-	elem, found = m.GetField("default")
-	if found {
-		schema.DefaultValue = tc.convertToSchemaType(elem.Ref.ID, elem.Ref.Value, schema)
-	}
-
-	tc.validateOpenAPISchema(dyn, schema)
-}
-
-func (tc *templateCompiler) validateOpenAPISchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
-	m := tc.mapValue(dyn)
-	p, hasProps := m.GetField("properties")
-	ap, hasAdditionalProps := m.GetField("additionalProperties")
-
-	if hasProps && hasAdditionalProps {
-		tc.reportErrorAtID(ap.Ref.ID,
-			"invalid schema. properties set, additionalProperties must not be set.")
-	}
-	if hasProps && schema.Type != "object" {
-		tc.reportErrorAtID(p.Ref.ID,
-			"invalid schema. properties set, expected object type, found: %s.",
-			schema.Type)
-	}
-	if hasAdditionalProps && schema.Type != "object" {
-		tc.reportErrorAtID(ap.Ref.ID,
-			"invalid schema. additionalProperties set, expected object type, found: %s.",
-			schema.Type)
-	}
-	if schema.Items != nil {
-		if schema.Type != "array" {
-			tc.reportErrorAtID(dyn.ID,
-				"invalid schema. items set, expected array type, found: %s.",
-				schema.Type)
-		}
-		if hasProps {
-			tc.reportErrorAtID(p.Ref.ID,
-				"invalid schema. items set, properties must not be set.")
-		}
-		if hasAdditionalProps {
-			tc.reportErrorAtID(ap.Ref.ID,
-				"invalid schema. items set, additionalProperties must not be set.")
-		}
 	}
 }
 
@@ -829,10 +908,10 @@ func (tc *templateCompiler) compileExprString(id int64,
 	return nil
 }
 
-func (tc *templateCompiler) newEnv(envName string, ctmpl *model.Template) (*cel.Env, error) {
-	env, found := tc.reg.FindEnv(envName)
+func (tc *templateCompiler) newEnv(name string, ctmpl *model.Template) (*cel.Env, error) {
+	env, found := tc.reg.FindExprEnv(name)
 	if !found {
-		return nil, fmt.Errorf("no such environment: %s", envName)
+		return nil, fmt.Errorf("no such environment: %s", name)
 	}
 	if ctmpl.RuleTypes == nil {
 		return env, nil
@@ -850,12 +929,21 @@ type dynCompiler struct {
 	errors *common.Errors
 }
 
+func (dc *dynCompiler) boolValue(dyn *model.DynValue) bool {
+	s, ok := dyn.Value.(bool)
+	if ok {
+		return s
+	}
+	dc.reportErrorAtID(dyn.ID, "expected bool type, found: %s", dyn.DeclType())
+	return false
+}
+
 func (dc *dynCompiler) strValue(dyn *model.DynValue) string {
 	s, ok := dyn.Value.(string)
 	if ok {
 		return s
 	}
-	dc.reportErrorAtID(dyn.ID, "expected string type, found: %s", dyn.ModelType())
+	dc.reportErrorAtID(dyn.ID, "expected string type, found: %s", dyn.DeclType())
 	return ""
 }
 
@@ -864,7 +952,7 @@ func (dc *dynCompiler) listValue(dyn *model.DynValue) *model.ListValue {
 	if ok {
 		return l
 	}
-	dc.reportErrorAtID(dyn.ID, "expected list type, found: %s", dyn.ModelType())
+	dc.reportErrorAtID(dyn.ID, "expected list type, found: %v", dyn.DeclType())
 	return model.NewListValue()
 }
 
@@ -873,7 +961,7 @@ func (dc *dynCompiler) mapValue(dyn *model.DynValue) *model.MapValue {
 	if ok {
 		return m
 	}
-	dc.reportErrorAtID(dyn.ID, "expected map type, found: %s", dyn.ModelType())
+	dc.reportErrorAtID(dyn.ID, "expected map type, found: %v", dyn.DeclType())
 	return model.NewMapValue()
 }
 
@@ -895,7 +983,7 @@ func (dc *dynCompiler) mapFieldStringValueOrEmpty(dyn *model.DynValue,
 		return v.Value
 	default:
 		dc.reportErrorAtID(dyn.ID,
-			"unexpected field type: field=%s got=%T wanted=%s",
+			"unexpected field type: field=%s got=%T wanted=%v",
 			fieldName, field.Ref.Value, model.StringType)
 		return ""
 	}
@@ -903,23 +991,120 @@ func (dc *dynCompiler) mapFieldStringValueOrEmpty(dyn *model.DynValue,
 
 func (dc *dynCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
 	schema = dc.resolveSchemaRef(dyn, schema)
-	modelType := schema.ModelType()
-	valueType := dyn.ModelType()
-	if !assignableToType(valueType, modelType) {
+	schemaType := schema.DeclType()
+	valueType := dyn.DeclType()
+	if !assignableToType(valueType, schemaType) {
 		dc.reportErrorAtID(dyn.ID,
-			"value not assignable to schema type: value=%s, schema=%s",
-			valueType, modelType)
+			"value not assignable to schema type: value=%v, schema=%v",
+			valueType, schemaType)
 		return
 	}
-	switch modelType {
-	case model.MapType:
+	if schemaType.IsMap() || schemaType.IsObject() {
 		dc.checkMapSchema(dyn, schema)
-	case model.ListType:
+	} else if schemaType.IsList() {
 		dc.checkListSchema(dyn, schema)
-	case model.AnyType:
-		return
-	default:
+	} else if schemaType != model.AnyType {
 		dc.checkPrimitiveSchema(dyn, schema)
+	}
+}
+
+func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
+	schema *model.OpenAPISchema) {
+	schema.Title = dc.mapFieldStringValueOrEmpty(dyn, "title")
+	schema.Description = dc.mapFieldStringValueOrEmpty(dyn, "description")
+	schema.Type = dc.mapFieldStringValueOrEmpty(dyn, "type")
+	schema.TypeRef = dc.mapFieldStringValueOrEmpty(dyn, "$ref")
+	schema.Format = dc.mapFieldStringValueOrEmpty(dyn, "format")
+	m := dc.mapValue(dyn)
+	elem, found := m.GetField("items")
+	if found {
+		nested := model.NewOpenAPISchema()
+		schema.Items = nested
+		dc.compileOpenAPISchema(elem.Ref, nested)
+	}
+	elem, found = m.GetField("enum")
+	if found {
+		enums := dc.listValue(elem.Ref)
+		for _, e := range enums.Entries {
+			schema.Enum = append(schema.Enum, dc.convertToPrimitive(e))
+		}
+	}
+	elem, found = m.GetField("metadata")
+	if found {
+		meta := dc.mapValue(elem.Ref)
+		for _, mf := range meta.Fields {
+			val := dc.strValue(mf.Ref)
+			if len(val) != 0 {
+				schema.Metadata[mf.Name] = string(val)
+			}
+		}
+	}
+	elem, found = m.GetField("required")
+	if found {
+		reqs := dc.listValue(elem.Ref)
+		for _, el := range reqs.Entries {
+			req := dc.strValue(el)
+			if len(req) != 0 {
+				schema.Required = append(schema.Required, string(req))
+			}
+		}
+	}
+	elem, found = m.GetField("properties")
+	if found {
+		obj := dc.mapValue(elem.Ref)
+		for _, field := range obj.Fields {
+			nested := model.NewOpenAPISchema()
+			schema.Properties[field.Name] = nested
+			dc.compileOpenAPISchema(field.Ref, nested)
+		}
+	}
+	elem, found = m.GetField("additionalProperties")
+	if found {
+		nested := model.NewOpenAPISchema()
+		schema.AdditionalProperties = nested
+		dc.compileOpenAPISchema(elem.Ref, nested)
+	}
+	elem, found = m.GetField("default")
+	if found {
+		schema.DefaultValue = dc.convertToSchemaType(elem.Ref.ID, elem.Ref.Value, schema)
+	}
+
+	dc.validateOpenAPISchema(dyn, schema)
+}
+
+func (dc *dynCompiler) validateOpenAPISchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
+	m := dc.mapValue(dyn)
+	p, hasProps := m.GetField("properties")
+	ap, hasAdditionalProps := m.GetField("additionalProperties")
+
+	if hasProps && hasAdditionalProps {
+		dc.reportErrorAtID(ap.Ref.ID,
+			"invalid schema. properties set, additionalProperties must not be set.")
+	}
+	if hasProps && schema.Type != "object" {
+		dc.reportErrorAtID(p.Ref.ID,
+			"invalid schema. properties set, expected object type, found: %s.",
+			schema.Type)
+	}
+	if hasAdditionalProps && schema.Type != "object" {
+		dc.reportErrorAtID(ap.Ref.ID,
+			"invalid schema. additionalProperties set, expected object type, found: %s.",
+			schema.Type)
+	}
+	if schema.Items != nil {
+		if schema.Type != "array" {
+			dc.reportErrorAtID(dyn.ID,
+				"invalid schema. items set, expected array type, found: %s.",
+				schema.Type)
+		}
+		if hasProps {
+			dc.reportErrorAtID(p.Ref.ID,
+				"invalid schema. items set, properties must not be set.")
+		}
+		if hasAdditionalProps {
+			dc.reportErrorAtID(ap.Ref.ID,
+				"invalid schema. items set, additionalProperties must not be set.")
+		}
 	}
 }
 
@@ -932,6 +1117,7 @@ func (dc *dynCompiler) resolveSchemaRef(dyn *model.DynValue, schema *model.OpenA
 	schema, found = dc.reg.FindSchema(typeRef)
 	if !found {
 		dc.reportErrorAtID(dyn.ID, "no such schema: name=%s", typeRef)
+		schema = model.AnySchema
 	}
 	return schema
 }
@@ -1023,7 +1209,7 @@ func (dc *dynCompiler) convertToPrimitive(dyn *model.DynValue) interface{} {
 	case model.PlainTextValue:
 		return string(v)
 	default:
-		dc.reportErrorAtID(dyn.ID, "expected primitive type, found=%s", dyn.ModelType())
+		dc.reportErrorAtID(dyn.ID, "expected primitive type, found=%v", dyn.DeclType())
 		return ""
 	}
 }
@@ -1043,7 +1229,7 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 		default:
 			str = s.(string)
 		}
-		switch schema.ModelType() {
+		switch schema.DeclType() {
 		case model.TimestampType:
 			t, err := time.Parse(time.RFC3339, str)
 			if err != nil {
@@ -1069,12 +1255,12 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 		}
 	case []interface{}:
 		lv := model.NewListValue()
-		itemSchema := schema.Items
-		if itemSchema == nil {
-			itemSchema = model.AnySchema
+		itemSchema := model.AnySchema
+		if schema.Items != nil {
+			itemSchema = schema.Items
 		}
 		for _, e := range v {
-			ev := dc.convertToSchemaType(id, e, schema.Items)
+			ev := dc.convertToSchemaType(id, e, itemSchema)
 			elem := model.NewEmptyDynValue()
 			elem.Value = ev
 			lv.Append(elem)
@@ -1124,8 +1310,14 @@ func (dc *dynCompiler) reportErrorAtID(id int64, msg string, args ...interface{}
 	dc.reportErrorAtLoc(loc, msg, args...)
 }
 
-func assignableToType(valType, schemaType string) bool {
+func assignableToType(valType, schemaType *model.DeclType) bool {
 	if valType == schemaType || schemaType == model.AnyType {
+		return true
+	}
+	if valType.IsMap() && (schemaType.IsMap() || schemaType.IsObject()) {
+		return true
+	}
+	if valType.IsList() && schemaType.IsList() {
 		return true
 	}
 	if valType == model.StringType || valType == model.PlainTextType {
@@ -1155,7 +1347,7 @@ func getVars(ast *cel.Ast) []string {
 }
 
 type compReg struct {
-	model.Registry
+	*model.Registry
 	ruleSchema *model.OpenAPISchema
 }
 

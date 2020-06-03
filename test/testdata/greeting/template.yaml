@@ -50,7 +50,6 @@ schema:
         metadata:
           protoRef: google.type.Expr
           resultType: bool
-          environment: standard
         required:
           - expression
           - description
@@ -65,7 +64,6 @@ schema:
             type: string
 
 validator:
-  environment: standard
   terms:
     hi: rule.greeting
     bye: rule.farewell

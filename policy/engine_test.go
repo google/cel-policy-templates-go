@@ -59,7 +59,7 @@ var (
 		outputs          []interface{}
 		opts             []EngineOption
 		selectorsOutputs []struct {
-			selector runtime.DecisionSelector
+			selector model.DecisionSelector
 			outputs  []interface{}
 		}
 	}{
@@ -68,26 +68,28 @@ var (
 			name:   "binauthz_package_violations",
 			policy: "binauthz",
 			input: map[string]interface{}{
-				"request.packages": []interface{}{
-					map[string]interface{}{
-						"name": "minted-fail",
-						"provenance": map[string]interface{}{
-							"valid":          true,
-							"builder":        "build-secure",
-							"submitted_code": true,
-							"build_target":   "//mint:target_3",
-							"is_mainline":    true,
-							"branch_name":    "master",
+				"request": map[string]interface{}{
+					"packages": []interface{}{
+						map[string]interface{}{
+							"name": "minted-fail",
+							"provenance": map[string]interface{}{
+								"valid":          true,
+								"builder":        "build-secure",
+								"submitted_code": true,
+								"build_target":   "//mint:target_3",
+								"is_mainline":    true,
+								"branch_name":    "master",
+							},
 						},
-					},
-					map[string]interface{}{
-						"name": "unminted-fail",
-						"provenance": map[string]interface{}{
-							"valid":          true,
-							"builder":        "build-insecure",
-							"submitted_code": false,
-							"build_target":   "//nonmint:target",
-							"branch_name":    "dev",
+						map[string]interface{}{
+							"name": "unminted-fail",
+							"provenance": map[string]interface{}{
+								"valid":          true,
+								"builder":        "build-insecure",
+								"submitted_code": false,
+								"build_target":   "//nonmint:target",
+								"branch_name":    "dev",
+							},
 						},
 					},
 				},
@@ -151,7 +153,7 @@ var (
 			},
 			outputs: []interface{}{true},
 			selectorsOutputs: []struct {
-				selector runtime.DecisionSelector
+				selector model.DecisionSelector
 				outputs  []interface{}
 			}{
 				{
@@ -385,6 +387,7 @@ func TestEngine(t *testing.T) {
 		tst := tstVal
 		t.Run(tst.name, func(tt *testing.T) {
 			opts := []EngineOption{
+				StandardExprEnv(env),
 				Selectors(labelSelector),
 				RangeLimit(1),
 				RuntimeTemplateOptions(
@@ -401,21 +404,33 @@ func TestEngine(t *testing.T) {
 			if err != nil {
 				tt.Fatal(err)
 			}
-			engine.AddEnv("", env)
+
+			envFile := fmt.Sprintf("../test/testdata/%s/env.yaml", tst.policy)
+			envSrc, found := tr.Read(envFile)
+			if found {
+				mdlEnv, iss := engine.CompileEnv(envSrc)
+				if iss.Err() != nil {
+					tt.Fatal(iss.Err())
+				}
+				err = engine.SetEnv(mdlEnv.Name, mdlEnv)
+				if err != nil {
+					tt.Fatal(err)
+				}
+			}
 
 			tmplFile := fmt.Sprintf("../test/testdata/%s/template.yaml", tst.policy)
-			tmplSrc := tr.Read(tmplFile)
+			tmplSrc, _ := tr.Read(tmplFile)
 			tmpl, iss := engine.CompileTemplate(tmplSrc)
 			if iss.Err() != nil {
 				tt.Fatal(iss.Err())
 			}
-			err = engine.AddTemplate(tmpl)
+			err = engine.SetTemplate(tmpl.Metadata.Name, tmpl)
 			if err != nil {
 				tt.Fatal(err)
 			}
 
 			instFile := fmt.Sprintf("../test/testdata/%s/instance.yaml", tst.policy)
-			instSrc := tr.Read(instFile)
+			instSrc, _ := tr.Read(instFile)
 			inst, iss := engine.CompileInstance(instSrc)
 			if iss.Err() != nil {
 				tt.Fatal(iss.Err())
@@ -469,12 +484,13 @@ func TestEngine(t *testing.T) {
 	}
 }
 
-func BenchmarkEnforcer(b *testing.B) {
+func BenchmarkEngine(b *testing.B) {
 	tr := test.NewReader("../test/testdata")
 	env, _ := cel.NewEnv(test.Decls)
 	for _, tstVal := range testCases {
 		tst := tstVal
 		opts := []EngineOption{
+			StandardExprEnv(env),
 			Selectors(labelSelector),
 			RangeLimit(1),
 			RuntimeTemplateOptions(
@@ -491,20 +507,31 @@ func BenchmarkEnforcer(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		engine.AddEnv("", env)
+		envFile := fmt.Sprintf("../test/testdata/%s/env.yaml", tst.policy)
+		envSrc, found := tr.Read(envFile)
+		if found {
+			env, iss := engine.CompileEnv(envSrc)
+			if iss.Err() != nil {
+				b.Fatal(iss.Err())
+			}
+			err = engine.SetEnv(env.Name, env)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
 		tmplFile := fmt.Sprintf("../test/testdata/%s/template.yaml", tst.policy)
-		tmplSrc := tr.Read(tmplFile)
+		tmplSrc, _ := tr.Read(tmplFile)
 		tmpl, iss := engine.CompileTemplate(tmplSrc)
 		if iss.Err() != nil {
 			b.Fatal(iss.Err())
 		}
-		err = engine.AddTemplate(tmpl)
+		err = engine.SetTemplate(tmpl.Metadata.Name, tmpl)
 		if err != nil {
 			b.Fatal(err)
 		}
 
 		instFile := fmt.Sprintf("../test/testdata/%s/instance.yaml", tst.policy)
-		instSrc := tr.Read(instFile)
+		instSrc, _ := tr.Read(instFile)
 		inst, iss := engine.CompileInstance(instSrc)
 		if iss.Err() != nil {
 			b.Fatal(iss.Err())

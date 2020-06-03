@@ -93,15 +93,15 @@ func (r *reader) ReadCases(phase string) ([]*Case, error) {
 				if ind := strings.Index(baseName, "."); ind >= 0 {
 					kind = baseName[0:ind]
 				}
-				in := r.Read(inName)
-				out := r.Read(outName).Content()
+				in, _ := r.Read(inName)
+				out, _ := r.Read(outName)
 				testCases = append(
 					testCases,
 					&Case{
 						ID:   testName + "/" + baseName,
 						Kind: kind,
 						In:   in,
-						Out:  out,
+						Out:  out.Content(),
 					},
 				)
 			}
@@ -113,15 +113,15 @@ func (r *reader) ReadCases(phase string) ([]*Case, error) {
 				if ind := strings.Index(baseName, "."); ind >= 0 {
 					kind = baseName[0:ind]
 				}
-				in := r.Read(inName)
-				err := r.Read(errName).Content()
+				in, _ := r.Read(inName)
+				err, _ := r.Read(errName)
 				testCases = append(
 					testCases,
 					&Case{
 						ID:   testName + "/" + baseName,
 						Kind: kind,
 						In:   in,
-						Err:  err,
+						Err:  err.Content(),
 					},
 				)
 			}
@@ -131,16 +131,22 @@ func (r *reader) ReadCases(phase string) ([]*Case, error) {
 		if testCases[i].Kind == testCases[j].Kind {
 			return false
 		}
+		if testCases[i].Kind == "env" {
+			return true
+		}
+		if testCases[j].Kind == "env" {
+			return false
+		}
 		return testCases[i].Kind == "template"
 	})
 	return testCases, nil
 }
 
 // Read returns the Source instance for the given file name.
-func (r *reader) Read(fileName string) *model.Source {
+func (r *reader) Read(fileName string) (*model.Source, bool) {
 	tmplBytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		panic(err)
+		return nil, false
 	}
-	return model.ByteSource(tmplBytes, fileName)
+	return model.ByteSource(tmplBytes, fileName), true
 }

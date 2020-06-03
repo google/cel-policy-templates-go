@@ -206,7 +206,7 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 			err = ref.assign(node.Value)
 		}
 	default:
-		p.reportErrorAtID(p.id, "unsupported cel type: %s", modelType)
+		p.reportErrorAtID(p.id, "unsupported cel type: %v", modelType)
 	}
 	if err != nil {
 		p.reportErrorAtID(p.id, err.Error())
@@ -230,7 +230,7 @@ func (p *parser) parseMap(node *yaml.Node, ref objRef) {
 		id := p.nextID()
 		p.collectMetadata(id, key)
 		keyType, found := yamlTypes[key.LongTag()]
-		if !found || keyType != "string" {
+		if !found || keyType != model.StringType {
 			p.reportErrorAtID(id, "unsupported map key type: %v", key.LongTag())
 			continue
 		}
@@ -259,7 +259,7 @@ func (p *parser) reportErrorAtID(id int64, format string, args ...interface{}) {
 
 var (
 	// yamlTypes map of the long tag names supported by the Go YAML v3 library.
-	yamlTypes = map[string]string{
+	yamlTypes = map[string]*model.DeclType{
 		"!txt":                    model.PlainTextType,
 		"tag:yaml.org,2002:bool":  model.BoolType,
 		"tag:yaml.org,2002:null":  model.NullType,

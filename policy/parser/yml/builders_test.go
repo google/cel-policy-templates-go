@@ -24,7 +24,7 @@ import (
 func TestBuilders_ModelMapValue(t *testing.T) {
 	sv := model.NewMapValue()
 	sb := &mapBuilder{
-		baseBuilder: &baseBuilder{typeName: model.MapType},
+		baseBuilder: &baseBuilder{declType: model.MapType},
 		mv:          sv,
 	}
 

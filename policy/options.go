@@ -18,6 +18,7 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/runtime"
 
+	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/interpreter"
 )
 
@@ -34,6 +35,13 @@ type Selector func(model.Selector, interpreter.Activation) bool
 func Selectors(selectors ...Selector) EngineOption {
 	return func(e *Engine) (*Engine, error) {
 		e.selectors = selectors
+		return e, nil
+	}
+}
+
+func StandardExprEnv(exprEnv *cel.Env) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.Registry = model.NewRegistry(exprEnv)
 		return e, nil
 	}
 }

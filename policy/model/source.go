@@ -16,7 +16,6 @@ package model
 
 import (
 	"github.com/google/cel-go/common"
-	celsrc "github.com/google/cel-go/common"
 )
 
 // ByteSource converts a byte sequence and location description to a model.Source.
@@ -27,13 +26,13 @@ func ByteSource(contents []byte, location string) *Source {
 // StringSource converts a string and location description to a model.Source.
 func StringSource(contents, location string) *Source {
 	return &Source{
-		Source: celsrc.NewStringSource(contents, location),
+		Source: common.NewStringSource(contents, location),
 	}
 }
 
 // Source represents the contents of a single source file.
 type Source struct {
-	celsrc.Source
+	common.Source
 }
 
 // Relative produces a RelativeSource object for the content provided at the absolute location
@@ -41,20 +40,20 @@ type Source struct {
 func (src *Source) Relative(content string, line, col int) *RelativeSource {
 	return &RelativeSource{
 		Source:   src.Source,
-		localSrc: celsrc.NewStringSource(content, src.Description()),
-		absLoc:   celsrc.NewLocation(line, col),
+		localSrc: common.NewStringSource(content, src.Description()),
+		absLoc:   common.NewLocation(line, col),
 	}
 }
 
 // RelativeSource represents an embedded source element within a larger source.
 type RelativeSource struct {
-	celsrc.Source
-	localSrc celsrc.Source
-	absLoc   celsrc.Location
+	common.Source
+	localSrc common.Source
+	absLoc   common.Location
 }
 
 // AbsoluteLocation returns the location within the parent Source where the RelativeSource starts.
-func (rel *RelativeSource) AbsoluteLocation() celsrc.Location {
+func (rel *RelativeSource) AbsoluteLocation() common.Location {
 	return rel.absLoc
 }
 
@@ -64,10 +63,10 @@ func (rel *RelativeSource) Content() string {
 }
 
 // OffsetLocation returns the absolute location given the relative offset, if found.
-func (rel *RelativeSource) OffsetLocation(offset int32) (celsrc.Location, bool) {
+func (rel *RelativeSource) OffsetLocation(offset int32) (common.Location, bool) {
 	absOffset, found := rel.Source.LocationOffset(rel.absLoc)
 	if !found {
-		return celsrc.NoLocation, false
+		return common.NoLocation, false
 	}
 	return rel.Source.OffsetLocation(absOffset + offset)
 }
@@ -86,7 +85,7 @@ func (rel *RelativeSource) NewLocation(line, col int) common.Location {
 }
 
 // NewSourceInfo creates SourceInfo metadata from a Source object.
-func NewSourceInfo(src celsrc.Source) *SourceInfo {
+func NewSourceInfo(src common.Source) *SourceInfo {
 	return &SourceInfo{
 		Comments:    make(map[int64][]*Comment),
 		LineOffsets: src.LineOffsets(),
@@ -112,13 +111,13 @@ type SourceInfo struct {
 }
 
 // LocationByID returns the line and column location of source node by its id.
-func (info *SourceInfo) LocationByID(id int64) (celsrc.Location, bool) {
+func (info *SourceInfo) LocationByID(id int64) (common.Location, bool) {
 	charOff, found := info.Offsets[id]
 	if !found {
-		return celsrc.NoLocation, false
+		return common.NoLocation, false
 	}
 	ln, lnOff := info.findLine(charOff)
-	return celsrc.NewLocation(int(ln), int(charOff-lnOff)), true
+	return common.NewLocation(int(ln), int(charOff-lnOff)), true
 }
 
 func (info *SourceInfo) findLine(characterOffset int32) (int32, int32) {
