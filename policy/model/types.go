@@ -28,6 +28,7 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewListType returns a parameterized list type with a specified element type.
 func NewListType(elem *DeclType) *DeclType {
 	return &DeclType{
 		name:      "list",
@@ -37,6 +38,7 @@ func NewListType(elem *DeclType) *DeclType {
 	}
 }
 
+// NewMapType returns a parameterized map type with the given key and element types.
 func NewMapType(key, elem *DeclType) *DeclType {
 	return &DeclType{
 		name:      "map",
@@ -47,6 +49,7 @@ func NewMapType(key, elem *DeclType) *DeclType {
 	}
 }
 
+// NewObjectType creates an object type with a qualified name and a set of field declarations.
 func NewObjectType(name string, fields map[string]*DeclType) *DeclType {
 	t := &DeclType{
 		name:      name,
@@ -58,6 +61,7 @@ func NewObjectType(name string, fields map[string]*DeclType) *DeclType {
 	return t
 }
 
+// NewObjectTypeRef returns a reference to an object type by name
 func NewObjectTypeRef(name string) *DeclType {
 	t := &DeclType{
 		name:      name,
@@ -67,6 +71,10 @@ func NewObjectTypeRef(name string) *DeclType {
 	return t
 }
 
+// NewTypeParam creates a type parameter type with a simple name.
+//
+// Type parameters are resolved at complilation time to concrete types, or CEL 'dyn' type if no
+// type assignment can be inferred.
 func NewTypeParam(name string) *DeclType {
 	return &DeclType{
 		name:      name,
@@ -83,7 +91,10 @@ func newSimpleType(name string, exprType *exprpb.Type, zeroVal ref.Val) *DeclTyp
 	}
 }
 
+// DeclType represents the universal type descriptor for Policy Templates.
 type DeclType struct {
+	fmt.Stringer
+
 	name      string
 	Fields    map[string]*DeclType
 	KeyType   *DeclType
@@ -96,6 +107,12 @@ type DeclType struct {
 	zeroValue ref.Val
 }
 
+// AssignTypeName sets the DeclType name to a fully qualified name.
+//
+// A DeclType may start as an anonymous `object` type and then be assigned a more specific type
+// name at compilation time.
+//
+// The DeclType must return true for `IsObject` or this assignment will error.
 func (t *DeclType) AssignTypeName(name string) error {
 	if !t.IsObject() {
 		return fmt.Errorf(
@@ -107,10 +124,13 @@ func (t *DeclType) AssignTypeName(name string) error {
 	return nil
 }
 
+// ExprType returns the CEL expression type of this declaration.
 func (t *DeclType) ExprType() *exprpb.Type {
 	return t.exprType
 }
 
+// HasTrait implements the CEL ref.Type interface making this type declaration suitable for use
+// within the CEL evaluator.
 func (t *DeclType) HasTrait(trait int) bool {
 	if t.traitMask&trait == trait {
 		return true
@@ -121,26 +141,34 @@ func (t *DeclType) HasTrait(trait int) bool {
 	return t.zeroValue.Type().HasTrait(trait)
 }
 
+// IsList returns whether the declaration is a `list` type which defines a parameterized element
+// type, but not a parameterized key type or fields.
 func (t *DeclType) IsList() bool {
-	return t.KeyType == nil && t.ElemType != nil
+	return t.KeyType == nil && t.ElemType != nil && t.Fields == nil
 }
 
+// IsMap returns whether the declaration is a 'map' type which defines parameterized key and
+// element types, but not fields.
 func (t *DeclType) IsMap() bool {
-	return t.KeyType != nil && t.ElemType != nil
+	return t.KeyType != nil && t.ElemType != nil && t.Fields == nil
 }
 
+// IsObject returns whether the declartion is an 'object' type which defined a set of typed fields.
 func (t *DeclType) IsObject() bool {
-	return t.Fields != nil
+	return t.KeyType == nil && t.ElemType == nil && t.Fields != nil
 }
 
+// String implements the fmt.Stringer interface method.
 func (t *DeclType) String() string {
 	return t.name
 }
 
+// TypeName returns the fully qualified type name for the DeclType.
 func (t *DeclType) TypeName() string {
 	return t.name
 }
 
+// Zero returns the CEL ref.Val representing the zero value for this object type, if one exists.
 func (t *DeclType) Zero() ref.Val {
 	return t.zeroValue
 }
@@ -317,7 +345,7 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
 	root := schema.DeclType()
-	root.name = kind
+	root.AssignTypeName(kind)
 	types := map[string]*DeclType{
 		kind: root,
 	}
@@ -356,12 +384,11 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 			if err != nil {
 				return err
 			}
-			types[fieldPath] = declType
-			return nil
 		}
 	}
 	// Map element properties to type names if needed.
 	if t.IsMap() {
+		types[path] = t
 		mapElemPath := fmt.Sprintf("%s.@elem", path)
 		return buildDeclTypes(mapElemPath, t.ElemType, types)
 	}
@@ -391,6 +418,8 @@ var (
 	DurationType = newSimpleType("duration", decls.Duration,
 		types.Duration{Duration: &dpb.Duration{}})
 
+	// DynType is the equivalent of the CEL 'dyn' concept which indicates that the type will be
+	// determined at runtime rather than compile time.
 	DynType = newSimpleType("dyn", decls.Dyn, nil)
 
 	// IntType is equivalent to the CEL 'int' type which is a 64-bit signed int.

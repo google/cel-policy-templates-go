@@ -21,6 +21,8 @@ import (
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewEnv creates an empty Env instance with a fully qualified name that may be referenced
+// within templates.
 func NewEnv(name string) *Env {
 	return &Env{
 		Name:      name,
@@ -30,6 +32,16 @@ func NewEnv(name string) *Env {
 	}
 }
 
+// Env declares a set of variables, functions, and types available to a given set of CEL
+// expressions.
+//
+// The Env name must be fully qualified as it will be referenced within template evaluators,
+// validators, and possibly within the metadata of the instance rule schema.
+//
+// Note, the Types values currently only holds type definitions associated with a variable
+// declaration. Any type mentioned in the environment which does not have a definition is
+// treated as a reference to a type which must be supplied in the base CEL environment provided
+// by the policy engine.
 type Env struct {
 	Name      string
 	Container string
@@ -38,6 +50,8 @@ type Env struct {
 	Types     map[string]*DeclType
 }
 
+// ExprEnvOptions returns a set of CEL environment options to be used when extending the base
+// policy engine CEL environment.
 func (e *Env) ExprEnvOptions() []cel.EnvOption {
 	opts := []cel.EnvOption{}
 	if e.Container != "" {
@@ -60,6 +74,7 @@ func (e *Env) ExprEnvOptions() []cel.EnvOption {
 	return opts
 }
 
+// NewVar creates a new variable with a name and a type.
 func NewVar(name string, dt *DeclType) *Var {
 	return &Var{
 		Name: name,
@@ -67,6 +82,7 @@ func NewVar(name string, dt *DeclType) *Var {
 	}
 }
 
+// Var represents a named instanced of a type.
 type Var struct {
 	Name string
 	Type *DeclType
@@ -76,6 +92,8 @@ func (v *Var) exprDecl() *exprpb.Decl {
 	return decls.NewVar(v.Name, v.Type.ExprType())
 }
 
+// NewFunction creates a Function instance with a simple function name and a set of overload
+// signatures.
 func NewFunction(name string, overloads ...*Overload) *Function {
 	return &Function{
 		Name:      name,
@@ -83,6 +101,7 @@ func NewFunction(name string, overloads ...*Overload) *Function {
 	}
 }
 
+// Function represents a simple name and a set of overload signatures.
 type Function struct {
 	Name      string
 	Overloads []*Overload
@@ -96,17 +115,16 @@ func (f *Function) exprDecl() *exprpb.Decl {
 	return decls.NewFunction(f.Name, overloadDecls...)
 }
 
-// NewOverload returns an overload declaration for a given function.
+// NewOverload returns a receiver-style overload declaration for a given function.
 //
 // The overload name must follow the conventions laid out within the CEL overloads.go file.
 //
-//     // Receiver style function overload:
+//     // Receiver-style overload name:
 //     <receiver_type>_<func>_<arg_type0>_<arg_typeN>
-//     // Namespaced style function overload:
-//     <func>_<arg_type0>_<arg_typeN>
 //
-// Within this function, the last type supplied to the call is used as the return type. At least
-// one type must be specified for a zero-arity function.
+// Within this function, the first type supplied is the receiver type, and the last type supplied
+// is used as the return type. At least two types must be specified for a zero-arity receiver
+// function.
 func NewOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 	argTypes := make([]*DeclType, 1+len(rest))
 	argTypes[0] = first
@@ -118,6 +136,19 @@ func NewOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 	return newOverload(name, false, argTypes, returnType)
 }
 
+// NewNamespacedOverload returns a namespaced function overload for a given function.
+//
+// The overload name must follow the conventions laid out within the CEL overloads.go file:
+//
+//     // Namespaced style overload name:
+//     <func>_<arg_type0>_<arg_typeN>
+//
+// When the function name is global, <func> will refer to the simple function name. When the
+// function has a qualified name, replace the '.' characters in the fully-qualified name with
+// underscores.
+//
+// Within this function, the last type supplied is used as the return type. At least one type must
+// be specified for a zero-arity namespaced function.
 func NewNamespacedOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 	argTypes := make([]*DeclType, 1+len(rest))
 	argTypes[0] = first
@@ -141,6 +172,7 @@ func newOverload(name string,
 	}
 }
 
+// Overload represents a single function overload signature.
 type Overload struct {
 	Name       string
 	Namespaced bool

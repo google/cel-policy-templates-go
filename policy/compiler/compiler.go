@@ -59,6 +59,10 @@ type Compiler struct {
 	limits   *limits.Limits
 }
 
+// CompileEnv type-checks and builds model.Env instance from a parsed representation.
+//
+// The resulting model.Env value may be used to extend a base CEL environment with additional
+// variable, function, and type declarations.
 func (c *Compiler) CompileEnv(src *model.Source,
 	parsedEnv *model.ParsedValue) (*model.Env, *cel.Issues) {
 	return c.newEnvCompiler(src, parsedEnv).compile()

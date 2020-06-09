@@ -152,7 +152,7 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 // ExprValue converts the DynValue into a CEL value.
 func (dv *DynValue) ExprValue() ref.Val {
 	if dv.exprValue == nil {
-		// Note: probably needs a concurrency guard.
+		// TODO: implement eager initialization.
 		dv.exprValue = exprValue(dv)
 	}
 	return dv.exprValue

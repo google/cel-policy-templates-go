@@ -103,6 +103,11 @@ func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 	return nil, false
 }
 
+// SchemaTypeToDeclType converts from the Open API Schema type name to a DeclType instance
+// suitable for constructing parse-time object references.
+//
+// Note, the DeclType returned from this step does not consider whether an `object` is a map or
+// a concrete object type. This sort of type resolution happens during the compile stage.
 func SchemaTypeToDeclType(typeName string) (*DeclType, bool) {
 	t, found := openAPISchemaTypes[typeName]
 	return t, found
@@ -346,6 +351,8 @@ properties:
       $ref: "#templateRuleSchema"
 `
 
+	// TODO: switch the type-name information into metadata field so that env type declarations
+	// and rule schema declarations can be used interchangably.
 	declTypeSchemaYaml = `
 type: object
 properties:
