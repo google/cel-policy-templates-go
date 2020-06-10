@@ -399,7 +399,7 @@ properties:
             required:
               - return
             properties:
-              namespaced:
+              free_function:
                 type: boolean
               args:
                 type: array

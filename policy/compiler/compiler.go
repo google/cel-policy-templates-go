@@ -197,10 +197,10 @@ func (ec *envCompiler) compileFunctions(env *model.Env, funcMap *model.MapValue)
 		for _, o := range overloadMap.Fields {
 			oName := o.Name
 			obj := ec.mapValue(o.Ref)
-			namespaced := false
+			freeFunction := false
 			ns, found := obj.GetField("namespaced")
 			if found {
-				namespaced = ec.boolValue(ns.Ref)
+				freeFunction = ec.boolValue(ns.Ref)
 			}
 			args, found := obj.GetField("args")
 			argVals := []*model.DeclType{}
@@ -216,12 +216,13 @@ func (ec *envCompiler) compileFunctions(env *model.Env, funcMap *model.MapValue)
 				retType := ec.compileDeclType(env, ret.Ref)
 				argVals = append(argVals, retType)
 			}
-			if namespaced {
+			if freeFunction {
 				if len(argVals) == 1 {
-					overloads = append(overloads, model.NewNamespacedOverload(oName, argVals[0]))
+					overloads = append(overloads,
+						model.NewFreeFunctionOverload(oName, argVals[0]))
 				} else {
 					overloads = append(overloads,
-						model.NewNamespacedOverload(oName, argVals[0], argVals[1:]...))
+						model.NewFreeFunctionOverload(oName, argVals[0], argVals[1:]...))
 				}
 			} else {
 				if len(argVals) == 1 {

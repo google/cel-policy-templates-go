@@ -132,15 +132,15 @@ func NewOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 		argTypes[i] = rest[i-1]
 	}
 	returnType := argTypes[len(argTypes)-1]
-	argTypes = argTypes[0 : len(argTypes)-2]
+	argTypes = argTypes[0 : len(argTypes)-1]
 	return newOverload(name, false, argTypes, returnType)
 }
 
-// NewNamespacedOverload returns a namespaced function overload for a given function.
+// NewFreeFunctionOverload returns a free function overload for a given function name.
 //
 // The overload name must follow the conventions laid out within the CEL overloads.go file:
 //
-//     // Namespaced style overload name:
+//     // Free function style overload name:
 //     <func>_<arg_type0>_<arg_typeN>
 //
 // When the function name is global, <func> will refer to the simple function name. When the
@@ -148,56 +148,60 @@ func NewOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 // underscores.
 //
 // Within this function, the last type supplied is used as the return type. At least one type must
-// be specified for a zero-arity namespaced function.
-func NewNamespacedOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
+// be specified for a zero-arity free function.
+func NewFreeFunctionOverload(name string, first *DeclType, rest ...*DeclType) *Overload {
 	argTypes := make([]*DeclType, 1+len(rest))
 	argTypes[0] = first
 	for i := 1; i < len(rest)+1; i++ {
 		argTypes[i] = rest[i-1]
 	}
 	returnType := argTypes[len(argTypes)-1]
-	argTypes = argTypes[0 : len(argTypes)-2]
+	argTypes = argTypes[0 : len(argTypes)-1]
 	return newOverload(name, true, argTypes, returnType)
 }
 
 func newOverload(name string,
-	namespaced bool,
+	freeFunction bool,
 	argTypes []*DeclType,
 	returnType *DeclType) *Overload {
 	return &Overload{
-		Name:       name,
-		Namespaced: namespaced,
-		Args:       argTypes,
-		ReturnType: returnType,
+		Name:         name,
+		FreeFunction: freeFunction,
+		Args:         argTypes,
+		ReturnType:   returnType,
 	}
 }
 
 // Overload represents a single function overload signature.
 type Overload struct {
-	Name       string
-	Namespaced bool
-	Args       []*DeclType
-	ReturnType *DeclType
+	Name         string
+	FreeFunction bool
+	Args         []*DeclType
+	ReturnType   *DeclType
 }
 
 func (o *Overload) overloadDecl() *exprpb.Decl_FunctionDecl_Overload {
-	typeParams := []string{}
+	typeParams := map[string]struct{}{}
 	argExprTypes := make([]*exprpb.Type, len(o.Args))
 	for i, a := range o.Args {
 		if a.TypeParam {
-			typeParams = append(typeParams, a.TypeName())
+			typeParams[a.TypeName()] = struct{}{}
 		}
 		argExprTypes[i] = a.ExprType()
 	}
 	returnType := o.ReturnType.ExprType()
 	if len(typeParams) == 0 {
-		if o.Namespaced {
+		if o.FreeFunction {
 			return decls.NewOverload(o.Name, argExprTypes, returnType)
 		}
 		return decls.NewInstanceOverload(o.Name, argExprTypes, returnType)
 	}
-	if o.Namespaced {
-		return decls.NewParameterizedOverload(o.Name, argExprTypes, returnType, typeParams)
+	typeParamNames := make([]string, 0, len(typeParams))
+	for param := range typeParams {
+		typeParamNames = append(typeParamNames, param)
 	}
-	return decls.NewParameterizedInstanceOverload(o.Name, argExprTypes, returnType, typeParams)
+	if o.FreeFunction {
+		return decls.NewParameterizedOverload(o.Name, argExprTypes, returnType, typeParamNames)
+	}
+	return decls.NewParameterizedInstanceOverload(o.Name, argExprTypes, returnType, typeParamNames)
 }

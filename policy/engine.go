@@ -32,6 +32,7 @@ import (
 // Engine evaluates context against policy instances to produce decisions.
 type Engine struct {
 	*model.Registry
+	rwMux     sync.RWMutex
 	evalOpts  []cel.ProgramOption
 	rtOpts    []runtime.TemplateOption
 	selectors []Selector
@@ -105,6 +106,8 @@ func (e *Engine) AddInstance(inst *model.Instance) error {
 	return nil
 }
 
+// SetTemplate associates a fully qualified template names with a template instance while
+// configuring the template runtime.
 func (e *Engine) SetTemplate(name string, tmpl *model.Template) error {
 	err := e.Registry.SetTemplate(name, tmpl)
 	if err != nil {
