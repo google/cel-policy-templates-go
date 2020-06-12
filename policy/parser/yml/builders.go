@@ -57,12 +57,12 @@ type objRef interface {
 }
 
 // newBaseBuilder returns a base builder which implements the core methods of the objRef interface.
-func newBaseBuilder(typeName string) *baseBuilder {
-	return &baseBuilder{typeName: typeName}
+func newBaseBuilder(declType *model.DeclType) *baseBuilder {
+	return &baseBuilder{declType: declType}
 }
 
 type baseBuilder struct {
-	typeName string
+	declType *model.DeclType
 }
 
 // id is an implementation of the objRef interface method.
@@ -70,27 +70,27 @@ func (b *baseBuilder) id(id int64) {}
 
 // assign is an implementation of the objRef interface method.
 func (b *baseBuilder) assign(val interface{}) error {
-	return valueNotAssignableToType(b.typeName, val)
+	return valueNotAssignableToType(b.declType, val)
 }
 
 func (b *baseBuilder) encodeStyle(value model.EncodeStyle) {}
 
 func (b *baseBuilder) initMap() error {
-	return typeNotAssignableToType(b.typeName, model.MapType)
+	return typeNotAssignableToType(b.declType, model.MapType)
 }
 
 func (b *baseBuilder) initList() error {
-	return typeNotAssignableToType(b.typeName, model.ListType)
+	return typeNotAssignableToType(b.declType, model.ListType)
 }
 
 // field is an implementation of the objRef interface method.
 func (b *baseBuilder) field(id int64, name string) (objRef, error) {
-	return nil, typeNotAssignableToType(b.typeName, model.MapType)
+	return nil, typeNotAssignableToType(b.declType, model.MapType)
 }
 
 // entry is an implementation of the objRef interface method.
 func (b *baseBuilder) entry(idx interface{}) (objRef, error) {
-	return nil, typeNotAssignableToType(b.typeName, model.ListType)
+	return nil, typeNotAssignableToType(b.declType, model.ListType)
 }
 
 // finalize is a noop implementation of the objRef interface method.
@@ -257,7 +257,7 @@ func (b *dynValueBuilder) initList() error {
 // If the dyn builder was previously configured as a struct, this function will error.
 func (b *dynValueBuilder) entry(idx interface{}) (objRef, error) {
 	if b.lb == nil {
-		return nil, noSuchProperty("dyn", "[]")
+		return nil, noSuchProperty(model.AnyType, "[]")
 	}
 	return b.lb.entry(idx)
 }
@@ -282,16 +282,16 @@ func checkIndexRange(idx interface{}, sz int) error {
 	return nil
 }
 
-func typeNotAssignableToType(typeName, valType string) error {
-	return fmt.Errorf("type not assignable to target: target=%v, type=%s", typeName, valType)
+func typeNotAssignableToType(declType, valType *model.DeclType) error {
+	return fmt.Errorf("type not assignable to target: target=%v, type=%v", declType, valType)
 }
 
-func valueNotAssignableToType(typeName string, val interface{}) error {
-	return fmt.Errorf("type not assignable to target: target=%s, type=%T", typeName, val)
+func valueNotAssignableToType(declType *model.DeclType, val interface{}) error {
+	return fmt.Errorf("type not assignable to target: target=%v, type=%T", declType, val)
 }
 
-func noSuchProperty(typeName, prop string) error {
-	return fmt.Errorf("no such property: type=%s, property=%s", typeName, prop)
+func noSuchProperty(typeName *model.DeclType, prop string) error {
+	return fmt.Errorf("no such property: type=%v, property=%s", typeName, prop)
 }
 
 func indexOutOfRange(idx interface{}, len int) error {

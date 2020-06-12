@@ -1,3 +1,3 @@
-ERROR: ../../test/testdata/dependent_ranges/template.yaml:27:5: range limit set to 1, but 2 found
- |     - {value: i, in: "[1, 2, 3]"}
- | ....^
+ERROR: ../../test/testdata/dependent_ranges/template.yaml:28:7: range limit set to 1, but 2 found
+ |     - {index: idx, value: j, in: "[i, i * 2, i * 3]"}
+ | ......^

@@ -34,14 +34,8 @@ func TestCompiler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := &registry{
-		schemas: map[string]*model.OpenAPISchema{
-			"#openAPISchema":  model.SchemaDef,
-			"#templateSchema": model.TemplateSchema,
-			"#instanceSchema": model.InstanceSchema,
-		},
-		templates: map[string]*model.Template{},
-	}
+	stdEnv, _ := cel.NewEnv(test.Decls)
+	reg := model.NewRegistry(stdEnv)
 	limits := limits.NewLimits()
 	limits.RangeLimit = 1
 	limits.EvaluatorTermLimit = 15
@@ -59,6 +53,10 @@ func TestCompiler(t *testing.T) {
 				tt.Fatal(iss.Err())
 			}
 			var tmpl *model.Template
+			var env *model.Env
+			if tst.Kind == "env" {
+				env, iss = comp.CompileEnv(tst.In, pv)
+			}
 			if tst.Kind == "template" {
 				tmpl, iss = comp.CompileTemplate(tst.In, pv)
 			}
@@ -73,33 +71,17 @@ func TestCompiler(t *testing.T) {
 				fmt.Println(dbgErr)
 				tt.Fatalf("Got %v, expected error: %s", dbgErr, tst.Err)
 			}
+			if env != nil {
+				err := reg.SetEnv(env.Name, env)
+				if err != nil {
+					tt.Fatal(err)
+				}
+			}
 			if tmpl != nil {
-				reg.templates[tmpl.Metadata.Name] = tmpl
+				reg.SetTemplate(tmpl.Metadata.Name, tmpl)
 			}
 		})
 	}
-}
-
-type registry struct {
-	schemas   map[string]*model.OpenAPISchema
-	templates map[string]*model.Template
-}
-
-func (r *registry) FindSchema(name string) (*model.OpenAPISchema, bool) {
-	s, found := r.schemas[name]
-	return s, found
-}
-
-func (r *registry) FindEnv(name string) (*cel.Env, bool) {
-	if name == "" || name == "standard" {
-		return env, true
-	}
-	return nil, false
-}
-
-func (r *registry) FindTemplate(name string) (*model.Template, bool) {
-	tmpl, found := r.templates[name]
-	return tmpl, found
 }
 
 func cmp(a string, e string) bool {

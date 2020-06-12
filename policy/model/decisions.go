@@ -81,6 +81,10 @@ type MultiDecisionValue interface {
 	RuleIDs() []int64
 }
 
+// DecisionSelector determines whether the given decision is the decision set requested by the
+// caller.
+type DecisionSelector func(decision string) bool
+
 // NewBoolDecisionValue returns a boolean decision with an initial value.
 func NewBoolDecisionValue(name string, value types.Bool) *BoolDecisionValue {
 	return &BoolDecisionValue{

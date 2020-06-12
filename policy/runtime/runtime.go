@@ -34,11 +34,11 @@ import (
 )
 
 // NewTemplate creates a validator / evaluator pair for a model.Template.
-func NewTemplate(reg model.Registry,
+func NewTemplate(res model.Resolver,
 	mdl *model.Template,
 	opts ...TemplateOption) (*Template, error) {
 	t := &Template{
-		reg:          reg,
+		res:          res,
 		mdl:          mdl,
 		decAggMap:    map[string]Aggregator{},
 		exprOpts:     []cel.ProgramOption{},
@@ -97,7 +97,7 @@ func NewTemplate(reg model.Registry,
 
 // Template represents an evaluable version of a model.Template.
 type Template struct {
-	reg       model.Registry
+	res       model.Resolver
 	mdl       *model.Template
 	limits    *limits.Limits
 	decAggMap map[string]Aggregator
@@ -113,10 +113,11 @@ type Template struct {
 // Eval returns the evaluation result of a policy instance against a given set of variables.
 func (t *Template) Eval(inst *model.Instance,
 	vars interpreter.Activation,
-	selector DecisionSelector) ([]model.DecisionValue, error) {
+	selector model.DecisionSelector) ([]model.DecisionValue, error) {
 	slots := t.evalSlotPool.Setup()
-	defer t.evalSlotPool.Put(slots)
-	return t.evalInternal(t.evaluator, inst, vars, selector, slots)
+	decs, err := t.evalInternal(t.evaluator, inst, vars, selector, slots)
+	t.evalSlotPool.Put(slots)
+	return decs, err
 }
 
 // FindAggregator returns the Aggregator for the decision if one is found.
@@ -140,7 +141,6 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 	slots := t.valSlotPool.Setup()
 	defer t.valSlotPool.Put(slots)
 
-	noVars := interpreter.EmptyActivation()
 	decs, err := t.evalInternal(t.validator, inst, noVars, nil, slots)
 	if err != nil {
 		errs.ReportError(common.NoLocation, err.Error())
@@ -183,14 +183,14 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 func (t *Template) evalInternal(eval *evaluator,
 	inst *model.Instance,
 	vars interpreter.Activation,
-	selector DecisionSelector,
+	selector model.DecisionSelector,
 	slots decisionSlots) ([]model.DecisionValue, error) {
 	ruleAct := t.actPool.Setup(vars)
-	defer t.actPool.Put(ruleAct)
 
 	// Singleton policy without a schema.
 	if t.mdl.RuleTypes == nil {
 		err := eval.eval(nil, selector, ruleAct, slots)
+		t.actPool.Put(ruleAct)
 		if err != nil {
 			return nil, err
 		}
@@ -205,9 +205,11 @@ func (t *Template) evalInternal(eval *evaluator,
 	for _, rule := range inst.Rules {
 		err := eval.eval(rule, selector, ruleAct, slots)
 		if err != nil {
+			t.actPool.Put(ruleAct)
 			return nil, err
 		}
 	}
+	t.actPool.Put(ruleAct)
 	return slotsToDecisions(slots), nil
 }
 
@@ -313,10 +315,14 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 func (t *Template) newEnv(name string) (*cel.Env, error) {
 	env := stdEnv
 	if name != "" {
-		var found bool
-		env, found = t.reg.FindEnv(name)
+		mdlEnv, found := t.res.FindEnv(name)
 		if !found {
 			return nil, fmt.Errorf("no such environment: %s", name)
+		}
+		var err error
+		env, err = env.Extend(mdlEnv.ExprEnvOptions()...)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if t.mdl.RuleTypes == nil {
@@ -338,15 +344,15 @@ type evaluator struct {
 }
 
 func (eval *evaluator) eval(rule model.Rule,
-	selector DecisionSelector,
+	selector model.DecisionSelector,
 	vars *ruleActivation,
 	slots decisionSlots) error {
 	vars.rule = rule
 	// Fast-path evaluation without ranges.
 	if len(eval.ranges) == 0 {
 		act := eval.actPool.Setup(vars)
-		defer eval.actPool.Put(act)
 		eval.evalProductions(rule, selector, act, slots)
+		eval.actPool.Put(act)
 		return nil
 	}
 	// Range-based evaluation.
@@ -370,7 +376,7 @@ func (eval *evaluator) eval(rule model.Rule,
 }
 
 func (eval *evaluator) evalProductions(rule model.Rule,
-	selector DecisionSelector,
+	selector model.DecisionSelector,
 	act interpreter.Activation,
 	slots decisionSlots) error {
 	var errs []error
@@ -612,7 +618,8 @@ type prod struct {
 	// separately from the decisions since the referenced name may be derived from the instance.
 }
 
-func (p *prod) hasMoreDecisions(slots decisionSlots, selector DecisionSelector) bool {
+func (p *prod) hasMoreDecisions(slots decisionSlots,
+	selector model.DecisionSelector) bool {
 	for _, d := range p.decisions {
 		if d == nil {
 			continue
@@ -786,10 +793,10 @@ func (pool *evalActivationPool) Setup(vars interpreter.Activation) *evaluatorAct
 
 var (
 	stdEnv      *cel.Env
-	mapStrIface reflect.Type
+	mapStrIface = reflect.TypeOf(map[string]interface{}{})
+	noVars      = interpreter.EmptyActivation()
 )
 
 func init() {
 	stdEnv, _ = cel.NewEnv()
-	mapStrIface = reflect.TypeOf(map[string]interface{}{})
 }

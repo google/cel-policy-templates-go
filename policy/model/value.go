@@ -75,9 +75,10 @@ type DynValue struct {
 	exprValue   ref.Val
 }
 
-// ModelType returns the policy model type of the dyn value.
-func (dv *DynValue) ModelType() string {
-	switch dv.Value.(type) {
+// DeclType returns the policy model type of the dyn value.
+func (dv *DynValue) DeclType() *DeclType {
+	// TODO: set this type at value creation time in the parser builder.
+	switch v := dv.Value.(type) {
 	case bool:
 		return BoolType
 	case []byte:
@@ -102,8 +103,10 @@ func (dv *DynValue) ModelType() string {
 		return ListType
 	case *MapValue:
 		return MapType
+	case *ObjectValue:
+		return v.objectType
 	}
-	return "unknown"
+	return unknownType
 }
 
 // ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
@@ -149,7 +152,7 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 // ExprValue converts the DynValue into a CEL value.
 func (dv *DynValue) ExprValue() ref.Val {
 	if dv.exprValue == nil {
-		// Note: probably needs a concurrency guard.
+		// TODO: implement eager initialization.
 		dv.exprValue = exprValue(dv)
 	}
 	return dv.exprValue
@@ -237,7 +240,7 @@ func (sv *structValue) IsSet(key ref.Val) ref.Val {
 }
 
 // NewObjectValue creates a struct value with a schema type and returns the empty ObjectValue.
-func NewObjectValue(sType *schemaType) *ObjectValue {
+func NewObjectValue(sType *DeclType) *ObjectValue {
 	return &ObjectValue{
 		structValue: newStructValue(),
 		objectType:  sType,
@@ -248,7 +251,7 @@ func NewObjectValue(sType *schemaType) *ObjectValue {
 // associated with the structure.
 type ObjectValue struct {
 	*structValue
-	objectType *schemaType
+	objectType *DeclType
 }
 
 // ConvertToNative is an implementation of the CEL ref.Val interface method used to convert from
@@ -303,18 +306,15 @@ func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	if found {
 		return field.Ref.ExprValue()
 	}
-	fieldType, found := o.objectType.fields[nameStr]
+	fieldType, found := o.objectType.Fields[nameStr]
 	if !found {
 		return types.NewErr("no such field: %s", nameStr)
 	}
-	if fieldType.isObject() {
-		return NewObjectValue(fieldType)
+	zero := fieldType.Zero()
+	if zero != nil {
+		return zero
 	}
-	fieldDefault, found := typeDefaults[fieldType.TypeName()]
-	if found {
-		return fieldDefault
-	}
-	return types.NewErr("no default for object path: %s", fieldType.objectPath)
+	return types.NewErr("no default for type: %s", fieldType.TypeName())
 }
 
 // Type returns the CEL type value of the object.
@@ -343,10 +343,10 @@ type MapValue struct {
 //
 // The conversion is shallow and the memory shared between the Object and Map as all references
 // to the map are expected to be replaced with the Object reference.
-func (m *MapValue) ConvertToObject(sType *schemaType) *ObjectValue {
+func (m *MapValue) ConvertToObject(declType *DeclType) *ObjectValue {
 	return &ObjectValue{
 		structValue: m.structValue,
-		objectType:  sType,
+		objectType:  declType,
 	}
 }
 
@@ -736,3 +736,5 @@ func celBool(pred bool) ref.Val {
 	}
 	return types.False
 }
+
+var unknownType = &DeclType{name: "unknown"}

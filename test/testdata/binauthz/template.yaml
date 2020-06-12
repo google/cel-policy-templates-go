@@ -38,6 +38,7 @@ schema:
       items:
         type: string
 evaluator:
+  environment: binauthz.v1.Environment
   ranges:
     - value: pkg
       in: request.packages

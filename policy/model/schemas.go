@@ -57,11 +57,22 @@ type OpenAPISchema struct {
 	AdditionalProperties *OpenAPISchema            `yaml:"additionalProperties,omitempty"`
 }
 
-// ModelType returns the CEL Policy Templates type name associated with the schema element.
-func (s *OpenAPISchema) ModelType() string {
-	commonType := openAPISchemaTypes[s.Type]
-	switch commonType {
-	case "string":
+// DeclType returns the CEL Policy Templates type name associated with the schema element.
+func (s *OpenAPISchema) DeclType() *DeclType {
+	declType := openAPISchemaTypes[s.Type]
+	switch declType {
+	case ListType:
+		return NewListType(s.Items.DeclType())
+	case MapType:
+		if s.AdditionalProperties != nil {
+			return NewMapType(StringType, s.AdditionalProperties.DeclType())
+		}
+		fields := make(map[string]*DeclType, len(s.Properties))
+		for name, prop := range s.Properties {
+			fields[name] = prop.DeclType()
+		}
+		return NewObjectType("object", fields)
+	case StringType:
 		switch s.Format {
 		case "byte", "binary":
 			return BytesType
@@ -69,42 +80,7 @@ func (s *OpenAPISchema) ModelType() string {
 			return TimestampType
 		}
 	}
-	return commonType
-}
-
-// Equal returns whether two schemas are equal.
-func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
-	if s.ModelType() != other.ModelType() {
-		return false
-	}
-	// perform deep equality here.
-	switch s.ModelType() {
-	case "any":
-		return false
-	case MapType:
-		if len(s.Properties) != len(other.Properties) {
-			return false
-		}
-		for prop, nested := range s.Properties {
-			otherNested, found := other.Properties[prop]
-			if !found || !nested.Equal(otherNested) {
-				return false
-			}
-		}
-		if s.AdditionalProperties != nil && other.AdditionalProperties != nil &&
-			!s.AdditionalProperties.Equal(other.AdditionalProperties) {
-			return false
-		}
-		if s.AdditionalProperties != nil && other.AdditionalProperties == nil ||
-			s.AdditionalProperties == nil && other.AdditionalProperties != nil {
-			return false
-		}
-		return true
-	case ListType:
-		return s.Items.Equal(other.Items)
-	default:
-		return true
-	}
+	return declType
 }
 
 // FindProperty returns the Open API Schema type for the given property name.
@@ -112,7 +88,7 @@ func (s *OpenAPISchema) Equal(other *OpenAPISchema) bool {
 // A property may either be explicitly defined in a `properties` map or implicitly defined in an
 // `additionalProperties` block.
 func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
-	if s.ModelType() == "any" {
+	if s.DeclType() == AnyType {
 		return s, true
 	}
 	if s.Properties != nil {
@@ -127,21 +103,41 @@ func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 	return nil, false
 }
 
+// SchemaTypeToDeclType converts from the Open API Schema type name to a DeclType instance
+// suitable for constructing parse-time object references.
+//
+// Note, the DeclType returned from this step does not consider whether an `object` is a map or
+// a concrete object type. This sort of type resolution happens during the compile stage.
+func SchemaTypeToDeclType(typeName string) (*DeclType, bool) {
+	t, found := openAPISchemaTypes[typeName]
+	return t, found
+}
+
 var (
 	// SchemaDef defines an Open API Schema definition in terms of an Open API Schema.
-	SchemaDef *OpenAPISchema
+	schemaDef *OpenAPISchema
 
 	// AnySchema indicates that the value may be of any type.
 	AnySchema *OpenAPISchema
 
+	// DeclTypeSchema is used to declare a CEL type within an Environment.
+	//
+	// The primary difference between the expressive power of the OpenAPI Schema and the CEL Type
+	// is that the CEL Type support parameterized types and non-JSON types as possible type
+	// definitions.
+	declTypeSchema *OpenAPISchema
+
+	// EnvSchema defines the schema for CEL environments referenced within Policy Templates.
+	envSchema *OpenAPISchema
+
 	// InstanceSchema defines a basic schema for defining Policy Instances where the instance rule
 	// references a TemplateSchema derived from the Instance's template kind.
-	InstanceSchema *OpenAPISchema
+	instanceSchema *OpenAPISchema
 
 	// TemplateSchema defines a schema for defining Policy Templates.
-	TemplateSchema *OpenAPISchema
+	templateSchema *OpenAPISchema
 
-	openAPISchemaTypes map[string]string = map[string]string{
+	openAPISchemaTypes map[string]*DeclType = map[string]*DeclType{
 		"boolean":   BoolType,
 		"number":    DoubleType,
 		"integer":   IntType,
@@ -151,7 +147,7 @@ var (
 		"date-time": TimestampType,
 		"array":     ListType,
 		"object":    MapType,
-		"":          "any",
+		"":          AnyType,
 	}
 )
 
@@ -354,26 +350,96 @@ properties:
     items:
       $ref: "#templateRuleSchema"
 `
+
+	// TODO: switch the type-name information into metadata field so that env type declarations
+	// and rule schema declarations can be used interchangably.
+	declTypeSchemaYaml = `
+type: object
+properties:
+  type:
+    type: string
+  type_param:
+    type: string
+  items:
+    $ref: "#declTypeSchema"
+  properties:
+    type: object
+    additionalProperties:
+      $ref: "#declTypeSchema"
+  additionalProperties:
+    $ref: "#declTypeSchema"
+`
+
+	// TODO: support subsetting of built-in functions and macros
+	// TODO: support naming anonymous types within rule schema and making them accessible to
+	// declarations.
+	// TODO: consider supporting custom macros
+	envSchemaYaml = `
+type: object
+required:
+  - name
+properties:
+  name:
+    type: string
+  container:
+    type: string
+  variables:
+    type: object
+    additionalProperties:
+      $ref: "#declTypeSchema"
+  functions:
+    type: object
+    properties:
+      extensions:
+        type: object
+        additionalProperties:
+          type: object   # function name
+          additionalProperties:
+            type: object # overload name
+            required:
+              - return
+            properties:
+              free_function:
+                type: boolean
+              args:
+                type: array
+                items:
+                  $ref: "#declTypeSchema"
+              return:
+                $ref: "#declTypeSchema"
+`
 )
 
 func init() {
 	AnySchema = NewOpenAPISchema()
 
-	InstanceSchema = NewOpenAPISchema()
+	instanceSchema = NewOpenAPISchema()
 	in := strings.ReplaceAll(instanceSchemaYaml, "\t", "  ")
-	err := yaml.Unmarshal([]byte(in), InstanceSchema)
+	err := yaml.Unmarshal([]byte(in), instanceSchema)
 	if err != nil {
 		panic(err)
 	}
-	SchemaDef = NewOpenAPISchema()
+	declTypeSchema = NewOpenAPISchema()
+	in = strings.ReplaceAll(declTypeSchemaYaml, "\t", "  ")
+	err = yaml.Unmarshal([]byte(in), declTypeSchema)
+	if err != nil {
+		panic(err)
+	}
+	envSchema = NewOpenAPISchema()
+	in = strings.ReplaceAll(envSchemaYaml, "\t", "  ")
+	err = yaml.Unmarshal([]byte(in), envSchema)
+	if err != nil {
+		panic(err)
+	}
+	schemaDef = NewOpenAPISchema()
 	in = strings.ReplaceAll(schemaDefYaml, "\t", "  ")
-	err = yaml.Unmarshal([]byte(in), SchemaDef)
+	err = yaml.Unmarshal([]byte(in), schemaDef)
 	if err != nil {
 		panic(err)
 	}
-	TemplateSchema = NewOpenAPISchema()
+	templateSchema = NewOpenAPISchema()
 	in = strings.ReplaceAll(templateSchemaYaml, "\t", "  ")
-	err = yaml.Unmarshal([]byte(in), TemplateSchema)
+	err = yaml.Unmarshal([]byte(in), templateSchema)
 	if err != nil {
 		panic(err)
 	}

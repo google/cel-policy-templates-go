@@ -23,28 +23,183 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
 
+	dpb "github.com/golang/protobuf/ptypes/duration"
+	tpb "github.com/golang/protobuf/ptypes/timestamp"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
+// NewListType returns a parameterized list type with a specified element type.
+func NewListType(elem *DeclType) *DeclType {
+	return &DeclType{
+		name:      "list",
+		ElemType:  elem,
+		exprType:  decls.NewListType(elem.ExprType()),
+		zeroValue: NewListValue(),
+	}
+}
+
+// NewMapType returns a parameterized map type with the given key and element types.
+func NewMapType(key, elem *DeclType) *DeclType {
+	return &DeclType{
+		name:      "map",
+		KeyType:   key,
+		ElemType:  elem,
+		exprType:  decls.NewMapType(key.ExprType(), elem.ExprType()),
+		zeroValue: NewMapValue(),
+	}
+}
+
+// NewObjectType creates an object type with a qualified name and a set of field declarations.
+func NewObjectType(name string, fields map[string]*DeclType) *DeclType {
+	t := &DeclType{
+		name:      name,
+		Fields:    fields,
+		exprType:  decls.NewObjectType(name),
+		traitMask: traits.FieldTesterType | traits.IndexerType,
+	}
+	t.zeroValue = NewObjectValue(t)
+	return t
+}
+
+// NewObjectTypeRef returns a reference to an object type by name
+func NewObjectTypeRef(name string) *DeclType {
+	t := &DeclType{
+		name:      name,
+		exprType:  decls.NewObjectType(name),
+		traitMask: traits.FieldTesterType | traits.IndexerType,
+	}
+	return t
+}
+
+// NewTypeParam creates a type parameter type with a simple name.
+//
+// Type parameters are resolved at complilation time to concrete types, or CEL 'dyn' type if no
+// type assignment can be inferred.
+func NewTypeParam(name string) *DeclType {
+	return &DeclType{
+		name:      name,
+		TypeParam: true,
+		exprType:  decls.NewTypeParamType(name),
+	}
+}
+
+func newSimpleType(name string, exprType *exprpb.Type, zeroVal ref.Val) *DeclType {
+	return &DeclType{
+		name:      name,
+		exprType:  exprType,
+		zeroValue: zeroVal,
+	}
+}
+
+// DeclType represents the universal type descriptor for Policy Templates.
+type DeclType struct {
+	fmt.Stringer
+
+	name      string
+	Fields    map[string]*DeclType
+	KeyType   *DeclType
+	ElemType  *DeclType
+	TypeParam bool
+	Metadata  map[string]string
+
+	exprType  *exprpb.Type
+	traitMask int
+	zeroValue ref.Val
+}
+
+// AssignTypeName sets the DeclType name to a fully qualified name.
+//
+// A DeclType may start as an anonymous `object` type and then be assigned a more specific type
+// name at compilation time.
+//
+// The DeclType must return true for `IsObject` or this assignment will error.
+func (t *DeclType) AssignTypeName(name string) error {
+	if !t.IsObject() {
+		return fmt.Errorf(
+			"type names may only be assigned to objects: type=%v, name=%s",
+			t, name)
+	}
+	t.name = name
+	t.exprType = decls.NewObjectType(name)
+	return nil
+}
+
+// ExprType returns the CEL expression type of this declaration.
+func (t *DeclType) ExprType() *exprpb.Type {
+	return t.exprType
+}
+
+// HasTrait implements the CEL ref.Type interface making this type declaration suitable for use
+// within the CEL evaluator.
+func (t *DeclType) HasTrait(trait int) bool {
+	if t.traitMask&trait == trait {
+		return true
+	}
+	if t.zeroValue == nil {
+		return false
+	}
+	return t.zeroValue.Type().HasTrait(trait)
+}
+
+// IsList returns whether the declaration is a `list` type which defines a parameterized element
+// type, but not a parameterized key type or fields.
+func (t *DeclType) IsList() bool {
+	return t.KeyType == nil && t.ElemType != nil && t.Fields == nil
+}
+
+// IsMap returns whether the declaration is a 'map' type which defines parameterized key and
+// element types, but not fields.
+func (t *DeclType) IsMap() bool {
+	return t.KeyType != nil && t.ElemType != nil && t.Fields == nil
+}
+
+// IsObject returns whether the declartion is an 'object' type which defined a set of typed fields.
+func (t *DeclType) IsObject() bool {
+	return t.KeyType == nil && t.ElemType == nil && t.Fields != nil
+}
+
+// String implements the fmt.Stringer interface method.
+func (t *DeclType) String() string {
+	return t.name
+}
+
+// TypeName returns the fully qualified type name for the DeclType.
+func (t *DeclType) TypeName() string {
+	return t.name
+}
+
+// Zero returns the CEL ref.Val representing the zero value for this object type, if one exists.
+func (t *DeclType) Zero() ref.Val {
+	return t.zeroValue
+}
+
 // NewRuleTypes returns an Open API Schema-based type-system which is CEL compatible.
-func NewRuleTypes(kind string, schema *OpenAPISchema) *RuleTypes {
+func NewRuleTypes(kind string,
+	schema *OpenAPISchema,
+	res Resolver) (*RuleTypes, error) {
 	// Note, if the schema indicates that it's actually based on another proto
 	// then prefer the proto definition. For expressions in the proto, a new field
 	// annotation will be needed to indicate the expected environment and type of
 	// the expression.
-	return &RuleTypes{
-		ruleSchemaTypes: newSchemaTypeProvider(kind, schema),
-		Schema:          schema,
+	schemaTypes, err := newSchemaTypeProvider(kind, schema)
+	if err != nil {
+		return nil, err
 	}
+	return &RuleTypes{
+		Schema:              schema,
+		ruleSchemaDeclTypes: schemaTypes,
+		resolver:            res,
+	}, nil
 }
 
 // RuleTypes extends the CEL ref.TypeProvider interface and provides an Open API Schema-based
 // type-system.
 type RuleTypes struct {
 	ref.TypeProvider
-	Schema          *OpenAPISchema
-	ruleSchemaTypes *schemaTypeProvider
-	typeAdapter     ref.TypeAdapter
+	Schema              *OpenAPISchema
+	ruleSchemaDeclTypes *schemaTypeProvider
+	typeAdapter         ref.TypeAdapter
+	resolver            Resolver
 }
 
 // EnvOptions returns a set of cel.EnvOption values which includes the Template's declaration set
@@ -64,16 +219,17 @@ func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
 		ta = tpa
 	}
 	rtWithTypes := &RuleTypes{
-		TypeProvider:    tp,
-		typeAdapter:     ta,
-		Schema:          rt.Schema,
-		ruleSchemaTypes: rt.ruleSchemaTypes,
+		TypeProvider:        tp,
+		typeAdapter:         ta,
+		Schema:              rt.Schema,
+		ruleSchemaDeclTypes: rt.ruleSchemaDeclTypes,
+		resolver:            rt.resolver,
 	}
 	return []cel.EnvOption{
 		cel.CustomTypeProvider(rtWithTypes),
 		cel.CustomTypeAdapter(rtWithTypes),
 		cel.Declarations(
-			decls.NewIdent("rule", rt.ruleSchemaTypes.root.ExprType(), nil),
+			decls.NewIdent("rule", rt.ruleSchemaDeclTypes.root.ExprType(), nil),
 		),
 	}
 }
@@ -89,9 +245,9 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 	if rt == nil {
 		return nil, false
 	}
-	st, found := rt.ruleSchemaTypes.types[typeName]
+	declType, found := rt.findSchemaType(typeName)
 	if found {
-		return st.ExprType(), true
+		return declType.ExprType(), found
 	}
 	return rt.TypeProvider.FindType(typeName)
 }
@@ -103,20 +259,21 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 // resolution might more accurately reflect the expected type model. However, in this case
 // concessions were made to align with the existing CEL interfaces.
 func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, bool) {
-	st, found := rt.ruleSchemaTypes.types[typeName]
+	st, found := rt.findSchemaType(typeName)
 	if !found {
 		return rt.TypeProvider.FindFieldType(typeName, fieldName)
 	}
-	f, found := st.fields[fieldName]
+
+	f, found := st.Fields[fieldName]
 	if found {
 		return &ref.FieldType{
 			Type: f.ExprType(),
 		}, true
 	}
 	// This could be a dynamic map.
-	if st.ModelType() == MapType && !st.isObject() {
+	if st.IsMap() {
 		return &ref.FieldType{
-			Type: st.elemType.ExprType(),
+			Type: st.ElemType.ExprType(),
 		}, true
 	}
 	return nil, false
@@ -126,7 +283,7 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 //
 // Conversion is done deeply and will traverse the object graph represented by the dyn value.
 func (rt *RuleTypes) ConvertToRule(dyn *DynValue) Rule {
-	ruleSchemaType := rt.ruleSchemaTypes.root
+	ruleSchemaType := rt.ruleSchemaDeclTypes.root
 	// TODO: handle conversions to protobuf types.
 	dyn = rt.convertToCustomType(dyn, ruleSchemaType)
 	return &CustomRule{DynValue: dyn}
@@ -143,29 +300,41 @@ func (rt *RuleTypes) NativeToValue(val interface{}) ref.Val {
 	}
 }
 
-func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType,
-	observers ...RuleConversionObserver) *DynValue {
+func (rt *RuleTypes) findSchemaType(typeName string) (*DeclType, bool) {
+	declType, found := rt.ruleSchemaDeclTypes.types[typeName]
+	if found {
+		return declType, true
+	}
+	declType, found = rt.resolver.FindType(typeName)
+	if found {
+		return declType, true
+	}
+	return nil, false
+}
+
+func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
+	declType *DeclType) *DynValue {
 	switch v := dyn.Value.(type) {
 	case *MapValue:
-		if schemaType.isObject() {
-			obj := v.ConvertToObject(schemaType)
+		if declType.IsObject() {
+			obj := v.ConvertToObject(declType)
 			for name, f := range obj.fieldMap {
-				fieldType := schemaType.fields[name]
-				f.Ref = rt.convertToCustomType(f.Ref, fieldType, observers...)
+				fieldType := declType.Fields[name]
+				f.Ref = rt.convertToCustomType(f.Ref, fieldType)
 			}
 			dyn.Value = obj
 			return dyn
 		}
 		// TODO: handle complex map types which have non-string keys.
-		fieldType := schemaType.elemType
+		fieldType := declType.ElemType
 		for _, f := range v.fieldMap {
-			f.Ref = rt.convertToCustomType(f.Ref, fieldType, observers...)
+			f.Ref = rt.convertToCustomType(f.Ref, fieldType)
 		}
 		return dyn
 	case *ListValue:
 		for i := 0; i < len(v.Entries); i++ {
 			elem := v.Entries[i]
-			elem = rt.convertToCustomType(elem, schemaType.elemType, observers...)
+			elem = rt.convertToCustomType(elem, declType.ElemType)
 			v.Entries[i] = elem
 		}
 		return dyn
@@ -174,217 +343,109 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue, schemaType *schemaType,
 	}
 }
 
-type RuleConversionObserver func(dyn *DynValue) (*DynValue, error)
-
-func newSchemaTypeProvider(kind string, schema *OpenAPISchema) *schemaTypeProvider {
-	root := &schemaType{
-		objectPath: kind,
-		schema:     schema,
-	}
-	types := map[string]*schemaType{
+func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
+	root := schema.DeclType()
+	root.AssignTypeName(kind)
+	types := map[string]*DeclType{
 		kind: root,
 	}
-	buildSchemaTypes(root, types)
+	err := buildDeclTypes(kind, root, types)
+	if err != nil {
+		return nil, err
+	}
 	return &schemaTypeProvider{
 		root:  root,
 		types: types,
-	}
+	}, nil
 }
 
 type schemaTypeProvider struct {
-	root  *schemaType
-	types map[string]*schemaType
+	root  *DeclType
+	types map[string]*DeclType
 }
 
-type schemaType struct {
-	schema     *OpenAPISchema
-	objectPath string
-
-	keyType  *schemaType
-	elemType *schemaType
-	fields   map[string]*schemaType
-	metadata map[string]string
+func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error {
+	// Ensure object types are properly named according to where they appear in the schema.
+	if t.IsObject() {
+		// Hack to ensure that names are uniquely qualified and work well with the type
+		// resolution steps which require fully qualified type names for field resolution
+		// to function properly.
+		err := t.AssignTypeName(path)
+		if err != nil {
+			return err
+		}
+		types[path] = t
+		for name, declType := range t.Fields {
+			if declType == nil {
+				continue
+			}
+			fieldPath := fmt.Sprintf("%s.%s", path, name)
+			err := buildDeclTypes(fieldPath, declType, types)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	// Map element properties to type names if needed.
+	if t.IsMap() {
+		types[path] = t
+		mapElemPath := fmt.Sprintf("%s.@elem", path)
+		return buildDeclTypes(mapElemPath, t.ElemType, types)
+	}
+	// List element properties.
+	if t.IsList() {
+		listIdxPath := fmt.Sprintf("%s.@idx", path)
+		return buildDeclTypes(listIdxPath, t.ElemType, types)
+	}
+	return nil
 }
 
-func (st *schemaType) ModelType() string {
-	return st.schema.ModelType()
-}
-
-func (st *schemaType) ExprType() *exprpb.Type {
-	ct := st.ModelType()
-	val, found := simpleExprTypes[ct]
-	if found {
-		return val
-	}
-	if ct == "any" {
-		return decls.Dyn
-	}
-	if ct == ListType {
-		return decls.NewListType(st.elemType.ExprType())
-	}
-	if ct == MapType && st.schema.AdditionalProperties != nil {
-		return decls.NewMapType(st.keyType.ExprType(), st.elemType.ExprType())
-	}
-	// This is a hack around the fact that field types are resolved relative to a type name.
-	// In the absence of a proper type name for an element of an Open API Schema definition,
-	// the object path used to get to the field is used. This could be addressed at a CEL API
-	// level with a change to the TypeProvider to support field resolution from a type
-	return decls.NewObjectType(st.objectPath)
-}
-
-func (st *schemaType) HasTrait(trait int) bool {
-	return typeTraits[st.ModelType()]&trait == trait
-}
-
-func (st *schemaType) TypeName() string {
-	ct := st.ModelType()
-	switch ct {
-	case "any":
-		return st.objectPath
-	case MapType:
-		// Hack for making sure field types can be resolved.
-		if st.isObject() {
-			return st.objectPath
-		}
-	}
-	return ct
-}
-
-func (st *schemaType) isObject() bool {
-	return len(st.schema.Properties) > 0
-}
-
-func buildSchemaTypes(t *schemaType, types map[string]*schemaType) {
-	t.fields = map[string]*schemaType{}
-	// Build up the nested schema types in the map.
-	for name, def := range t.schema.Properties {
-		fieldType := &schemaType{
-			schema:     def,
-			objectPath: fmt.Sprintf("%s.%s", t.objectPath, name),
-		}
-		t.fields[name] = fieldType
-		fieldModelType := def.ModelType()
-		if fieldModelType == MapType || fieldModelType == ListType {
-			buildSchemaTypes(fieldType, types)
-			types[fieldType.objectPath] = fieldType
-		}
-	}
-	// Additional map properties
-	if t.schema.AdditionalProperties != nil {
-		stringKey := NewOpenAPISchema()
-		stringKey.Type = StringType
-		t.keyType = &schemaType{
-			schema:     stringKey,
-			objectPath: fmt.Sprintf("%s.@key", t.objectPath),
-		}
-		t.elemType = &schemaType{
-			schema:     t.schema.AdditionalProperties,
-			objectPath: fmt.Sprintf("%s.@prop", t.objectPath),
-		}
-		fieldModelType := t.elemType.ModelType()
-		if fieldModelType == MapType || fieldModelType == ListType {
-			buildSchemaTypes(t.elemType, types)
-			types[t.elemType.objectPath] = t.elemType
-		}
-	}
-	// List element properties
-	if t.schema.Items != nil {
-		t.elemType = &schemaType{
-			schema:     t.schema.Items,
-			objectPath: fmt.Sprintf("%s.@idx", t.objectPath),
-		}
-		elemModelType := t.elemType.ModelType()
-		if elemModelType == MapType || elemModelType == ListType {
-			buildSchemaTypes(t.elemType, types)
-			types[t.elemType.objectPath] = t.elemType
-		}
-	}
-}
-
-const (
-	// AnyType is equivalent to the CEL 'dyn' type in that the value may have any of the types
-	// supported by CEL Policy Templates.
-	AnyType = "any"
-
-	// ExprType represents a compiled CEL expression value.
-	ExprType = "expr"
+var (
+	// AnyType is equivalent to the CEL 'protobuf.Any' type in that the value may have any of the
+	// types supported by CEL Policy Templates.
+	AnyType = newSimpleType("any", decls.Any, nil)
 
 	// BoolType is equivalent to the CEL 'bool' type.
-	BoolType = "bool"
+	BoolType = newSimpleType("bool", decls.Bool, types.False)
 
 	// BytesType is equivalent to the CEL 'bytes' type.
-	BytesType = "bytes"
+	BytesType = newSimpleType("bytes", decls.Bytes, types.Bytes([]byte{}))
 
 	// DoubleType is equivalent to the CEL 'double' type which is a 64-bit floating point value.
-	DoubleType = "double"
+	DoubleType = newSimpleType("double", decls.Double, types.Double(0))
+
+	// DurationType is equivalent to the CEL 'duration' type.
+	DurationType = newSimpleType("duration", decls.Duration,
+		types.Duration{Duration: &dpb.Duration{}})
+
+	// DynType is the equivalent of the CEL 'dyn' concept which indicates that the type will be
+	// determined at runtime rather than compile time.
+	DynType = newSimpleType("dyn", decls.Dyn, nil)
 
 	// IntType is equivalent to the CEL 'int' type which is a 64-bit signed int.
-	IntType = "int"
+	IntType = newSimpleType("int", decls.Int, types.IntZero)
 
 	// NullType is equivalent to the CEL 'null_type'.
-	NullType = "null_type"
+	NullType = newSimpleType("null_type", decls.Null, types.NullValue)
 
 	// StringType is equivalent to the CEL 'string' type which is expected to be a UTF-8 string.
 	// StringType values may either be string literals or expression strings.
-	StringType = "string"
+	StringType = newSimpleType("string", decls.String, types.String(""))
 
 	// PlainTextType is equivalent to the CEL 'string' type, but which has been specifically
 	// designated as a string literal.
-	PlainTextType = "string_lit"
+	PlainTextType = newSimpleType("string_lit", decls.String, types.String(""))
 
 	// TimestampType corresponds to the well-known protobuf.Timestamp type supported within CEL.
-	TimestampType = "timestamp"
+	TimestampType = newSimpleType("timestamp", decls.Timestamp,
+		types.Timestamp{Timestamp: &tpb.Timestamp{}})
 
 	// UintType is equivalent to the CEL 'uint' type.
-	UintType = "uint"
+	UintType = newSimpleType("uint", decls.Uint, types.Uint(0))
 
 	// ListType is equivalent to the CEL 'list' type.
-	ListType = "list"
+	ListType = NewListType(AnyType)
 
 	// MapType is equivalent to the CEL 'map' type.
-	MapType = "map"
-)
-
-var (
-	numericTraits = traits.AdderType |
-		traits.ComparerType |
-		traits.DividerType |
-		traits.ModderType |
-		traits.MultiplierType |
-		traits.NegatorType |
-		traits.SubtractorType
-	bytesTraits = traits.ComparerType |
-		traits.AdderType |
-		traits.SizerType
-	containerTraits = traits.ContainerType |
-		traits.IndexerType |
-		traits.IterableType |
-		traits.SizerType
-	typeTraits = map[string]int{
-		BoolType:   traits.ComparerType | traits.NegatorType,
-		BytesType:  bytesTraits,
-		DoubleType: numericTraits,
-		IntType:    numericTraits,
-		StringType: bytesTraits,
-		ListType:   containerTraits | traits.AdderType,
-		MapType:    containerTraits,
-	}
-	typeDefaults = map[string]ref.Val{
-		BoolType:   types.False,
-		BytesType:  types.Bytes([]byte{}),
-		DoubleType: types.Double(0),
-		IntType:    types.Int(0),
-		StringType: types.String(""),
-		ListType:   NewListValue(),
-		MapType:    NewMapValue(),
-	}
-	simpleExprTypes = map[string]*exprpb.Type{
-		BoolType:      decls.Bool,
-		BytesType:     decls.Bytes,
-		DoubleType:    decls.Double,
-		NullType:      decls.Null,
-		IntType:       decls.Int,
-		StringType:    decls.String,
-		TimestampType: decls.Timestamp,
-	}
+	MapType = NewMapType(AnyType, AnyType)
 )
