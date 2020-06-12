@@ -48,8 +48,8 @@ schema:
       items:
         type: object
         metadata:
-          protoRef: google.type.Expr
-          resultType: bool
+          custom_type: google.type.Expr
+          expr_result_type: boolean
         required:
           - expression
           - description
@@ -64,6 +64,7 @@ schema:
             type: string
 
 validator:
+  environment: greeting.v1alpha1.Environment
   terms:
     hi: rule.greeting
     bye: rule.farewell
@@ -85,6 +86,9 @@ validator:
     - match: hi.startsWith("Goodbye")
       message: greeting starts with a farewell word
       details: hi
+    - match: >
+        rule.conditions.exists(expr, !compile(expr))
+      message: could not compile condition
 evaluator:
   terms:
     hi: rule.greeting

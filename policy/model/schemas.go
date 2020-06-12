@@ -59,11 +59,14 @@ type OpenAPISchema struct {
 
 // DeclType returns the CEL Policy Templates type name associated with the schema element.
 func (s *OpenAPISchema) DeclType() *DeclType {
-	declType := openAPISchemaTypes[s.Type]
-	switch declType {
-	case ListType:
+	declType, found := openAPISchemaTypes[s.Type]
+	if !found {
+		return NewObjectTypeRef("*error*")
+	}
+	switch declType.TypeName() {
+	case ListType.TypeName():
 		return NewListType(s.Items.DeclType())
-	case MapType:
+	case MapType.TypeName():
 		if s.AdditionalProperties != nil {
 			return NewMapType(StringType, s.AdditionalProperties.DeclType())
 		}
@@ -71,8 +74,15 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 		for name, prop := range s.Properties {
 			fields[name] = prop.DeclType()
 		}
-		return NewObjectType("object", fields)
-	case StringType:
+		customType, found := s.Metadata["custom_type"]
+		if !found {
+			return NewObjectType("object", fields)
+		}
+		if len(fields) != 0 {
+			return NewObjectType(customType, fields)
+		}
+		return NewObjectTypeRef(customType)
+	case StringType.TypeName():
 		switch s.Format {
 		case "byte", "binary":
 			return BytesType
@@ -101,16 +111,6 @@ func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 		return s.AdditionalProperties, true
 	}
 	return nil, false
-}
-
-// SchemaTypeToDeclType converts from the Open API Schema type name to a DeclType instance
-// suitable for constructing parse-time object references.
-//
-// Note, the DeclType returned from this step does not consider whether an `object` is a map or
-// a concrete object type. This sort of type resolution happens during the compile stage.
-func SchemaTypeToDeclType(typeName string) (*DeclType, bool) {
-	t, found := openAPISchemaTypes[typeName]
-	return t, found
 }
 
 var (
@@ -356,8 +356,16 @@ properties:
 	declTypeSchemaYaml = `
 type: object
 properties:
+  description:
+    type: string
   type:
     type: string
+  format:
+    type: string
+  metadata:
+    type: object
+    additionalProperties:
+      type: string
   type_param:
     type: string
   items:

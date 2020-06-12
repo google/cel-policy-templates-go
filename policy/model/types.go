@@ -23,6 +23,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
 
+	"github.com/golang/protobuf/proto"
 	dpb "github.com/golang/protobuf/ptypes/duration"
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
@@ -119,6 +120,9 @@ func (t *DeclType) AssignTypeName(name string) error {
 			"type names may only be assigned to objects: type=%v, name=%s",
 			t, name)
 	}
+	if t.name != "object" {
+		return nil
+	}
 	t.name = name
 	t.exprType = decls.NewObjectType(name)
 	return nil
@@ -136,6 +140,10 @@ func (t *DeclType) HasTrait(trait int) bool {
 		return true
 	}
 	if t.zeroValue == nil {
+		return false
+	}
+	_, isDecl := t.zeroValue.Type().(*DeclType)
+	if isDecl {
 		return false
 	}
 	return t.zeroValue.Type().HasTrait(trait)
@@ -209,9 +217,9 @@ type RuleTypes struct {
 // type if one is configured.
 //
 // If the RuleTypes value is nil, an empty []cel.EnvOption set is returned.
-func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
+func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) ([]cel.EnvOption, error) {
 	if rt == nil {
-		return []cel.EnvOption{}
+		return []cel.EnvOption{}, nil
 	}
 	var ta ref.TypeAdapter = types.DefaultTypeAdapter
 	tpa, ok := tp.(ref.TypeAdapter)
@@ -225,13 +233,20 @@ func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) []cel.EnvOption {
 		ruleSchemaDeclTypes: rt.ruleSchemaDeclTypes,
 		resolver:            rt.resolver,
 	}
+	for name, declType := range rt.ruleSchemaDeclTypes.types {
+		tpType, found := tp.FindType(name)
+		if found && !proto.Equal(tpType, declType.ExprType()) {
+			return nil, fmt.Errorf(
+				"type %s definition differs between CEL environment and template", name)
+		}
+	}
 	return []cel.EnvOption{
 		cel.CustomTypeProvider(rtWithTypes),
 		cel.CustomTypeAdapter(rtWithTypes),
 		cel.Declarations(
 			decls.NewIdent("rule", rt.ruleSchemaDeclTypes.root.ExprType(), nil),
 		),
-	}
+	}, nil
 }
 
 // FindType attempts to resolve the typeName provided from the template's rule-schema, or if not
@@ -374,7 +389,7 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 		if err != nil {
 			return err
 		}
-		types[path] = t
+		types[t.TypeName()] = t
 		for name, declType := range t.Fields {
 			if declType == nil {
 				continue
@@ -394,6 +409,7 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 	}
 	// List element properties.
 	if t.IsList() {
+		types[path] = t
 		listIdxPath := fmt.Sprintf("%s.@idx", path)
 		return buildDeclTypes(listIdxPath, t.ElemType, types)
 	}

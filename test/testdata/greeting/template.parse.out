@@ -47,8 +47,8 @@
       73~items:74~
         75~type: 76~"object"
         77~metadata:78~
-          79~protoRef: 80~"google.type.Expr"
-          81~resultType: 82~"bool"
+          79~custom_type: 80~"google.type.Expr"
+          81~expr_result_type: 82~"boolean"
         83~required:84~
           - 85~"expression"
           - 86~"description"
@@ -62,41 +62,45 @@
           101~location:102~
             103~type: 104~"string"
 105~validator:106~
-  107~terms:108~
-    109~hi: 110~"rule.greeting"
-    111~bye: 112~"rule.farewell"
-    113~both: 114~"hi == 'aloha' && bye == 'aloha'"
-    115~doubleVal: 116~-42.42
-    117~emptyNullVal: 118~
-    119~emptyQuotedVal: 120~!txt ""
-    121~falseVal: 122~false
-    123~intVal: 124~-42
-    125~nullVal: 126~
-    127~plainTxtVal: 128~!txt "plain text"
-    129~trueVal: 130~true
-    131~uintVal: 132~9223372036854775808
-  133~productions:134~
-    - 135~136~match: 137~"hi == '' && bye == ''"
-      138~message: 139~>
+  107~environment: 108~"greeting.v1alpha1.Environment"
+  109~terms:110~
+    111~hi: 112~"rule.greeting"
+    113~bye: 114~"rule.farewell"
+    115~both: 116~"hi == 'aloha' && bye == 'aloha'"
+    117~doubleVal: 118~-42.42
+    119~emptyNullVal: 120~
+    121~emptyQuotedVal: 122~!txt ""
+    123~falseVal: 124~false
+    125~intVal: 126~-42
+    127~nullVal: 128~
+    129~plainTxtVal: 130~!txt "plain text"
+    131~trueVal: 132~true
+    133~uintVal: 134~9223372036854775808
+  135~productions:136~
+    - 137~138~match: 139~"hi == '' && bye == ''"
+      140~message: 141~>
         at least one of 'greeting' or 'farewell' must be a non-empty
         string
-    - 140~141~match: 142~"hi.startsWith(\"Goodbye\")"
-      143~message: 144~"greeting starts with a farewell word"
-      145~details: 146~"hi"
-147~evaluator:148~
-  149~terms:150~
-    151~hi: 152~"rule.greeting"
-    153~bye: 154~"rule.farewell"
-  155~productions:156~
-    - 157~158~match: 159~"hi != '' && bye == ''"
-      160~decision: 161~"policy.acme.welcome"
-      162~output: 163~"hi"
-    - 164~165~match: 166~"bye != '' && hi == ''"
-      167~decision: 168~"policy.acme.depart"
-      169~output: 170~"bye"
-    - 171~172~match: 173~"hi != '' && bye != ''"
-      174~decisions:175~
-        - 176~177~decision: 178~"policy.acme.welcome"
-          179~output: 180~"hi"
-        - 181~182~decision: 183~"policy.acme.depart"
-          184~output: 185~"bye"
+    - 142~143~match: 144~"hi.startsWith(\"Goodbye\")"
+      145~message: 146~"greeting starts with a farewell word"
+      147~details: 148~"hi"
+    - 149~150~match: 151~>
+        rule.conditions.exists(expr, !compile(expr))
+      152~message: 153~"could not compile condition"
+154~evaluator:155~
+  156~terms:157~
+    158~hi: 159~"rule.greeting"
+    160~bye: 161~"rule.farewell"
+  162~productions:163~
+    - 164~165~match: 166~"hi != '' && bye == ''"
+      167~decision: 168~"policy.acme.welcome"
+      169~output: 170~"hi"
+    - 171~172~match: 173~"bye != '' && hi == ''"
+      174~decision: 175~"policy.acme.depart"
+      176~output: 177~"bye"
+    - 178~179~match: 180~"hi != '' && bye != ''"
+      181~decisions:182~
+        - 183~184~decision: 185~"policy.acme.welcome"
+          186~output: 187~"hi"
+        - 188~189~decision: 190~"policy.acme.depart"
+          191~output: 192~"bye"
