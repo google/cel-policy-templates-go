@@ -130,11 +130,11 @@ func (p *parser) parse(node *yaml.Node, ref objRef) {
 		p.reportErrorAtID(id, "unsupported yaml type: %s", node.LongTag())
 		return
 	}
-	switch modelType {
-	case model.ListType:
+	switch modelType.TypeName() {
+	case model.ListType.TypeName():
 		ref.initList()
 		p.parseList(node, ref)
-	case model.MapType:
+	case model.MapType.TypeName():
 		ref.initMap()
 		p.parseMap(node, ref)
 	default:

@@ -198,7 +198,7 @@ func (ec *envCompiler) compileFunctions(env *model.Env, funcMap *model.MapValue)
 			oName := o.Name
 			obj := ec.mapValue(o.Ref)
 			freeFunction := false
-			ns, found := obj.GetField("namespaced")
+			ns, found := obj.GetField("free_function")
 			if found {
 				freeFunction = ec.boolValue(ns.Ref)
 			}
@@ -247,19 +247,22 @@ func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *mod
 	}
 	typ, found := m.GetField("type")
 	if !found {
-		return model.NewObjectType("*error*", map[string]*model.DeclType{})
+		return model.NewObjectTypeRef("*error*")
 	}
 	typeName := ec.strValue(typ.Ref)
+	ec.validateTypeDef(dyn, typeName)
+
+	meta, metaFound := m.GetField("metadata")
+	if metaFound {
+		metaMap := ec.mapValue(meta.Ref)
+		customType, found := metaMap.GetField("custom_type")
+		if found {
+			typeName = ec.strValue(customType.Ref)
+		}
+	}
 	ot, objFound := m.GetField("properties")
 	mt, mapFound := m.GetField("additionalProperties")
 	lt, listFound := m.GetField("items")
-	if listFound && mapFound && objFound ||
-		listFound && objFound ||
-		listFound && mapFound ||
-		mapFound && objFound {
-		ec.reportErrorAtID(mt.ID, "type must only be one of 'array', 'object', or a concrete type name.")
-		return model.NewObjectType("*error*", map[string]*model.DeclType{})
-	}
 	if objFound {
 		otFields := ec.mapValue(ot.Ref)
 		otFieldMap := map[string]*model.DeclType{}
@@ -272,28 +275,18 @@ func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *mod
 		return obj
 	}
 	if mapFound {
-		if typeName != "object" {
-			ec.reportErrorAtID(
-				typ.Ref.ID, "type must be 'object' to have additionalProperties")
-		}
 		return model.NewMapType(model.StringType, ec.compileDeclType(env, mt.Ref))
 	}
 	if listFound {
-		if typeName != "array" {
-			ec.reportErrorAtID(
-				typ.Ref.ID, "type must be 'array' to have items")
-		}
 		return model.NewListType(ec.compileDeclType(env, lt.Ref))
 	}
 	declType, found := ec.reg.FindType(typeName)
 	if found {
 		return declType
 	}
-	declType, found = model.SchemaTypeToDeclType(typeName)
-	if found {
-		return declType
-	}
-	return model.NewObjectTypeRef(typeName)
+	schema := model.NewOpenAPISchema()
+	ec.compileOpenAPISchema(dyn, schema)
+	return schema.DeclType()
 }
 
 type instanceCompiler struct {
@@ -433,8 +426,6 @@ func (tc *templateCompiler) compile() (*model.Template, *cel.Issues) {
 	if found {
 		schema := model.NewOpenAPISchema()
 		tc.compileOpenAPISchema(schemaDef.Ref, schema)
-		// TODO: attempt schema type unification post-compile
-		// hashSchema(ctmpl.RuleSchema)
 		var err error
 		ctmpl.RuleTypes, err = model.NewRuleTypes(
 			ctmpl.Metadata.Name,
@@ -921,9 +912,11 @@ func (tc *templateCompiler) newEnv(name string, ctmpl *model.Template) (*cel.Env
 	if ctmpl.RuleTypes == nil {
 		return env, nil
 	}
-	return env.Extend(
-		ctmpl.RuleTypes.EnvOptions(env.TypeProvider())...,
-	)
+	opts, err := ctmpl.RuleTypes.EnvOptions(env.TypeProvider())
+	if err != nil {
+		return nil, err
+	}
+	return env.Extend(opts...)
 }
 
 type dynCompiler struct {
@@ -1034,16 +1027,6 @@ func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
 			schema.Enum = append(schema.Enum, dc.convertToPrimitive(e))
 		}
 	}
-	elem, found = m.GetField("metadata")
-	if found {
-		meta := dc.mapValue(elem.Ref)
-		for _, mf := range meta.Fields {
-			val := dc.strValue(mf.Ref)
-			if len(val) != 0 {
-				schema.Metadata[mf.Name] = string(val)
-			}
-		}
-	}
 	elem, found = m.GetField("required")
 	if found {
 		reqs := dc.listValue(elem.Ref)
@@ -1073,42 +1056,56 @@ func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
 	if found {
 		schema.DefaultValue = dc.convertToSchemaType(elem.Ref.ID, elem.Ref.Value, schema)
 	}
-
-	dc.validateOpenAPISchema(dyn, schema)
+	elem, found = m.GetField("metadata")
+	if found {
+		meta := dc.mapValue(elem.Ref)
+		for _, mf := range meta.Fields {
+			val := dc.strValue(mf.Ref)
+			schema.Metadata[mf.Name] = val
+			if mf.Name == "custom_type" &&
+				(schema.Type != "object" || schema.AdditionalProperties != nil) {
+				dc.reportErrorAtID(
+					mf.Ref.ID,
+					"custom type may not be specified on non-object schema element")
+			}
+		}
+	}
+	dc.validateTypeDef(dyn, schema.Type)
 }
 
-func (dc *dynCompiler) validateOpenAPISchema(dyn *model.DynValue, schema *model.OpenAPISchema) {
+func (dc *dynCompiler) validateTypeDef(dyn *model.DynValue, typeName string) {
 	m := dc.mapValue(dyn)
 	p, hasProps := m.GetField("properties")
 	ap, hasAdditionalProps := m.GetField("additionalProperties")
+	_, hasItems := m.GetField("items")
 
 	if hasProps && hasAdditionalProps {
 		dc.reportErrorAtID(ap.Ref.ID,
-			"invalid schema. properties set, additionalProperties must not be set.")
+			"invalid type. properties set, additionalProperties must not be set.")
 	}
-	if hasProps && schema.Type != "object" {
+	if hasProps && typeName != "object" {
 		dc.reportErrorAtID(p.Ref.ID,
-			"invalid schema. properties set, expected object type, found: %s.",
-			schema.Type)
+			"invalid type. properties set, expected object type, found: %s.",
+			typeName)
 	}
-	if hasAdditionalProps && schema.Type != "object" {
+	if hasAdditionalProps && typeName != "object" {
 		dc.reportErrorAtID(ap.Ref.ID,
-			"invalid schema. additionalProperties set, expected object type, found: %s.",
-			schema.Type)
+			"invalid type. additionalProperties set, expected object type, found: %s.",
+			typeName)
 	}
-	if schema.Items != nil {
-		if schema.Type != "array" {
+	if hasItems {
+		if typeName != "array" {
 			dc.reportErrorAtID(dyn.ID,
-				"invalid schema. items set, expected array type, found: %s.",
-				schema.Type)
+				"invalid type. items set, expected array type, found: %s.",
+				typeName)
 		}
 		if hasProps {
 			dc.reportErrorAtID(p.Ref.ID,
-				"invalid schema. items set, properties must not be set.")
+				"invalid type. items set, properties must not be set.")
 		}
 		if hasAdditionalProps {
 			dc.reportErrorAtID(ap.Ref.ID,
-				"invalid schema. items set, additionalProperties must not be set.")
+				"invalid type. items set, additionalProperties must not be set.")
 		}
 	}
 }

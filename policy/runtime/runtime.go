@@ -328,9 +328,11 @@ func (t *Template) newEnv(name string) (*cel.Env, error) {
 	if t.mdl.RuleTypes == nil {
 		return env, nil
 	}
-	return env.Extend(
-		t.mdl.RuleTypes.EnvOptions(env.TypeProvider())...,
-	)
+	opts, err := t.mdl.RuleTypes.EnvOptions(env.TypeProvider())
+	if err != nil {
+		return nil, err
+	}
+	return env.Extend(opts...)
 }
 
 type evaluator struct {

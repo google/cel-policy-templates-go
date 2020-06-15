@@ -178,7 +178,11 @@ func TestTypes_RuleTypes(t *testing.T) {
 		t.Error("got CEL rule value of nil, wanted non-nil")
 	}
 
-	ruleEnv, err := stdEnv.Extend(rt.EnvOptions(stdEnv.TypeProvider())...)
+	opts, err := rt.EnvOptions(stdEnv.TypeProvider())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ruleEnv, err := stdEnv.Extend(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
