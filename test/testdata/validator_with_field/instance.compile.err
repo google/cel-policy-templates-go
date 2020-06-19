@@ -1,0 +1,27 @@
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:20:13: album name is too long. details: ok computer
+ |   - album: "ok computer"
+ | ............^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:22:7: too many genres.
+ |       - "Alternative rock"
+ | ......^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:27:20: only albums released before 2000 are supported. details: seconds:863395200
+ |     release_date: "1997-05-12T00:00:00Z"
+ | ...................^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:30:13: artist bio must not be empty. details:
+ |       bio: ""
+ | ............^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:32:24: album must not contain forbidden song
+ |       forbidden_song: "lyrics"
+ | .......................^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:33:5: only albums released before 2000 are supported. details:
+ |   - album: "I might be wrong"
+ | ....^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:33:5: artist bio must not be empty. details:
+ |   - album: "I might be wrong"
+ | ....^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:33:13: album name is too long. details: I might be wrong
+ |   - album: "I might be wrong"
+ | ............^
+ERROR: ../../test/testdata/validator_with_field/instance.yaml:35:7: too many genres.
+ |       - "Alternative rock"
+ | ......^

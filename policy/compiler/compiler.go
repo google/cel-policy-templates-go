@@ -476,7 +476,7 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.T
 	}
 	prods, found := val.GetField("productions")
 	if found {
-		tc.compileValidatorOutputDecisions(prods.Ref, productionsEnv, validator)
+		tc.compileValidatorOutputDecisions(prods.Ref, productionsEnv, validator, ctmpl)
 	} else {
 		// TODO: generate a warning, but not an error.
 	}
@@ -484,7 +484,7 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.T
 }
 
 func (tc *templateCompiler) compileValidatorOutputDecisions(
-	prods *model.DynValue, env *cel.Env, ceval *model.Evaluator) {
+	prods *model.DynValue, env *cel.Env, ceval *model.Evaluator, ctmpl *model.Template) {
 	productions := tc.listValue(prods)
 	if len(productions.Entries) > tc.limits.ValidatorProductionLimit {
 		reportID := productions.Entries[tc.limits.ValidatorProductionLimit].ID
@@ -503,6 +503,11 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(
 				checker.FormatCheckedType(matchAst.ResultType()))
 		}
 		rule := model.NewProduction(match.Ref.ID, matchAst)
+		fieldTxt := tc.mapFieldStringValueOrEmpty(p, "field")
+		if fieldTxt != "" {
+			field, _ := prod.GetField("field")
+			tc.validateValidatorField(fieldTxt, field.Ref.ID, ctmpl)
+		}
 		msg, found := prod.GetField("message")
 		msgTxt := "''"
 		if found {
@@ -520,11 +525,16 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(
 			}
 		}
 		// Note: this format will not yet work with structured outputs for the validator.
-		outTxt := fmt.Sprintf("{'message': %s}", msgTxt)
+		var outb strings.Builder
+		outb.WriteString(fmt.Sprintf("{'message': %s", msgTxt))
 		if detTxt != "" {
-			outTxt = fmt.Sprintf("{'message': %s, 'details': %s}", msgTxt, detTxt)
+			outb.WriteString(fmt.Sprintf(", 'details': %s", detTxt))
 		}
-		outDyn := model.NewDynValue(p.ID, outTxt)
+		if fieldTxt != "" {
+			outb.WriteString(fmt.Sprintf(", 'field': '%s'", fieldTxt))
+		}
+		outb.WriteString("}")
+		outDyn := model.NewDynValue(p.ID, outb.String())
 		ast := tc.compileExpr(outDyn, env, true)
 		outDec := model.NewDecision()
 		outDec.Name = "policy.invalid"
@@ -533,6 +543,16 @@ func (tc *templateCompiler) compileValidatorOutputDecisions(
 		prodRules[i] = rule
 	}
 	ceval.Productions = prodRules
+}
+
+func (tc *templateCompiler) validateValidatorField(fieldTxt string, reportID int64, ctmpl *model.Template) {
+	fullPath := ctmpl.Metadata.Name + "." + fieldTxt
+	lastIdx := strings.LastIndex(fullPath, ".")
+	typeName, fieldName := fullPath[:lastIdx], fullPath[lastIdx+1:]
+	_, found := ctmpl.RuleTypes.FindFieldType(typeName, fieldName)
+	if !found {
+		tc.reportErrorAtID(reportID, "invalid field")
+	}
 }
 
 func (tc *templateCompiler) compileEvaluator(dyn *model.DynValue, ctmpl *model.Template) {

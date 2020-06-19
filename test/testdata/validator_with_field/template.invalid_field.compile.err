@@ -1,0 +1,6 @@
+ERROR: ../../test/testdata/validator_with_field/template.invalid_field.yaml:32:14: invalid field
+ |       field: albumwithatypo
+ | .............^
+ERROR: ../../test/testdata/validator_with_field/template.invalid_field.yaml:36:14: invalid field
+ |       field: genres[10]
+ | .............^

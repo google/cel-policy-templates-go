@@ -154,6 +154,7 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 			"multiple decisions reported, expected only one. values=%v",
 			decs)
 	}
+	ruleMap := t.constructRulesMap(inst.Rules)
 	for _, d := range decs {
 		listDec := d.(*model.ListDecisionValue)
 		vals := listDec.Values()
@@ -168,6 +169,18 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 			if err != nil {
 				errs.ReportError(loc, err.Error())
 			}
+			f, found := violationMap["field"]
+			if found {
+				field, ok := f.(types.String)
+				if ok {
+					rule := ruleMap[rules[i]]
+					fieldID := rule.GetFieldID(string(field))
+					fieldLoc, found := inst.Info.LocationByID(fieldID)
+					if found {
+						loc = fieldLoc
+					}
+				}
+			}
 			det, found := violationMap["details"]
 			if found {
 				errs.ReportError(loc, "%s. details: %v", violationMap["message"], det)
@@ -178,6 +191,14 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 	}
 	iss := cel.NewIssues(errs)
 	return iss
+}
+
+func (t *Template) constructRulesMap(rules []model.Rule) map[int64]model.Rule {
+	ruleMap := make(map[int64]model.Rule, len(rules))
+	for _, rule := range rules {
+		ruleMap[rule.GetID()] = rule
+	}
+	return ruleMap
 }
 
 func (t *Template) evalInternal(eval *evaluator,

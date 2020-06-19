@@ -15,6 +15,10 @@
 // Package model contains abstract representations of policy template and instance config objects.
 package model
 
+import (
+	"strings"
+)
+
 // NewInstance returns an empty policy instance.
 func NewInstance(info *SourceInfo) *Instance {
 	return &Instance{
@@ -94,6 +98,7 @@ func (*ExpressionSelector) isSelector() {}
 type Rule interface {
 	isRule()
 	GetID() int64
+	GetFieldID(field string) int64
 }
 
 // CustomRule embeds the DynValue and represents rules whose type definition is provided in the
@@ -108,3 +113,29 @@ func (*CustomRule) isRule() {}
 func (c *CustomRule) GetID() int64 {
 	return c.ID
 }
+
+// GetFieldID returns the parse-time generated ID pointing to the rule field. If field is not
+// specified or is not found, falls back to the ID of the rule node.
+func (c *CustomRule) GetFieldID(field string) int64 {
+	if field == "" {
+		return c.GetID()
+	}
+	paths := strings.Split(field, ".")
+	val := c.DynValue
+	for _, path := range paths {
+		var f *Field
+		var ok bool
+		switch v := val.Value.(type) {
+		case *ObjectValue:
+			f, ok = v.GetField(path)
+		case *MapValue:
+			f, ok = v.GetField(path)
+		}
+		if !ok {
+			return c.GetID()
+		}
+	  val = f.Ref
+	}
+	return val.ID
+}
+
