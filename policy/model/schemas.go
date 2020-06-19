@@ -244,6 +244,8 @@ properties:
             match:
               type: string
               default: true
+            field:
+              type: string
             message:
               type: string
             details: {}

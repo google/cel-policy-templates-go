@@ -1,0 +1,43 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: validator_with_invalid_field
+description: Policy with a validator that contains field.
+schema:
+  type: object
+  properties:
+    album:
+      type: string
+    genres:
+      type: array
+      items:
+          type: string
+validator:
+  productions:
+    - match: rule.album == ''
+      field: albumwithatypo
+      message: album must not be empty
+      details: rule.album
+    - match: rule.genres.size() > 10
+      field: genres[10]
+      message: too many genres
+      details: rule.genres
+evaluator:
+  productions:
+    - match: rule.album != ''
+      decision: policy.report
+      output: rule.album
