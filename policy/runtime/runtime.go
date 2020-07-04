@@ -17,6 +17,7 @@ package runtime
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 
@@ -67,7 +68,7 @@ func NewTemplate(res model.Resolver,
 				"validator production limit set to %d, but %d found",
 				t.limits.ValidatorProductionLimit, prodCnt)
 		}
-		val, err := t.newEvaluator(mdl.Validator, t.exprOpts...)
+		val, err := t.newEvaluator(mdl.Validator, -1, t.exprOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +87,7 @@ func NewTemplate(res model.Resolver,
 				"evaluator production limit set to %d, but %d found",
 				t.limits.EvaluatorProductionLimit, prodCnt)
 		}
-		eval, err := t.newEvaluator(mdl.Evaluator, t.exprOpts...)
+		eval, err := t.newEvaluator(mdl.Evaluator, t.limits.EvaluatorExprCostLimit, t.exprOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +135,7 @@ func (t *Template) Name() string {
 // Validate checks the content of an instance to ensure it conforms with the validation rules
 // present within the template, if any.
 func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues {
-	if t.validator == nil {
+	if t == nil || t.validator == nil {
 		return nil
 	}
 	errs := common.NewErrors(src)
@@ -237,6 +238,7 @@ func (t *Template) evalInternal(eval *evaluator,
 }
 
 func (t *Template) newEvaluator(mdl *model.Evaluator,
+	exprCostLimit int,
 	evalOpts ...cel.ProgramOption) (*evaluator, error) {
 	terms := make(map[string]cel.Program, len(mdl.Terms))
 	evalOpts = append(evalOpts, cel.EvalOptions(cel.OptOptimize))
@@ -250,6 +252,7 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 			"range limit set to %d, but %d found",
 			t.limits.RangeLimit, rangeCnt)
 	}
+	var cost int64
 	ranges := make([]iterable, rangeCnt)
 	for i, r := range mdl.Ranges {
 		rangeType := r.Expr.ResultType()
@@ -257,6 +260,8 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		if err != nil {
 			return nil, err
 		}
+		_, max := cel.EstimateCost(rangePrg)
+		cost = addAndCap(cost, max)
 		switch rangeType.TypeKind.(type) {
 		case *exprpb.Type_MapType_:
 			mr := &mapRange{
@@ -280,6 +285,8 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 			return nil, err
 		}
 		terms[t.Name] = term
+		_, max := cel.EstimateCost(term)
+		cost = addAndCap(cost, max)
 	}
 
 	prods := make([]*prod, len(mdl.Productions))
@@ -290,6 +297,8 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		if err != nil {
 			return nil, err
 		}
+		_, max := cel.EstimateCost(match)
+		cost = addAndCap(cost, max)
 		decCnt := len(p.Decisions)
 		if decCnt > t.limits.EvaluatorDecisionLimit {
 			return nil, fmt.Errorf(
@@ -302,6 +311,8 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 			if err != nil {
 				return nil, err
 			}
+			_, max := cel.EstimateCost(dec)
+			cost = addAndCap(cost, max)
 			slot, found := decSlotMap[d.Name]
 			if !found {
 				slot = nextSlot
@@ -324,6 +335,12 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 			decisions: decs,
 		}
 	}
+	// Cost is greater than the limit.
+	if exprCostLimit >= 0 && cost > int64(exprCostLimit) {
+		return nil, fmt.Errorf(
+			"evaluator expression cost limit set to %d, but %d found",
+			exprCostLimit, cost)
+	}
 	eval := &evaluator{
 		mdl:     mdl,
 		env:     env,
@@ -333,6 +350,15 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		actPool: newEvalActivationPool(terms),
 	}
 	return eval, nil
+}
+
+// addAndCap returns the max int64 if the cost overflows after the addition.
+func addAndCap(cost, addend int64) int64 {
+	result := cost + addend
+	if result < 0 {
+		return math.MaxInt64
+	}
+	return result
 }
 
 func (t *Template) newEnv(name string) (*cel.Env, error) {

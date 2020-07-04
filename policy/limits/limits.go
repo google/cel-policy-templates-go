@@ -26,6 +26,7 @@ func NewLimits() *Limits {
 		ValidatorTermLimit:       40,
 		ValidatorProductionLimit: 20,
 		RuleLimit:                10,
+		EvaluatorExprCostLimit:   -1,
 	}
 }
 
@@ -73,5 +74,10 @@ type Limits struct {
 	// Defaults to 10.
 	RuleLimit int
 
-	// TODO: expression size limits
+	// EvaluatorExprCostLimit limits the total cost of expressions which may appear within a
+	// template evaluator. The cost is for evaluating the expressions and is computed heuristically.
+	// A negative limit value is equivalent to unlimited.
+
+	// Defaults to -1.
+	EvaluatorExprCostLimit int
 }

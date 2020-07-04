@@ -1,3 +1,4 @@
-ERROR: ../../test/testdata/limit/instance.yaml:24:5: rule limit set to 4, but 5 found
+ERROR: ../../test/testdata/limit/instance.yaml:-1:0: evaluator expression cost limit set to 100, but 9223372036854775807 found
+ERROR: ../../test/testdata/limit/instance.yaml:25:5: rule limit set to 4, but 5 found
  |   - greeting: "Good night"
  | ....^
