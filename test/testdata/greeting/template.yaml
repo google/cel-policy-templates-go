@@ -106,3 +106,5 @@ evaluator:
           output: hi
         - decision: policy.acme.depart
           output: bye
+        - decision: policy.acme.tracing
+          output: rule.details

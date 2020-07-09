@@ -103,7 +103,7 @@ var (
 				},
 			},
 		},
-		// dependent ranges
+		// Dependent ranges
 		{
 			name:   "dependent_ranges_behavior",
 			policy: "dependent_ranges",
@@ -116,7 +116,28 @@ var (
 				RangeLimit(2),
 			},
 		},
-		// multiple ranges
+		// Greeting
+		{
+			name:   "greeting_details",
+			policy: "greeting",
+			input: map[string]interface{}{
+				"resource.labels": map[string]string{
+					"env": "prod",
+				},
+			},
+			outputs: []interface{}{
+				"Hello",
+				"You survived Y2K!",
+				"Happy New Year's!",
+				"Farewell",
+				"Aloha",
+				map[string][]int64{
+					"gone": []int64{1999},
+					"next": []int64{2038},
+				},
+			},
+		},
+		// Multiple ranges
 		{
 			name:   "multiple_ranges_behavior",
 			policy: "multiple_ranges",
@@ -441,14 +462,18 @@ func TestEngine(t *testing.T) {
 				tt.Error(err)
 			}
 			for _, dec := range decisions {
+				var anyEq bool
 				for _, out := range tst.outputs {
 					eq, err := decisionMatchesOutput(dec, out)
 					if err != nil {
 						tt.Fatalf("out type: %v, err: %v", dec, err)
 					}
-					if !eq {
-						tt.Errorf("decision %v missing output: %v", dec, out)
+					if eq {
+						anyEq = true
 					}
+				}
+				if !anyEq {
+					tt.Errorf("decision %v missing output: %v", dec, tst.outputs)
 				}
 			}
 			if len(tst.outputs) != 0 && len(decisions) == 0 {
@@ -566,18 +591,12 @@ func decisionMatchesOutput(dec model.DecisionValue, out interface{}) (bool, erro
 	switch dv := dec.(type) {
 	case *model.BoolDecisionValue:
 		ntv, err := dv.Value().ConvertToNative(reflect.TypeOf(out))
-		if err != nil {
-			return false, err
-		}
-		return reflect.DeepEqual(ntv, out), nil
+		return err == nil && reflect.DeepEqual(ntv, out), nil
 	case *model.ListDecisionValue:
 		vals := dv.Values()
 		for _, val := range vals {
 			ntv, err := val.ConvertToNative(reflect.TypeOf(out))
-			if err != nil {
-				return false, err
-			}
-			if reflect.DeepEqual(ntv, out) {
+			if err == nil && reflect.DeepEqual(ntv, out) {
 				return true, nil
 			}
 		}

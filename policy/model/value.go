@@ -222,6 +222,69 @@ func (sv *structValue) AddField(field *Field) {
 	sv.fieldMap[field.Name] = field
 }
 
+// ConvertToNative converts the MapValue type to a native go types.
+func (sv *structValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	if typeDesc.Kind() != reflect.Map &&
+		typeDesc.Kind() != reflect.Struct &&
+		typeDesc.Kind() != reflect.Ptr &&
+		typeDesc.Kind() != reflect.Interface {
+		return nil, fmt.Errorf("type conversion error from object to '%v'", typeDesc)
+	}
+
+	// TODO: Special case handling for protobuf Struct and Any if needed
+
+	// Unwrap pointers, but track their use.
+	isPtr := false
+	if typeDesc.Kind() == reflect.Ptr {
+		tk := typeDesc
+		typeDesc = typeDesc.Elem()
+		if typeDesc.Kind() == reflect.Ptr {
+			return nil, fmt.Errorf("unsupported type conversion to '%v'", tk)
+		}
+		isPtr = true
+	}
+
+	if typeDesc.Kind() == reflect.Map {
+		keyType := typeDesc.Key()
+		if keyType.Kind() != reflect.String && keyType.Kind() != reflect.Interface {
+			return nil, fmt.Errorf("object fields cannot be converted to type '%v'", keyType)
+		}
+		elemType := typeDesc.Elem()
+		sz := len(sv.fieldMap)
+		ntvMap := reflect.MakeMapWithSize(typeDesc, sz)
+		for name, val := range sv.fieldMap {
+			refVal, err := val.Ref.ConvertToNative(elemType)
+			if err != nil {
+				return nil, err
+			}
+			ntvMap.SetMapIndex(reflect.ValueOf(name), reflect.ValueOf(refVal))
+		}
+		return ntvMap.Interface(), nil
+	}
+
+	if typeDesc.Kind() == reflect.Struct {
+		ntvObjPtr := reflect.New(typeDesc)
+		ntvObj := ntvObjPtr.Elem()
+		for name, val := range sv.fieldMap {
+			f := ntvObj.FieldByName(name)
+			if !f.IsValid() {
+				return nil, fmt.Errorf("type conversion error, no such field %s in type %v",
+					name, typeDesc)
+			}
+			fv, err := val.Ref.ConvertToNative(f.Type())
+			if err != nil {
+				return nil, err
+			}
+			f.Set(reflect.ValueOf(fv))
+		}
+		if isPtr {
+			return ntvObjPtr.Interface(), nil
+		}
+		return ntvObj.Interface(), nil
+	}
+	return nil, fmt.Errorf("type conversion error from object to '%v'", typeDesc)
+}
+
 // GetField returns a MapField by name if one exists.
 func (sv *structValue) GetField(name string) (*Field, bool) {
 	field, found := sv.fieldMap[name]
@@ -252,13 +315,6 @@ func NewObjectValue(sType *DeclType) *ObjectValue {
 type ObjectValue struct {
 	*structValue
 	objectType *DeclType
-}
-
-// ConvertToNative is an implementation of the CEL ref.Val interface method used to convert from
-// CEL types to Go-native struct like types.
-func (o *ObjectValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	// TODO: Implement support for object conversion akin to what's done for maps.
-	return nil, fmt.Errorf("object conversion to native types not yet supported")
 }
 
 // ConvertToType is an implementation of the CEL ref.Val interface method.
@@ -357,13 +413,6 @@ func (m *MapValue) Contains(key ref.Val) ref.Val {
 		return v
 	}
 	return celBool(found)
-}
-
-// ConvertToNative converts the MapValue type to a native go type.s
-func (m *MapValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	// TODO: Implement map conversion logic similar to what's supported within CEL's
-	// default map type.
-	return nil, fmt.Errorf("map conversion to native types not yet supported")
 }
 
 // ConvertToType converts the MapValue to another CEL type, if possible.

@@ -246,6 +246,7 @@ func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *mod
 		return model.NewTypeParam(typeParam)
 	}
 	typ, found := m.GetField("type")
+	// TODO: make sure that '$ref' is considered as well.
 	if !found {
 		return model.NewObjectTypeRef("*error*")
 	}
@@ -271,6 +272,7 @@ func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *mod
 			otFieldMap[f.Name] = fType
 		}
 		obj := model.NewObjectType(typeName, otFieldMap)
+		// TODO: perhaps shift the type accumulation out of this section of the env.
 		env.Types[typeName] = obj
 		return obj
 	}
