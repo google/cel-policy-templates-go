@@ -156,6 +156,13 @@ func Test_MapValue_ConvertToNative(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
+=======
+func Test_DynValue_ConvertToNative(t *testing.T) {
+
+}
+
+>>>>>>> 2c3b098... Support for list, map, object type conversion to native types
 type tstStruct struct {
 	Test  uint64
 	Check uint64
