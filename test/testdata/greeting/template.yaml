@@ -35,6 +35,9 @@ schema:
     end_date:
       type: string
       format: date-time
+    duration:
+      type: string
+      format: google-duration
     details:
       type: object
       default: {gone: [], next: []}
@@ -93,6 +96,8 @@ evaluator:
   terms:
     hi: rule.greeting
     bye: rule.farewell
+    after: >
+      rule.duration + duration('5m')
   productions:
     - match: hi != '' && bye == ''
       decision: policy.acme.welcome
@@ -108,3 +113,5 @@ evaluator:
           output: bye
         - decision: policy.acme.tracing
           output: rule.details
+        - decision: policy.acme.duration
+          output: after

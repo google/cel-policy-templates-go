@@ -27,6 +27,7 @@ import (
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/interpreter"
 
+	dpb "github.com/golang/protobuf/ptypes/duration"
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
@@ -135,7 +136,9 @@ var (
 					"gone": []int64{1999},
 					"next": []int64{2038},
 				},
+				&dpb.Duration{Seconds: 300},
 			},
+			opts: []EngineOption{EvaluatorDecisionLimit(4)},
 		},
 		// Multiple ranges
 		{
