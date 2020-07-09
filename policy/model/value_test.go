@@ -156,10 +156,6 @@ func Test_MapValue_ConvertToNative(t *testing.T) {
 	}
 }
 
-func Test_DynValue_ConvertToNative(t *testing.T) {
-
-}
-
 type tstStruct struct {
 	Test  uint64
 	Check uint64
