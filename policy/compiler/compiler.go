@@ -931,6 +931,16 @@ func (tc *templateCompiler) newEnv(name string, ctmpl *model.Template) (*cel.Env
 	if !found {
 		return nil, fmt.Errorf("no such environment: %s", name)
 	}
+	metadataOpt :=
+		cel.Declarations(
+			decls.NewVar("template", decls.NewMapType(decls.String, decls.String)),
+			decls.NewVar("instance", decls.NewMapType(decls.String, decls.String)),
+		)
+	env, err := env.Extend(metadataOpt)
+	if err != nil {
+		return nil, err
+	}
+
 	if ctmpl.RuleTypes == nil {
 		return env, nil
 	}
