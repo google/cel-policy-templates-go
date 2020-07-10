@@ -23,6 +23,7 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
 	"github.com/google/cel-policy-templates-go/test"
+	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/cel"
 )
@@ -36,11 +37,12 @@ func TestCompiler(t *testing.T) {
 
 	stdEnv, _ := cel.NewEnv(test.Decls)
 	reg := model.NewRegistry(stdEnv)
+	reg.SetSchema("#address_type", addressSchema)
 	limits := limits.NewLimits()
 	limits.RangeLimit = 1
 	limits.EvaluatorTermLimit = 15
 	limits.EvaluatorProductionLimit = 10
-	limits.EvaluatorDecisionLimit = 3
+	limits.EvaluatorDecisionLimit = 4
 	limits.ValidatorTermLimit = 20
 	limits.ValidatorProductionLimit = 15
 	limits.RuleLimit = 4
@@ -96,8 +98,31 @@ func cmp(a string, e string) bool {
 	return a == e
 }
 
-var env *cel.Env
+var (
+	env *cel.Env
+
+	addressSchema     *model.OpenAPISchema
+	addressSchemaYaml = `
+type: object
+properties:
+  street:
+    type: string
+  city:
+    type: string
+  state:
+    type: string
+  country:
+    type: string
+  zip:
+    type: integer
+`
+)
 
 func init() {
 	env, _ = cel.NewEnv(test.Decls)
+	addressSchema = model.NewOpenAPISchema()
+	err := yaml.Unmarshal([]byte(addressSchemaYaml), addressSchema)
+	if err != nil {
+		panic(err)
+	}
 }

@@ -46,6 +46,7 @@ type OpenAPISchema struct {
 	Title                string                    `yaml:"title,omitempty"`
 	Description          string                    `yaml:"description,omitempty"`
 	Type                 string                    `yaml:"type,omitempty"`
+	TypeParam            string                    `yaml:"type_param,omitempty"`
 	TypeRef              string                    `yaml:"$ref,omitempty"`
 	DefaultValue         interface{}               `yaml:"default,omitempty"`
 	Enum                 []interface{}             `yaml:"enum,omitempty"`
@@ -59,6 +60,9 @@ type OpenAPISchema struct {
 
 // DeclType returns the CEL Policy Templates type name associated with the schema element.
 func (s *OpenAPISchema) DeclType() *DeclType {
+	if s.TypeParam != "" {
+		return NewTypeParam(s.TypeParam)
+	}
 	declType, found := openAPISchemaTypes[s.Type]
 	if !found {
 		return NewObjectTypeRef("*error*")
@@ -86,7 +90,9 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 		switch s.Format {
 		case "byte", "binary":
 			return BytesType
-		case "date", "date-time":
+		case "google-duration":
+			return DurationType
+		case "date", "date-time", "google-datetime":
 			return TimestampType
 		}
 	}
@@ -120,13 +126,6 @@ var (
 	// AnySchema indicates that the value may be of any type.
 	AnySchema *OpenAPISchema
 
-	// DeclTypeSchema is used to declare a CEL type within an Environment.
-	//
-	// The primary difference between the expressive power of the OpenAPI Schema and the CEL Type
-	// is that the CEL Type support parameterized types and non-JSON types as possible type
-	// definitions.
-	declTypeSchema *OpenAPISchema
-
 	// EnvSchema defines the schema for CEL environments referenced within Policy Templates.
 	envSchema *OpenAPISchema
 
@@ -138,16 +137,18 @@ var (
 	templateSchema *OpenAPISchema
 
 	openAPISchemaTypes map[string]*DeclType = map[string]*DeclType{
-		"boolean":   BoolType,
-		"number":    DoubleType,
-		"integer":   IntType,
-		"null":      NullType,
-		"string":    StringType,
-		"date":      TimestampType,
-		"date-time": TimestampType,
-		"array":     ListType,
-		"object":    MapType,
-		"":          AnyType,
+		"boolean":         BoolType,
+		"number":          DoubleType,
+		"integer":         IntType,
+		"null":            NullType,
+		"string":          StringType,
+		"google-duration": DurationType,
+		"google-datetime": TimestampType,
+		"date":            TimestampType,
+		"date-time":       TimestampType,
+		"array":           ListType,
+		"object":          MapType,
+		"":                AnyType,
 	}
 )
 
@@ -158,6 +159,8 @@ properties:
   $ref:
     type: string
   type:
+    type: string
+  type_param:  # prohibited unless used within an environment.
     type: string
   format:
     type: string
@@ -353,33 +356,6 @@ properties:
       $ref: "#templateRuleSchema"
 `
 
-	// TODO: switch the type-name information into metadata field so that env type declarations
-	// and rule schema declarations can be used interchangably.
-	declTypeSchemaYaml = `
-type: object
-properties:
-  description:
-    type: string
-  type:
-    type: string
-  format:
-    type: string
-  metadata:
-    type: object
-    additionalProperties:
-      type: string
-  type_param:
-    type: string
-  items:
-    $ref: "#declTypeSchema"
-  properties:
-    type: object
-    additionalProperties:
-      $ref: "#declTypeSchema"
-  additionalProperties:
-    $ref: "#declTypeSchema"
-`
-
 	// TODO: support subsetting of built-in functions and macros
 	// TODO: support naming anonymous types within rule schema and making them accessible to
 	// declarations.
@@ -396,7 +372,7 @@ properties:
   variables:
     type: object
     additionalProperties:
-      $ref: "#declTypeSchema"
+      $ref: "#openAPISchema"
   functions:
     type: object
     properties:
@@ -414,9 +390,9 @@ properties:
               args:
                 type: array
                 items:
-                  $ref: "#declTypeSchema"
+                  $ref: "#openAPISchema"
               return:
-                $ref: "#declTypeSchema"
+                $ref: "#openAPISchema"
 `
 )
 
@@ -426,12 +402,6 @@ func init() {
 	instanceSchema = NewOpenAPISchema()
 	in := strings.ReplaceAll(instanceSchemaYaml, "\t", "  ")
 	err := yaml.Unmarshal([]byte(in), instanceSchema)
-	if err != nil {
-		panic(err)
-	}
-	declTypeSchema = NewOpenAPISchema()
-	in = strings.ReplaceAll(declTypeSchemaYaml, "\t", "  ")
-	err = yaml.Unmarshal([]byte(in), declTypeSchema)
 	if err != nil {
 		panic(err)
 	}

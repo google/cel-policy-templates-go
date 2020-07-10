@@ -35,72 +35,81 @@
     45~end_date:46~
       47~type: 48~"string"
       49~format: 50~"date-time"
-    51~details:52~
-      53~type: 54~"object"
-      55~default:56~{57~gone: 58~[], 59~next: 60~[]}
-      61~additionalProperties:62~
-        63~type: 64~"array"
-        65~items:66~
-          67~type: 68~"integer"
-    69~conditions:70~
-      71~type: 72~"array"
-      73~items:74~
-        75~type: 76~"object"
-        77~metadata:78~
-          79~custom_type: 80~"google.type.Expr"
-          81~expr_result_type: 82~"boolean"
-        83~required:84~
-          - 85~"expression"
-          - 86~"description"
-        87~properties:88~
-          89~expression:90~
-            91~type: 92~"string"
-          93~title:94~
-            95~type: 96~"string"
-          97~description:98~
-            99~type: 100~"string"
-          101~location:102~
-            103~type: 104~"string"
-105~validator:106~
-  107~environment: 108~"greeting.v1alpha1.Environment"
-  109~terms:110~
-    111~hi: 112~"rule.greeting"
-    113~bye: 114~"rule.farewell"
-    115~both: 116~"hi == 'aloha' && bye == 'aloha'"
-    117~doubleVal: 118~-42.42
-    119~emptyNullVal: 120~
-    121~emptyQuotedVal: 122~!txt ""
-    123~falseVal: 124~false
-    125~intVal: 126~-42
-    127~nullVal: 128~
-    129~plainTxtVal: 130~!txt "plain text"
-    131~trueVal: 132~true
-    133~uintVal: 134~9223372036854775808
-  135~productions:136~
-    - 137~138~match: 139~"hi == '' && bye == ''"
-      140~message: 141~>
+    51~duration:52~
+      53~type: 54~"string"
+      55~format: 56~"google-duration"
+    57~details:58~
+      59~type: 60~"object"
+      61~default:62~{63~gone: 64~[], 65~next: 66~[]}
+      67~additionalProperties:68~
+        69~type: 70~"array"
+        71~items:72~
+          73~type: 74~"integer"
+    75~conditions:76~
+      77~type: 78~"array"
+      79~items:80~
+        81~type: 82~"object"
+        83~metadata:84~
+          85~custom_type: 86~"google.type.Expr"
+          87~expr_result_type: 88~"boolean"
+        89~required:90~
+          - 91~"expression"
+          - 92~"description"
+        93~properties:94~
+          95~expression:96~
+            97~type: 98~"string"
+          99~title:100~
+            101~type: 102~"string"
+          103~description:104~
+            105~type: 106~"string"
+          107~location:108~
+            109~type: 110~"string"
+111~validator:112~
+  113~environment: 114~"greeting.v1alpha1.Environment"
+  115~terms:116~
+    117~hi: 118~"rule.greeting"
+    119~bye: 120~"rule.farewell"
+    121~both: 122~"hi == 'aloha' && bye == 'aloha'"
+    123~doubleVal: 124~-42.42
+    125~emptyNullVal: 126~
+    127~emptyQuotedVal: 128~!txt ""
+    129~falseVal: 130~false
+    131~intVal: 132~-42
+    133~nullVal: 134~
+    135~plainTxtVal: 136~!txt "plain text"
+    137~trueVal: 138~true
+    139~uintVal: 140~9223372036854775808
+  141~productions:142~
+    - 143~144~match: 145~"hi == '' && bye == ''"
+      146~message: 147~>
         at least one of 'greeting' or 'farewell' must be a non-empty
         string
-    - 142~143~match: 144~"hi.startsWith(\"Goodbye\")"
-      145~message: 146~"greeting starts with a farewell word"
-      147~details: 148~"hi"
-    - 149~150~match: 151~>
+    - 148~149~match: 150~"hi.startsWith(\"Goodbye\")"
+      151~message: 152~"greeting starts with a farewell word"
+      153~details: 154~"hi"
+    - 155~156~match: 157~>
         rule.conditions.exists(expr, !compile(expr))
-      152~message: 153~"could not compile condition"
-154~evaluator:155~
-  156~terms:157~
-    158~hi: 159~"rule.greeting"
-    160~bye: 161~"rule.farewell"
-  162~productions:163~
-    - 164~165~match: 166~"hi != '' && bye == ''"
-      167~decision: 168~"policy.acme.welcome"
-      169~output: 170~"hi"
-    - 171~172~match: 173~"bye != '' && hi == ''"
-      174~decision: 175~"policy.acme.depart"
-      176~output: 177~"bye"
-    - 178~179~match: 180~"hi != '' && bye != ''"
-      181~decisions:182~
-        - 183~184~decision: 185~"policy.acme.welcome"
-          186~output: 187~"hi"
-        - 188~189~decision: 190~"policy.acme.depart"
-          191~output: 192~"bye"
+      158~message: 159~"could not compile condition"
+160~evaluator:161~
+  162~terms:163~
+    164~hi: 165~"rule.greeting"
+    166~bye: 167~"rule.farewell"
+    168~after: 169~>
+      rule.duration + duration('5m')
+  170~productions:171~
+    - 172~173~match: 174~"hi != '' && bye == ''"
+      175~decision: 176~"policy.acme.welcome"
+      177~output: 178~"hi"
+    - 179~180~match: 181~"bye != '' && hi == ''"
+      182~decision: 183~"policy.acme.depart"
+      184~output: 185~"bye"
+    - 186~187~match: 188~"hi != '' && bye != ''"
+      189~decisions:190~
+        - 191~192~decision: 193~"policy.acme.welcome"
+          194~output: 195~"hi"
+        - 196~197~decision: 198~"policy.acme.depart"
+          199~output: 200~"bye"
+        - 201~202~decision: 203~"policy.acme.tracing"
+          204~output: 205~"rule.details"
+        - 206~207~decision: 208~"policy.acme.duration"
+          209~output: 210~"after"

@@ -10,6 +10,6 @@ ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:101:5: term limit se
 ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:138:7: evaluator production limit set to 10, but 11 found
  |     - match: hi10 != ''
  | ......^
-ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:146:11: evaluator decision limit set to 3, but 4 found
+ERROR: ../../test/testdata/limit/template.beyond_limit.yaml:148:11: evaluator decision limit set to 4, but 5 found
  |         - decision: policy.acme.welcome
  | ..........^

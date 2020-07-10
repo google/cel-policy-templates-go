@@ -24,6 +24,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
 
+	dpb "github.com/golang/protobuf/ptypes/duration"
 	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
@@ -93,6 +94,8 @@ func (dv *DynValue) DeclType() *DeclType {
 		return UintType
 	case types.Null:
 		return NullType
+	case time.Duration:
+		return DurationType
 	case time.Time:
 		return TimestampType
 	case PlainTextValue:
@@ -137,6 +140,13 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 		return celBool(string(v) == other.Value().(string))
 	case *MultilineStringValue:
 		return celBool(v.Value == other.Value().(string))
+	case time.Duration:
+		otherDuration := other.Value().(*dpb.Duration)
+		otherDur, err := ptypes.Duration(otherDuration)
+		if err != nil {
+			return types.NewErr(err.Error())
+		}
+		return celBool(v == otherDur)
 	case time.Time:
 		otherTimestamp := other.Value().(*tpb.Timestamp)
 		otherTime, err := ptypes.Timestamp(otherTimestamp)
@@ -183,6 +193,9 @@ func exprValue(dv *DynValue) ref.Val {
 		return types.String(string(v))
 	case *MultilineStringValue:
 		return types.String(v.Value)
+	case time.Duration:
+		dbuf := ptypes.DurationProto(v)
+		return types.Duration{Duration: dbuf}
 	case time.Time:
 		tbuf, err := ptypes.TimestampProto(v)
 		if err != nil {

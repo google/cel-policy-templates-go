@@ -26,16 +26,17 @@
   - 34~35~greeting: 36~"Hello"
   - 37~38~farewell: 39~"Farewell"
   - 40~41~greeting: 42~"You survived Y2K!"
-    43~computer_greeting: 44~"WUFZIFkySyE="
-    45~start_date: 46~"2000-01-01T00:00:00Z"
-    47~end_date: 48~"2000-01-07T00:00:00Z"
-    49~details:50~
-      51~gone:52~
-        - 53~1999
-      54~next:55~[56~2038]
-  - 57~58~greeting: 59~"Happy New Year's!"
-    60~conditions:61~
-      - 62~63~description: 64~"Ring in the New Year."
-        65~expression: 66~>
+    43~farewell: 44~"Aloha"
+    45~computer_greeting: 46~"WUFZIFkySyE="
+    47~start_date: 48~"2000-01-01T00:00:00Z"
+    49~end_date: 50~"2000-01-07T00:00:00Z"
+    51~details:52~
+      53~gone:54~
+        - 55~1999
+      56~next:57~[58~2038]
+  - 59~60~greeting: 61~"Happy New Year's!"
+    62~conditions:63~
+      - 64~65~description: 66~"Ring in the New Year."
+        67~expression: 68~>
           request.time.getMonth() == 0 &&
           request.time.getDate() == 1"

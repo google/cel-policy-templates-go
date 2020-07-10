@@ -181,6 +181,7 @@ func (ec *envCompiler) compileVar(env *model.Env, name string, dyn *model.DynVal
 	if varType.TypeParam {
 		ec.reportErrorAtID(dyn.ID, "variable must not be type-param type")
 	}
+
 	v := model.NewVar(name, varType)
 	env.Vars = append(env.Vars, v)
 }
@@ -239,56 +240,30 @@ func (ec *envCompiler) compileFunctions(env *model.Env, funcMap *model.MapValue)
 }
 
 func (ec *envCompiler) compileDeclType(env *model.Env, dyn *model.DynValue) *model.DeclType {
-	m := ec.mapValue(dyn)
-	tp, found := m.GetField("type_param")
-	if found {
-		typeParam := ec.strValue(tp.Ref)
-		return model.NewTypeParam(typeParam)
-	}
-	typ, found := m.GetField("type")
-	// TODO: make sure that '$ref' is considered as well.
-	if !found {
-		return model.NewObjectTypeRef("*error*")
-	}
-	typeName := ec.strValue(typ.Ref)
-	ec.validateTypeDef(dyn, typeName)
-
-	meta, metaFound := m.GetField("metadata")
-	if metaFound {
-		metaMap := ec.mapValue(meta.Ref)
-		customType, found := metaMap.GetField("custom_type")
-		if found {
-			typeName = ec.strValue(customType.Ref)
-		}
-	}
-	ot, objFound := m.GetField("properties")
-	mt, mapFound := m.GetField("additionalProperties")
-	lt, listFound := m.GetField("items")
-	if objFound {
-		otFields := ec.mapValue(ot.Ref)
-		otFieldMap := map[string]*model.DeclType{}
-		for _, f := range otFields.Fields {
-			fType := ec.compileDeclType(env, f.Ref)
-			otFieldMap[f.Name] = fType
-		}
-		obj := model.NewObjectType(typeName, otFieldMap)
-		// TODO: perhaps shift the type accumulation out of this section of the env.
-		env.Types[typeName] = obj
-		return obj
-	}
-	if mapFound {
-		return model.NewMapType(model.StringType, ec.compileDeclType(env, mt.Ref))
-	}
-	if listFound {
-		return model.NewListType(ec.compileDeclType(env, lt.Ref))
-	}
-	declType, found := ec.reg.FindType(typeName)
-	if found {
-		return declType
-	}
 	schema := model.NewOpenAPISchema()
-	ec.compileOpenAPISchema(dyn, schema)
-	return schema.DeclType()
+	ec.compileOpenAPISchema(dyn, schema, true)
+	dt := schema.DeclType()
+	ec.collectTypes(env, dt)
+	return dt
+}
+
+func (ec *envCompiler) collectTypes(env *model.Env, typ *model.DeclType) {
+	if typ.IsObject() {
+		name := typ.TypeName()
+		if name != "" && name != "object" {
+			env.Types[name] = typ
+		}
+		for _, f := range typ.Fields {
+			ec.collectTypes(env, f)
+		}
+	}
+	if typ.IsMap() {
+		ec.collectTypes(env, typ.KeyType)
+		ec.collectTypes(env, typ.ElemType)
+	}
+	if typ.IsList() {
+		ec.collectTypes(env, typ.ElemType)
+	}
 }
 
 type instanceCompiler struct {
@@ -427,7 +402,7 @@ func (tc *templateCompiler) compile() (*model.Template, *cel.Issues) {
 	schemaDef, found := m.GetField("schema")
 	if found {
 		schema := model.NewOpenAPISchema()
-		tc.compileOpenAPISchema(schemaDef.Ref, schema)
+		tc.compileOpenAPISchema(schemaDef.Ref, schema, false)
 		var err error
 		ctmpl.RuleTypes, err = model.NewRuleTypes(
 			ctmpl.Metadata.Name,
@@ -892,6 +867,12 @@ func (tc *templateCompiler) buildExprString(
 		}
 		buf.WriteString("}")
 		return buf.String(), nil
+	case time.Duration:
+		var buf strings.Builder
+		buf.WriteString("duration('")
+		buf.WriteString(strconv.FormatFloat(v.Seconds(), 'f', -1, 64))
+		buf.WriteString("s')")
+		return buf.String(), nil
 	case time.Time:
 		var buf strings.Builder
 		buf.WriteString("timestamp('")
@@ -1029,18 +1010,26 @@ func (dc *dynCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenAPISch
 }
 
 func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
-	schema *model.OpenAPISchema) {
+	schema *model.OpenAPISchema, permitTypeParam bool) {
 	schema.Title = dc.mapFieldStringValueOrEmpty(dyn, "title")
 	schema.Description = dc.mapFieldStringValueOrEmpty(dyn, "description")
 	schema.Type = dc.mapFieldStringValueOrEmpty(dyn, "type")
 	schema.TypeRef = dc.mapFieldStringValueOrEmpty(dyn, "$ref")
 	schema.Format = dc.mapFieldStringValueOrEmpty(dyn, "format")
 	m := dc.mapValue(dyn)
+	typeParam, found := m.GetField("type_param")
+	if found {
+		if !permitTypeParam {
+			dc.reportErrorAtID(typeParam.ID,
+				"type_param is only supported in environment declarations")
+		}
+		schema.TypeParam = dc.strValue(typeParam.Ref)
+	}
 	elem, found := m.GetField("items")
 	if found {
 		nested := model.NewOpenAPISchema()
 		schema.Items = nested
-		dc.compileOpenAPISchema(elem.Ref, nested)
+		dc.compileOpenAPISchema(elem.Ref, nested, permitTypeParam)
 	}
 	elem, found = m.GetField("enum")
 	if found {
@@ -1065,14 +1054,14 @@ func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
 		for _, field := range obj.Fields {
 			nested := model.NewOpenAPISchema()
 			schema.Properties[field.Name] = nested
-			dc.compileOpenAPISchema(field.Ref, nested)
+			dc.compileOpenAPISchema(field.Ref, nested, permitTypeParam)
 		}
 	}
 	elem, found = m.GetField("additionalProperties")
 	if found {
 		nested := model.NewOpenAPISchema()
 		schema.AdditionalProperties = nested
-		dc.compileOpenAPISchema(elem.Ref, nested)
+		dc.compileOpenAPISchema(elem.Ref, nested, permitTypeParam)
 	}
 	elem, found = m.GetField("default")
 	if found {
@@ -1254,6 +1243,13 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 			str = s.(string)
 		}
 		switch schema.DeclType() {
+		case model.DurationType:
+			t, err := time.ParseDuration(str)
+			if err != nil {
+				dc.reportErrorAtID(id, "duration must be a number followed by a valid time"+
+					" unit: 'ns', 'us', 'ms', 's', 'm', 'h': value=%s", str)
+			}
+			return t
 		case model.TimestampType:
 			t, err := time.Parse(time.RFC3339, str)
 			if err != nil {

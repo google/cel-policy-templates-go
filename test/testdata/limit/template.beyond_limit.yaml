@@ -145,3 +145,5 @@ evaluator:
           output: hi12
         - decision: policy.acme.welcome
           output: hi13
+        - decision: policy.acme.welcome
+          output: hi14

@@ -54,7 +54,6 @@ func NewRegistry(stdExprEnv *cel.Env) *Registry {
 		exprEnvs: map[string]*cel.Env{"": stdExprEnv},
 		schemas: map[string]*OpenAPISchema{
 			"#anySchema":      AnySchema,
-			"#declTypeSchema": declTypeSchema,
 			"#envSchema":      envSchema,
 			"#instanceSchema": instanceSchema,
 			"#openAPISchema":  schemaDef,
