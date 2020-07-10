@@ -207,6 +207,8 @@ func (t *Template) evalInternal(eval *evaluator,
 	selector model.DecisionSelector,
 	slots decisionSlots) ([]model.DecisionValue, error) {
 	ruleAct := t.actPool.Setup(vars)
+	ruleAct.tmplMetadata = t.mdl.MetadataMap()
+	ruleAct.instMetadata = inst.MetadataMap()
 
 	// Singleton policy without a schema.
 	if t.mdl.RuleTypes == nil {
@@ -704,14 +706,22 @@ func (pool *decisionSlotPool) Setup() decisionSlots {
 }
 
 type ruleActivation struct {
-	input     interpreter.Activation
-	rangeVars map[string]ref.Val
-	rule      model.Rule
+	input        interpreter.Activation
+	rangeVars    map[string]ref.Val
+	rule         model.Rule
+	tmplMetadata map[string]interface{}
+	instMetadata map[string]interface{}
 }
 
 func (ctx *ruleActivation) ResolveName(name string) (interface{}, bool) {
 	if name == "rule" {
 		return ctx.rule, true
+	}
+	if name == "template" {
+		return ctx.tmplMetadata, true
+	}
+	if name == "instance" {
+		return ctx.instMetadata, true
 	}
 	if ctx.rangeVars != nil {
 		val, found := ctx.rangeVars[name]

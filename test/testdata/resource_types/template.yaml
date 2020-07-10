@@ -49,6 +49,8 @@ evaluator:
       output:
         message: resource.name + " is in violation."
         details:
+          template: template.name
+          instance: instance.name
           resource: resource.name
           mode: rule.mode
           resourceTypes: rule.resource_types

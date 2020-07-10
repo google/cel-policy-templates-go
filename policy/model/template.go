@@ -47,6 +47,14 @@ func (t *Template) EvaluatorDecisionCount() int {
 	return t.Evaluator.DecisionCount()
 }
 
+// MetadataMap returns the metadata name to value map, which can be used in evaluation.
+// Only "name" field is supported for now.
+func (t *Template) MetadataMap() map[string]interface{} {
+	return map[string]interface{}{
+		"name": t.Metadata.Name,
+	}
+}
+
 // NewTemplateMetadata returns an empty *TemplateMetadata instance.
 func NewTemplateMetadata() *TemplateMetadata {
 	return &TemplateMetadata{

@@ -32,6 +32,8 @@ import (
 )
 
 type metadata struct {
+	Template      string
+	Instance      string
 	Resource      string
 	Mode          string
 	ResourceTypes []string
@@ -378,6 +380,8 @@ var (
 				violation{
 					Message: "forbidden-my-sql-instance is in violation.",
 					Details: &metadata{
+						Template: "resource_types",
+						Instance: "restricted_resource_types",
 						Resource: "forbidden-my-sql-instance",
 						Mode:     "deny",
 						ResourceTypes: []string{

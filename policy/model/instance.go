@@ -50,6 +50,14 @@ type Instance struct {
 	Info *SourceInfo
 }
 
+// MetadataMap returns the metadata name to value map, which can be used in evaluation.
+// Only "name" field is supported for now.
+func (i *Instance) MetadataMap() map[string]interface{} {
+	return map[string]interface{}{
+		"name": i.Metadata.Name,
+	}
+}
+
 // InstanceMetadata contains standard metadata which may be associated with an instance.
 type InstanceMetadata struct {
 	UID       string
@@ -134,8 +142,7 @@ func (c *CustomRule) GetFieldID(field string) int64 {
 		if !ok {
 			return c.GetID()
 		}
-	  val = f.Ref
+		val = f.Ref
 	}
 	return val.ID
 }
-
