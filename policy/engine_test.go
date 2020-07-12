@@ -138,7 +138,7 @@ var (
 					"gone": []int64{1999},
 					"next": []int64{2038},
 				},
-				&dpb.Duration{Seconds: 300},
+				&dpb.Duration{Seconds: 600},
 			},
 			opts: []EngineOption{EvaluatorDecisionLimit(4)},
 		},

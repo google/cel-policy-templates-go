@@ -30,13 +30,14 @@
     45~computer_greeting: 46~"WUFZIFkySyE="
     47~start_date: 48~"2000-01-01T00:00:00Z"
     49~end_date: 50~"2000-01-07T00:00:00Z"
-    51~details:52~
-      53~gone:54~
-        - 55~1999
-      56~next:57~[58~2038]
-  - 59~60~greeting: 61~"Happy New Year's!"
-    62~conditions:63~
-      - 64~65~description: 66~"Ring in the New Year."
-        67~expression: 68~>
+    51~duration: 52~"300s"
+    53~details:54~
+      55~gone:56~
+        - 57~1999
+      58~next:59~[60~2038]
+  - 61~62~greeting: 63~"Happy New Year's!"
+    64~conditions:65~
+      - 66~67~description: 68~"Ring in the New Year."
+        69~expression: 70~>
           request.time.getMonth() == 0 &&
           request.time.getDate() == 1"

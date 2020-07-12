@@ -1352,7 +1352,7 @@ func assignableToType(valType, schemaType *model.DeclType) bool {
 	}
 	if valType == model.StringType || valType == model.PlainTextType {
 		switch schemaType {
-		case model.BytesType, model.StringType, model.TimestampType, model.PlainTextType:
+		case model.BytesType, model.DurationType, model.StringType, model.TimestampType, model.PlainTextType:
 			return true
 		}
 	}

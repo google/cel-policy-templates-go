@@ -30,6 +30,7 @@ rules:
     computer_greeting: WUFZIFkySyE=
     start_date: "2000-01-01T00:00:00Z"
     end_date: "2000-01-07T00:00:00Z"
+    duration: "300s"
     details:
       gone:
         - 1999
