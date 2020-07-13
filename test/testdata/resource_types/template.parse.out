@@ -49,6 +49,8 @@
       56~output:57~
         58~message: 59~"resource.name + \" is in violation.\""
         60~details:61~
-          62~resource: 63~"resource.name"
-          64~mode: 65~"rule.mode"
-          66~resourceTypes: 67~"rule.resource_types"
+          62~template: 63~"template.name"
+          64~instance: 65~"instance.name"
+          66~resource: 67~"resource.name"
+          68~mode: 69~"rule.mode"
+          70~resourceTypes: 71~"rule.resource_types"
