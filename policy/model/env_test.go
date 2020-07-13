@@ -37,7 +37,7 @@ func TestEnv_Vars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ast, iss = custEnv.Compile(expr)
+	_, iss = custEnv.Compile(expr)
 	if iss.Err() != nil {
 		t.Errorf("got error %v, wanted ast", iss)
 	}
@@ -66,7 +66,7 @@ func TestEnv_Funcs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ast, iss = custEnv.Compile(expr)
+	_, iss = custEnv.Compile(expr)
 	if iss.Err() != nil {
 		t.Errorf("got error %v, wanted ast", iss)
 	}

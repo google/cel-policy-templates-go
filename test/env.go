@@ -44,7 +44,7 @@ var (
 
 	// Funcs are the custom function implementations used within templates.
 	Funcs = []*functions.Overload{
-		&functions.Overload{
+		{
 			Operator: "location_code_string",
 			Unary: func(ip ref.Val) ref.Val {
 				switch ip.(types.String) {

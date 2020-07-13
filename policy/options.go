@@ -39,6 +39,8 @@ func Selectors(selectors ...Selector) EngineOption {
 	}
 }
 
+// StandardExprEnv configures the CEL expression environment to be used as the basis for all
+// other environment derivations within templates.
 func StandardExprEnv(exprEnv *cel.Env) EngineOption {
 	return func(e *Engine) (*Engine, error) {
 		e.Registry = model.NewRegistry(exprEnv)

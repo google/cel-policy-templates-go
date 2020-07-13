@@ -135,8 +135,8 @@ var (
 				"Farewell",
 				"Aloha",
 				map[string][]int64{
-					"gone": []int64{1999},
-					"next": []int64{2038},
+					"gone": {1999},
+					"next": {2038},
 				},
 				&dpb.Duration{Seconds: 600},
 			},
