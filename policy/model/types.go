@@ -74,7 +74,7 @@ func NewObjectTypeRef(name string) *DeclType {
 
 // NewTypeParam creates a type parameter type with a simple name.
 //
-// Type parameters are resolved at complilation time to concrete types, or CEL 'dyn' type if no
+// Type parameters are resolved at compilation time to concrete types, or CEL 'dyn' type if no
 // type assignment can be inferred.
 func NewTypeParam(name string) *DeclType {
 	return &DeclType{
