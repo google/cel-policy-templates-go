@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package test defines helper variables and functions for testing policy templates and instances.
 package test
 
 import (

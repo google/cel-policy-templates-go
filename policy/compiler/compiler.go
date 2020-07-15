@@ -770,7 +770,7 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 		}
 		termMap[t.Name] = term
 		ceval.Terms = append(ceval.Terms, term)
-		termDecls = append(termDecls, decls.NewIdent(t.Name, termType, nil))
+		termDecls = append(termDecls, decls.NewVar(t.Name, termType))
 	}
 	// Return the productions environment which contains all terms and inputs to the template.
 	return env.Extend(cel.Declarations(termDecls...))
