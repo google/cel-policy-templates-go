@@ -454,8 +454,6 @@ func (tc *templateCompiler) compileValidator(dyn *model.DynValue, ctmpl *model.T
 	prods, found := val.GetField("productions")
 	if found {
 		tc.compileValidatorOutputDecisions(prods.Ref, productionsEnv, validator, ctmpl)
-	} else {
-		// TODO: generate a warning, but not an error.
 	}
 	ctmpl.Validator = validator
 }

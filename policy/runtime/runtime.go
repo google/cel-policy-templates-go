@@ -205,7 +205,7 @@ func (t *Template) evalInternal(eval *evaluator,
 	inst *model.Instance,
 	vars interpreter.Activation,
 	selector model.DecisionSelector,
-	slots decisionSlots) ([]model.DecisionValue, error) {
+	slots *decisionSlots) ([]model.DecisionValue, error) {
 	ruleAct := t.actPool.Setup(vars)
 	ruleAct.tmplMetadata = t.mdl.MetadataMap()
 	ruleAct.instMetadata = inst.MetadataMap()
@@ -371,7 +371,7 @@ type evaluator struct {
 func (eval *evaluator) eval(rule model.Rule,
 	selector model.DecisionSelector,
 	vars *ruleActivation,
-	slots decisionSlots) error {
+	slots *decisionSlots) error {
 	vars.rule = rule
 	// Fast-path evaluation without ranges.
 	if len(eval.ranges) == 0 {
@@ -397,13 +397,16 @@ func (eval *evaluator) eval(rule model.Rule,
 		}
 		eval.actPool.Put(act)
 	}
+	if len(errs) > 0 {
+		return errs[0]
+	}
 	return nil
 }
 
 func (eval *evaluator) evalProductions(rule model.Rule,
 	selector model.DecisionSelector,
 	act interpreter.Activation,
-	slots decisionSlots) error {
+	slots *decisionSlots) error {
 	var errs []error
 	for _, p := range eval.prods {
 		// TODO: update this to support finalization on a per-rule basis
@@ -425,7 +428,7 @@ func (eval *evaluator) evalProductions(rule model.Rule,
 				continue
 			}
 			// initialize the slot
-			dv := slots[d.slot]
+			dv := slots.values[d.slot]
 			if dv == nil {
 				dv = d.agg.DefaultDecision()
 			}
@@ -433,7 +436,7 @@ func (eval *evaluator) evalProductions(rule model.Rule,
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				slots[d.slot] = dv
+				slots.values[d.slot] = dv
 			}
 		}
 	}
@@ -643,7 +646,7 @@ type prod struct {
 	// separately from the decisions since the referenced name may be derived from the instance.
 }
 
-func (p *prod) hasMoreDecisions(slots decisionSlots,
+func (p *prod) hasMoreDecisions(slots *decisionSlots,
 	selector model.DecisionSelector) bool {
 	for _, d := range p.decisions {
 		if d == nil {
@@ -666,16 +669,18 @@ type decision struct {
 	agg  Aggregator
 }
 
-func (d *decision) isFinal(slots decisionSlots) bool {
-	dv := slots[d.slot]
+func (d *decision) isFinal(slots *decisionSlots) bool {
+	dv := slots.values[d.slot]
 	return dv != nil && dv.IsFinal()
 }
 
-type decisionSlots []model.DecisionValue
+type decisionSlots struct {
+	values []model.DecisionValue
+}
 
-func slotsToDecisions(slots decisionSlots) []model.DecisionValue {
+func slotsToDecisions(slots *decisionSlots) []model.DecisionValue {
 	var decisions []model.DecisionValue
-	for _, dv := range slots {
+	for _, dv := range slots.values {
 		if dv != nil {
 			decisions = append(decisions, dv)
 		}
@@ -687,7 +692,9 @@ func newDecisionSlotPool(size int) *decisionSlotPool {
 	return &decisionSlotPool{
 		Pool: &sync.Pool{
 			New: func() interface{} {
-				return make(decisionSlots, size)
+				return &decisionSlots{
+					values: make([]model.DecisionValue, size),
+				}
 			},
 		},
 	}
@@ -697,10 +704,10 @@ type decisionSlotPool struct {
 	*sync.Pool
 }
 
-func (pool *decisionSlotPool) Setup() decisionSlots {
-	slots := pool.Get().(decisionSlots)
-	for i := range slots {
-		slots[i] = nil
+func (pool *decisionSlotPool) Setup() *decisionSlots {
+	slots := pool.Get().(*decisionSlots)
+	for i := range slots.values {
+		slots.values[i] = nil
 	}
 	return slots
 }
