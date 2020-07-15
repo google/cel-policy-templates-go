@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package parser defines the primary interfaces for parsing different data formats which
+// can be represented within the CPT policy model.
 package parser
 
 import (

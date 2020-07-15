@@ -244,7 +244,7 @@ func (rt *RuleTypes) EnvOptions(tp ref.TypeProvider) ([]cel.EnvOption, error) {
 		cel.CustomTypeProvider(rtWithTypes),
 		cel.CustomTypeAdapter(rtWithTypes),
 		cel.Declarations(
-			decls.NewIdent("rule", rt.ruleSchemaDeclTypes.root.ExprType(), nil),
+			decls.NewVar("rule", rt.ruleSchemaDeclTypes.root.ExprType()),
 		),
 	}, nil
 }

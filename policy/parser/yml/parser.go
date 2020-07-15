@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package yml defines tools for parsing and encoding CPT sources written in YAML.
 package yml
 
 import (
