@@ -94,6 +94,10 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 			return DurationType
 		case "date", "date-time", "google-datetime":
 			return TimestampType
+		case "int64":
+			return IntType
+		case "uint64":
+			return UintType
 		}
 	}
 	return declType
