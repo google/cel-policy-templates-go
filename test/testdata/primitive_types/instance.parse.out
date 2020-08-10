@@ -1,0 +1,26 @@
+1~# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"primitive_types"
+6~metadata:7~
+  8~name: 9~"AllTheTypes"
+10~rule:11~
+  12~values:13~
+    - 14~15~bool: 16~true
+    - 17~18~float: 19~1.2
+    - 20~21~uint: 22~"1000"
+    - 23~24~int: 25~"-100000"
+    - 26~27~google_duration: 28~"4s"
+    - 29~30~google_timestamp: 31~"2019-01-01T00:00:00Z"

@@ -1,9 +1,50 @@
-1~2~apiVersion: 3~"policy.acme.co/v1"
-4~kind: 5~"AdmissionTemplate"
+1~# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
 6~metadata:7~
-  8~name: 9~"AllTheTypes"
-10~rules:11~
-  - 12~13~value: 14~true
-  - 15~16~value: 17~1.2
-  - 18~19~value: 20~"1000"
-  - 21~22~value: 23~
+  8~name: 9~"primitive_types"
+  10~namespace: 11~"acme"
+12~schema:13~
+  14~type: 15~"object"
+  16~properties:17~
+    18~values:19~
+      20~type: 21~"array"
+      22~items:23~
+        24~type: 25~"object"
+        26~properties:27~
+          28~bool:29~
+            30~type: 31~"boolean"
+          32~float:33~
+            34~type: 35~"number"
+          36~int:37~
+            38~type: 39~"string"
+            40~format: 41~"int64"
+          42~uint:43~
+            44~type: 45~"string"
+            46~format: 47~"uint64"
+          48~google_duration:49~
+            50~type: 51~"string"
+            52~format: 53~"google-duration"
+          54~google_timestamp:55~
+            56~type: 57~"string"
+            58~format: 59~"google-datetime"
+60~evaluator:61~
+  62~productions:63~
+    - 64~65~decision: 66~"grant"
+      67~output: 68~>
+        string(rule.int + int(rule.uint)) + " " +
+        string(duration("6s") + rule.google_duration) + " " +
+        string(duration("86400s") + rule.google_timestamp))

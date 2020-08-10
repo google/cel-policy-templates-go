@@ -1278,6 +1278,20 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 				return b
 			}
 			return []byte(str)
+		case model.IntType:
+			i, err := strconv.ParseInt(str, 10, 64)
+			if err != nil {
+				dc.reportErrorAtID(id, "invalid integer format. value=%s", str)
+				return str
+			}
+			return i
+		case model.UintType:
+			u, err := strconv.ParseUint(str, 10, 64)
+			if err != nil {
+				dc.reportErrorAtID(id, "invalid unsigned integer format. value=%s", str)
+				return str
+			}
+			return u
 		default:
 			return v
 		}
@@ -1350,11 +1364,16 @@ func assignableToType(valType, schemaType *model.DeclType) bool {
 	}
 	if valType == model.StringType || valType == model.PlainTextType {
 		switch schemaType {
-		case model.BytesType, model.DurationType, model.StringType, model.TimestampType, model.PlainTextType:
+		case model.BytesType,
+			model.DurationType,
+			model.IntType,
+			model.StringType,
+			model.TimestampType,
+			model.UintType,
+			model.PlainTextType:
 			return true
 		}
 	}
-
 	if valType == model.UintType && schemaType == model.IntType {
 		return true
 	}
