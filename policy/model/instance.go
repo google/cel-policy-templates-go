@@ -20,12 +20,12 @@ import (
 )
 
 // NewInstance returns an empty policy instance.
-func NewInstance(info *SourceInfo) *Instance {
+func NewInstance(info SourceMetadata) *Instance {
 	return &Instance{
 		Metadata:  &InstanceMetadata{},
 		Selectors: []Selector{},
 		Rules:     []Rule{},
-		Info:      info,
+		Meta:      info,
 	}
 }
 
@@ -46,8 +46,8 @@ type Instance struct {
 	// and the results aggregated according to the decision types being emitted.
 	Rules []Rule
 
-	// Info represents the source metadata from the input instance.
-	Info *SourceInfo
+	// Meta represents the source metadata from the input instance.
+	Meta SourceMetadata
 }
 
 // MetadataMap returns the metadata name to value map, which can be used in evaluation.

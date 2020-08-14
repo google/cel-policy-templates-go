@@ -139,7 +139,7 @@ func (c *Compiler) newDynCompiler(src *model.Source,
 		},
 		limits: c.limits,
 		src:    src,
-		info:   pv.Info,
+		meta:   pv.Meta,
 		errors: common.NewErrors(src),
 	}
 }
@@ -275,7 +275,7 @@ type instanceCompiler struct {
 }
 
 func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
-	cinst := model.NewInstance(ic.info)
+	cinst := model.NewInstance(ic.meta)
 	cinst.APIVersion = ic.mapFieldStringValueOrEmpty(ic.dyn, "apiVersion")
 	cinst.Description = ic.mapFieldStringValueOrEmpty(ic.dyn, "description")
 	cinst.Kind = ic.mapFieldStringValueOrEmpty(ic.dyn, "kind")
@@ -390,7 +390,7 @@ type templateCompiler struct {
 }
 
 func (tc *templateCompiler) compile() (*model.Template, *cel.Issues) {
-	ctmpl := model.NewTemplate(tc.info)
+	ctmpl := model.NewTemplate(tc.meta)
 	m := tc.mapValue(tc.dyn)
 	ctmpl.APIVersion = tc.mapFieldStringValueOrEmpty(tc.dyn, "apiVersion")
 	ctmpl.Description = tc.mapFieldStringValueOrEmpty(tc.dyn, "description")
@@ -783,7 +783,7 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 // literal.
 func (tc *templateCompiler) compileExpr(dyn *model.DynValue,
 	env *cel.Env, strict bool) *cel.Ast {
-	loc, _ := tc.info.LocationByID(dyn.ID)
+	loc, _ := tc.meta.LocationByID(dyn.ID)
 	exprString, err := tc.buildExprString(dyn, env, strict)
 	if err != nil {
 		return nil
@@ -811,7 +811,7 @@ func (tc *templateCompiler) buildExprString(
 	case model.PlainTextValue:
 		return strconv.Quote(string(v)), nil
 	case *model.MultilineStringValue:
-		loc, _ := tc.info.LocationByID(dyn.ID)
+		loc, _ := tc.meta.LocationByID(dyn.ID)
 		ast := tc.compileExprString(dyn.ID, v.Raw, loc, env, strict)
 		if ast != nil {
 			return v.Raw, nil
@@ -822,7 +822,7 @@ func (tc *templateCompiler) buildExprString(
 		// non-strict parse which falls back to a plain text literal.
 		return strconv.Quote(strings.TrimSpace(v.Value)), nil
 	case string:
-		loc, _ := tc.info.LocationByID(dyn.ID)
+		loc, _ := tc.meta.LocationByID(dyn.ID)
 		ast := tc.compileExprString(dyn.ID, v, loc, env, strict)
 		if ast != nil {
 			return v, nil
@@ -936,7 +936,7 @@ type dynCompiler struct {
 	reg    *compReg
 	limits *limits.Limits
 	src    *model.Source
-	info   *model.SourceInfo
+	meta   model.SourceMetadata
 	errors *common.Errors
 }
 
@@ -1333,7 +1333,7 @@ func (dc *dynCompiler) reportErrorAtLoc(loc common.Location, msg string, args ..
 }
 
 func (dc *dynCompiler) reportErrorAtID(id int64, msg string, args ...interface{}) {
-	loc, found := dc.info.LocationByID(id)
+	loc, found := dc.meta.LocationByID(id)
 	if !found {
 		loc = common.NoLocation
 	}

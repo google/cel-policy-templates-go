@@ -34,7 +34,7 @@ func Encode(pv *model.ParsedValue, opts ...EncodeOption) string {
 	enc := &encoder{
 		indents:   [][]string{},
 		lineStart: true,
-		comments:  pv.Info.Comments,
+		meta:      pv.Meta,
 	}
 	for _, opt := range opts {
 		enc = opt(enc)
@@ -63,7 +63,7 @@ type encoder struct {
 	indents   [][]string
 	lineStart bool
 	renderIDs bool
-	comments  map[int64][]*model.Comment
+	meta      model.SourceMetadata
 }
 
 // String implements the fmt.Stringer interface.
@@ -250,7 +250,7 @@ func (enc *encoder) writeFootComment(id int64) *encoder {
 }
 
 func (enc *encoder) writeComment(id int64, style model.CommentStyle) bool {
-	cmts, hasComments := enc.comments[id]
+	cmts, hasComments := enc.meta.CommentsByID(id)
 	if !hasComments {
 		return false
 	}

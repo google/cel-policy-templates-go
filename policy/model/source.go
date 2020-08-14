@@ -110,6 +110,21 @@ type SourceInfo struct {
 	Offsets map[int64]int32
 }
 
+// SourceMetadata enables the lookup for expression source metadata by expression id.
+type SourceMetadata interface {
+	// CommentsByID returns the set of comments associated with the expression id, if present.
+	CommentsByID(int64) ([]*Comment, bool)
+
+	// LocationByID returns the CEL common.Location of the expression id, if present.
+	LocationByID(int64) (common.Location, bool)
+}
+
+// CommentsByID returns the set of comments by expression id, if present.
+func (info *SourceInfo) CommentsByID(id int64) ([]*Comment, bool) {
+	comments, found := info.Comments[id]
+	return comments, found
+}
+
 // LocationByID returns the line and column location of source node by its id.
 func (info *SourceInfo) LocationByID(id int64) (common.Location, bool) {
 	charOff, found := info.Offsets[id]

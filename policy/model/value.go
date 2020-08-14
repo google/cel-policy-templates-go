@@ -52,7 +52,7 @@ const (
 type ParsedValue struct {
 	ID    int64
 	Value *MapValue
-	Info  *SourceInfo
+	Meta  SourceMetadata
 }
 
 // NewEmptyDynValue returns the zero-valued DynValue.

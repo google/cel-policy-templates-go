@@ -21,11 +21,11 @@ import (
 )
 
 // NewTemplate produces an empty policy Template instance.
-func NewTemplate(info *SourceInfo) *Template {
+func NewTemplate(info SourceMetadata) *Template {
 	return &Template{
 		Metadata:  NewTemplateMetadata(),
 		Evaluator: NewEvaluator(),
-		Info:      info,
+		Meta:      info,
 	}
 }
 
@@ -38,7 +38,7 @@ type Template struct {
 	RuleTypes   *RuleTypes
 	Validator   *Evaluator
 	Evaluator   *Evaluator
-	Info        *SourceInfo
+	Meta        SourceMetadata
 }
 
 // EvaluatorDecisionCount returns the number of decisions which can be produced by the template
