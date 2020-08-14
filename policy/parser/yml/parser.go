@@ -39,7 +39,7 @@ func Parse(src *model.Source) (*model.ParsedValue, *cel.Issues) {
 	// Common objects for decoding an instance.
 	errs := common.NewErrors(src)
 	info := model.NewSourceInfo(src)
-	inst := &model.ParsedValue{Info: info}
+	inst := &model.ParsedValue{Meta: info}
 	builder := newParsedValueBuilder(inst)
 	parser := newParser(info, src, errs)
 	parser.parseYaml(src, builder)

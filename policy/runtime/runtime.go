@@ -160,7 +160,7 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 		vals := listDec.Values()
 		rules := listDec.RuleIDs()
 		for i, v := range vals {
-			loc, found := inst.Info.LocationByID(rules[i])
+			loc, found := inst.Meta.LocationByID(rules[i])
 			if !found {
 				loc = common.NoLocation
 			}
@@ -175,7 +175,7 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 				if ok {
 					rule := ruleMap[rules[i]]
 					fieldID := rule.GetFieldID(string(field))
-					fieldLoc, found := inst.Info.LocationByID(fieldID)
+					fieldLoc, found := inst.Meta.LocationByID(fieldID)
 					if found {
 						loc = fieldLoc
 					}
