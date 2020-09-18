@@ -254,7 +254,7 @@ func (ec *envCompiler) collectTypes(env *model.Env, typ *model.DeclType) {
 			env.Types[name] = typ
 		}
 		for _, f := range typ.Fields {
-			ec.collectTypes(env, f)
+			ec.collectTypes(env, f.Type)
 		}
 	}
 	if typ.IsMap() {
@@ -761,12 +761,6 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 		term := model.NewTerm(t.Ref.ID, t.Name, termAst)
 		if termAst != nil {
 			termType = termAst.ResultType()
-			for _, varName := range getVars(termAst) {
-				input, found := termMap[varName]
-				if found {
-					term.InputTerms[varName] = input
-				}
-			}
 		}
 		termMap[t.Name] = term
 		ceval.Terms = append(ceval.Terms, term)
@@ -1252,6 +1246,10 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 		default:
 			str = s.(string)
 		}
+		st := schema.DeclType()
+		if st.IsEnum() {
+			st = st.ElemType
+		}
 		switch schema.DeclType() {
 		case model.DurationType:
 			t, err := time.ParseDuration(str)
@@ -1349,6 +1347,9 @@ func assignableToType(valType, schemaType *model.DeclType) bool {
 	}
 	if valType.IsList() && schemaType.IsList() {
 		return true
+	}
+	if schemaType.IsEnum() {
+		return assignableToType(valType, schemaType.ElemType)
 	}
 	if valType == model.StringType || valType == model.PlainTextType {
 		switch schemaType {

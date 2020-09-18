@@ -51,7 +51,7 @@ func NewMapType(key, elem *DeclType) *DeclType {
 }
 
 // NewObjectType creates an object type with a qualified name and a set of field declarations.
-func NewObjectType(name string, fields map[string]*DeclType) *DeclType {
+func NewObjectType(name string, fields map[string]*DeclField) *DeclType {
 	t := &DeclType{
 		name:      name,
 		Fields:    fields,
@@ -84,11 +84,23 @@ func NewTypeParam(name string) *DeclType {
 	}
 }
 
+// NewEnumType creates an instance of a type with an enumerable set of values.
+func NewEnumType(name string, enumType *DeclType, enumValues ...interface{}) *DeclType {
+	return &DeclType{
+		name:       name,
+		ElemType:   enumType,
+		EnumValues: enumValues,
+		exprType:   enumType.ExprType(),
+		zeroValue:  enumType.Zero(),
+	}
+}
+
 func newSimpleType(name string, exprType *exprpb.Type, zeroVal ref.Val) *DeclType {
 	return &DeclType{
-		name:      name,
-		exprType:  exprType,
-		zeroValue: zeroVal,
+		name:       name,
+		exprType:   exprType,
+		zeroValue:  zeroVal,
+		EnumValues: []interface{}{},
 	}
 }
 
@@ -96,12 +108,13 @@ func newSimpleType(name string, exprType *exprpb.Type, zeroVal ref.Val) *DeclTyp
 type DeclType struct {
 	fmt.Stringer
 
-	name      string
-	Fields    map[string]*DeclType
-	KeyType   *DeclType
-	ElemType  *DeclType
-	TypeParam bool
-	Metadata  map[string]string
+	name       string
+	Fields     map[string]*DeclField
+	KeyType    *DeclType
+	ElemType   *DeclType
+	TypeParam  bool
+	Metadata   map[string]string
+	EnumValues []interface{}
 
 	exprType  *exprpb.Type
 	traitMask int
@@ -152,7 +165,7 @@ func (t *DeclType) HasTrait(trait int) bool {
 // IsList returns whether the declaration is a `list` type which defines a parameterized element
 // type, but not a parameterized key type or fields.
 func (t *DeclType) IsList() bool {
-	return t.KeyType == nil && t.ElemType != nil && t.Fields == nil
+	return t.KeyType == nil && t.ElemType != nil && t.Fields == nil && t.EnumValues == nil
 }
 
 // IsMap returns whether the declaration is a 'map' type which defines parameterized key and
@@ -164,6 +177,11 @@ func (t *DeclType) IsMap() bool {
 // IsObject returns whether the declartion is an 'object' type which defined a set of typed fields.
 func (t *DeclType) IsObject() bool {
 	return t.KeyType == nil && t.ElemType == nil && t.Fields != nil
+}
+
+// IsEnum returns whether the declaration is an 'enum' type.
+func (t *DeclType) IsEnum() bool {
+	return t.EnumValues != nil && len(t.EnumValues) > 0
 }
 
 // String implements the fmt.Stringer interface method.
@@ -179,6 +197,26 @@ func (t *DeclType) TypeName() string {
 // Zero returns the CEL ref.Val representing the zero value for this object type, if one exists.
 func (t *DeclType) Zero() ref.Val {
 	return t.zeroValue
+}
+
+// DeclField describes the name, ordinal, and optionality of a field declaration within a type.
+type DeclField struct {
+	Name         string
+	Type         *DeclType
+	Required     bool
+	DefaultValue interface{}
+}
+
+func (f *DeclField) TypeName() string {
+	return f.Type.TypeName()
+}
+
+func (f *DeclField) Zero() ref.Val {
+	if f.DefaultValue != nil {
+		// TODO: properly support string conversion to ref.Val type.
+		return types.String(f.DefaultValue.(string))
+	}
+	return f.Type.Zero()
 }
 
 // NewRuleTypes returns an Open API Schema-based type-system which is CEL compatible.
@@ -281,14 +319,22 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 
 	f, found := st.Fields[fieldName]
 	if found {
+		ft := f.Type
+		if ft.IsEnum() {
+			ft = ft.ElemType
+		}
 		return &ref.FieldType{
-			Type: f.ExprType(),
+			Type: ft.ExprType(),
 		}, true
 	}
 	// This could be a dynamic map.
 	if st.IsMap() {
+		et := st.ElemType
+		if et.IsEnum() {
+			et = et.ElemType
+		}
 		return &ref.FieldType{
-			Type: st.ElemType.ExprType(),
+			Type: et.ExprType(),
 		}, true
 	}
 	return nil, false
@@ -315,6 +361,17 @@ func (rt *RuleTypes) NativeToValue(val interface{}) ref.Val {
 	}
 }
 
+// TypeNames returns the list of type names declared within the RuleTypes object.
+func (rt *RuleTypes) TypeNames() []string {
+	typeNames := make([]string, len(rt.ruleSchemaDeclTypes.types))
+	i := 0
+	for name := range rt.ruleSchemaDeclTypes.types {
+		typeNames[i] = name
+		i++
+	}
+	return typeNames
+}
+
 func (rt *RuleTypes) findSchemaType(typeName string) (*DeclType, bool) {
 	declType, found := rt.ruleSchemaDeclTypes.types[typeName]
 	if found {
@@ -334,8 +391,8 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 		if declType.IsObject() {
 			obj := v.ConvertToObject(declType)
 			for name, f := range obj.fieldMap {
-				fieldType := declType.Fields[name]
-				f.Ref = rt.convertToCustomType(f.Ref, fieldType)
+				field := declType.Fields[name]
+				f.Ref = rt.convertToCustomType(f.Ref, field.Type)
 			}
 			dyn.Value = obj
 			return dyn
@@ -390,12 +447,16 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 			return err
 		}
 		types[t.TypeName()] = t
-		for name, declType := range t.Fields {
-			if declType == nil {
+		for name, field := range t.Fields {
+			if field == nil {
 				continue
 			}
+			ft := field.Type
+			if ft.IsEnum() {
+				ft = ft.ElemType
+			}
 			fieldPath := fmt.Sprintf("%s.%s", path, name)
-			err := buildDeclTypes(fieldPath, declType, types)
+			err := buildDeclTypes(fieldPath, ft, types)
 			if err != nil {
 				return err
 			}
@@ -404,14 +465,22 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 	// Map element properties to type names if needed.
 	if t.IsMap() {
 		types[path] = t
+		et := t.ElemType
+		if et.IsEnum() {
+			et = et.ElemType
+		}
 		mapElemPath := fmt.Sprintf("%s.@elem", path)
-		return buildDeclTypes(mapElemPath, t.ElemType, types)
+		return buildDeclTypes(mapElemPath, et, types)
 	}
 	// List element properties.
 	if t.IsList() {
 		types[path] = t
+		et := t.ElemType
+		if et.IsEnum() {
+			et = et.ElemType
+		}
 		listIdxPath := fmt.Sprintf("%s.@idx", path)
-		return buildDeclTypes(listIdxPath, t.ElemType, types)
+		return buildDeclTypes(listIdxPath, et, types)
 	}
 	return nil
 }

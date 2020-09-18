@@ -59,26 +59,36 @@ type OpenAPISchema struct {
 }
 
 // DeclType returns the CEL Policy Templates type name associated with the schema element.
-func (s *OpenAPISchema) DeclType() *DeclType {
-	if s.TypeParam != "" {
-		return NewTypeParam(s.TypeParam)
+func (schema *OpenAPISchema) DeclType() *DeclType {
+	if schema.TypeParam != "" {
+		return NewTypeParam(schema.TypeParam)
 	}
-	declType, found := openAPISchemaTypes[s.Type]
+	declType, found := openAPISchemaTypes[schema.Type]
 	if !found {
 		return NewObjectTypeRef("*error*")
 	}
 	switch declType.TypeName() {
 	case ListType.TypeName():
-		return NewListType(s.Items.DeclType())
+		return NewListType(schema.Items.DeclType())
 	case MapType.TypeName():
-		if s.AdditionalProperties != nil {
-			return NewMapType(StringType, s.AdditionalProperties.DeclType())
+		if schema.AdditionalProperties != nil {
+			return NewMapType(StringType, schema.AdditionalProperties.DeclType())
 		}
-		fields := make(map[string]*DeclType, len(s.Properties))
-		for name, prop := range s.Properties {
-			fields[name] = prop.DeclType()
+		fields := make(map[string]*DeclField, len(schema.Properties))
+		required := make(map[string]struct{}, len(schema.Required))
+		for _, name := range schema.Required {
+			required[name] = struct{}{}
 		}
-		customType, found := s.Metadata["custom_type"]
+		for name, prop := range schema.Properties {
+			_, isReq := required[name]
+			fields[name] = &DeclField{
+				Name:         name,
+				Required:     isReq,
+				DefaultValue: prop.DefaultValue,
+				Type:         prop.DeclType(),
+			}
+		}
+		customType, found := schema.Metadata["custom_type"]
 		if !found {
 			return NewObjectType("object", fields)
 		}
@@ -87,15 +97,29 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 		}
 		return NewObjectTypeRef(customType)
 	case StringType.TypeName():
-		switch s.Format {
+		switch schema.Format {
 		case "byte", "binary":
 			return BytesType
 		case "google-duration":
 			return DurationType
 		case "date", "date-time", "google-datetime":
 			return TimestampType
+		default:
+			if len(schema.Enum) > 0 {
+				// How to handle this case where the type is a string, but really an enum?
+				// It'll have to be a new DeclType which says something like EnumType(values)
+				// where ordinal zero is UNSPECIFIED and the order in which the values appears
+				// is treated as their numeric identifier. That said, the names will be treated
+				// as though they are identifiers and used as the source of truth for compilation.
+				customType, found := schema.Metadata["custom_type"]
+				if !found {
+					customType = "enum"
+				}
+				return NewEnumType(customType, StringType, schema.Enum...)
+			}
 		}
 	}
+
 	return declType
 }
 

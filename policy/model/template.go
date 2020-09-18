@@ -126,20 +126,18 @@ type Range struct {
 // terms needed to evaluate the Ast successfully.
 func NewTerm(id int64, name string, expr *cel.Ast) *Term {
 	return &Term{
-		ID:         id,
-		Name:       name,
-		Expr:       expr,
-		InputTerms: make(map[string]*Term),
+		ID:   id,
+		Name: name,
+		Expr: expr,
 	}
 }
 
 // Term is a template-local variable whose name may shadow names in the Template environment and
 // which may depend on preceding terms as input.
 type Term struct {
-	ID         int64
-	Name       string
-	InputTerms map[string]*Term
-	Expr       *cel.Ast
+	ID   int64
+	Name string
+	Expr *cel.Ast
 }
 
 // NewProduction returns an empty instance of a Production rule which minimally contains a single

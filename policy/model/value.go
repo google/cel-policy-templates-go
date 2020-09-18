@@ -375,15 +375,15 @@ func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	if found {
 		return field.Ref.ExprValue()
 	}
-	fieldType, found := o.objectType.Fields[nameStr]
+	fieldDef, found := o.objectType.Fields[nameStr]
 	if !found {
 		return types.NewErr("no such field: %s", nameStr)
 	}
-	zero := fieldType.Zero()
+	zero := fieldDef.Zero()
 	if zero != nil {
 		return zero
 	}
-	return types.NewErr("no default for type: %s", fieldType.TypeName())
+	return types.NewErr("no default for type: %s", fieldDef.TypeName())
 }
 
 // Type returns the CEL type value of the object.
