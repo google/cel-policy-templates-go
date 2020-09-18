@@ -1246,10 +1246,6 @@ func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 		default:
 			str = s.(string)
 		}
-		st := schema.DeclType()
-		if st.IsEnum() {
-			st = st.ElemType
-		}
 		switch schema.DeclType() {
 		case model.DurationType:
 			t, err := time.ParseDuration(str)
@@ -1347,9 +1343,6 @@ func assignableToType(valType, schemaType *model.DeclType) bool {
 	}
 	if valType.IsList() && schemaType.IsList() {
 		return true
-	}
-	if schemaType.IsEnum() {
-		return assignableToType(valType, schemaType.ElemType)
 	}
 	if valType == model.StringType || valType == model.PlainTextType {
 		switch schemaType {

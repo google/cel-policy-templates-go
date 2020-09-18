@@ -379,7 +379,7 @@ func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	if !found {
 		return types.NewErr("no such field: %s", nameStr)
 	}
-	zero := fieldDef.Zero()
+	zero := fieldDef.DefaultValue()
 	if zero != nil {
 		return zero
 	}

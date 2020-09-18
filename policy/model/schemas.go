@@ -59,36 +59,37 @@ type OpenAPISchema struct {
 }
 
 // DeclType returns the CEL Policy Templates type name associated with the schema element.
-func (schema *OpenAPISchema) DeclType() *DeclType {
-	if schema.TypeParam != "" {
-		return NewTypeParam(schema.TypeParam)
+func (s *OpenAPISchema) DeclType() *DeclType {
+	if s.TypeParam != "" {
+		return NewTypeParam(s.TypeParam)
 	}
-	declType, found := openAPISchemaTypes[schema.Type]
+	declType, found := openAPISchemaTypes[s.Type]
 	if !found {
 		return NewObjectTypeRef("*error*")
 	}
 	switch declType.TypeName() {
 	case ListType.TypeName():
-		return NewListType(schema.Items.DeclType())
+		return NewListType(s.Items.DeclType())
 	case MapType.TypeName():
-		if schema.AdditionalProperties != nil {
-			return NewMapType(StringType, schema.AdditionalProperties.DeclType())
+		if s.AdditionalProperties != nil {
+			return NewMapType(StringType, s.AdditionalProperties.DeclType())
 		}
-		fields := make(map[string]*DeclField, len(schema.Properties))
-		required := make(map[string]struct{}, len(schema.Required))
-		for _, name := range schema.Required {
+		fields := make(map[string]*DeclField, len(s.Properties))
+		required := make(map[string]struct{}, len(s.Required))
+		for _, name := range s.Required {
 			required[name] = struct{}{}
 		}
-		for name, prop := range schema.Properties {
+		for name, prop := range s.Properties {
 			_, isReq := required[name]
 			fields[name] = &DeclField{
 				Name:         name,
 				Required:     isReq,
-				DefaultValue: prop.DefaultValue,
 				Type:         prop.DeclType(),
+				defaultValue: prop.DefaultValue,
+				enumValues:   prop.Enum,
 			}
 		}
-		customType, found := schema.Metadata["custom_type"]
+		customType, found := s.Metadata["custom_type"]
 		if !found {
 			return NewObjectType("object", fields)
 		}
@@ -97,26 +98,13 @@ func (schema *OpenAPISchema) DeclType() *DeclType {
 		}
 		return NewObjectTypeRef(customType)
 	case StringType.TypeName():
-		switch schema.Format {
+		switch s.Format {
 		case "byte", "binary":
 			return BytesType
 		case "google-duration":
 			return DurationType
 		case "date", "date-time", "google-datetime":
 			return TimestampType
-		default:
-			if len(schema.Enum) > 0 {
-				// How to handle this case where the type is a string, but really an enum?
-				// It'll have to be a new DeclType which says something like EnumType(values)
-				// where ordinal zero is UNSPECIFIED and the order in which the values appears
-				// is treated as their numeric identifier. That said, the names will be treated
-				// as though they are identifiers and used as the source of truth for compilation.
-				customType, found := schema.Metadata["custom_type"]
-				if !found {
-					customType = "enum"
-				}
-				return NewEnumType(customType, StringType, schema.Enum...)
-			}
 		}
 	}
 
