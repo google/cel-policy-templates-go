@@ -362,7 +362,7 @@ func (o *ObjectValue) Equal(other ref.Val) ref.Val {
 
 // Get returns the value of the specified field.
 //
-// If the field is set, its value is returned. If the field is not set, the zero value for the
+// If the field is set, its value is returned. If the field is not set, the default value for the
 // field is returned thus allowing for safe-traversal and preserving proto-like field traversal
 // semantics for Open API Schema backed types.
 func (o *ObjectValue) Get(name ref.Val) ref.Val {
@@ -379,9 +379,9 @@ func (o *ObjectValue) Get(name ref.Val) ref.Val {
 	if !found {
 		return types.NewErr("no such field: %s", nameStr)
 	}
-	zero := fieldDef.DefaultValue()
-	if zero != nil {
-		return zero
+	defValue := fieldDef.DefaultValue()
+	if defValue != nil {
+		return defValue
 	}
 	return types.NewErr("no default for type: %s", fieldDef.TypeName())
 }
