@@ -32,33 +32,33 @@ import (
 // NewListType returns a parameterized list type with a specified element type.
 func NewListType(elem *DeclType) *DeclType {
 	return &DeclType{
-		name:      "list",
-		ElemType:  elem,
-		exprType:  decls.NewListType(elem.ExprType()),
-		zeroValue: NewListValue(),
+		name:         "list",
+		ElemType:     elem,
+		exprType:     decls.NewListType(elem.ExprType()),
+		defaultValue: NewListValue(),
 	}
 }
 
 // NewMapType returns a parameterized map type with the given key and element types.
 func NewMapType(key, elem *DeclType) *DeclType {
 	return &DeclType{
-		name:      "map",
-		KeyType:   key,
-		ElemType:  elem,
-		exprType:  decls.NewMapType(key.ExprType(), elem.ExprType()),
-		zeroValue: NewMapValue(),
+		name:         "map",
+		KeyType:      key,
+		ElemType:     elem,
+		exprType:     decls.NewMapType(key.ExprType(), elem.ExprType()),
+		defaultValue: NewMapValue(),
 	}
 }
 
 // NewObjectType creates an object type with a qualified name and a set of field declarations.
-func NewObjectType(name string, fields map[string]*DeclType) *DeclType {
+func NewObjectType(name string, fields map[string]*DeclField) *DeclType {
 	t := &DeclType{
 		name:      name,
 		Fields:    fields,
 		exprType:  decls.NewObjectType(name),
 		traitMask: traits.FieldTesterType | traits.IndexerType,
 	}
-	t.zeroValue = NewObjectValue(t)
+	t.defaultValue = NewObjectValue(t)
 	return t
 }
 
@@ -86,9 +86,9 @@ func NewTypeParam(name string) *DeclType {
 
 func newSimpleType(name string, exprType *exprpb.Type, zeroVal ref.Val) *DeclType {
 	return &DeclType{
-		name:      name,
-		exprType:  exprType,
-		zeroValue: zeroVal,
+		name:         name,
+		exprType:     exprType,
+		defaultValue: zeroVal,
 	}
 }
 
@@ -97,15 +97,15 @@ type DeclType struct {
 	fmt.Stringer
 
 	name      string
-	Fields    map[string]*DeclType
+	Fields    map[string]*DeclField
 	KeyType   *DeclType
 	ElemType  *DeclType
 	TypeParam bool
 	Metadata  map[string]string
 
-	exprType  *exprpb.Type
-	traitMask int
-	zeroValue ref.Val
+	exprType     *exprpb.Type
+	traitMask    int
+	defaultValue ref.Val
 }
 
 // AssignTypeName sets the DeclType name to a fully qualified name.
@@ -133,20 +133,26 @@ func (t *DeclType) ExprType() *exprpb.Type {
 	return t.exprType
 }
 
+// FindField returns the DeclField with the given name if present.
+func (t *DeclType) FindField(name string) (*DeclField, bool) {
+	f, found := t.Fields[name]
+	return f, found
+}
+
 // HasTrait implements the CEL ref.Type interface making this type declaration suitable for use
 // within the CEL evaluator.
 func (t *DeclType) HasTrait(trait int) bool {
 	if t.traitMask&trait == trait {
 		return true
 	}
-	if t.zeroValue == nil {
+	if t.defaultValue == nil {
 		return false
 	}
-	_, isDecl := t.zeroValue.Type().(*DeclType)
+	_, isDecl := t.defaultValue.Type().(*DeclType)
 	if isDecl {
 		return false
 	}
-	return t.zeroValue.Type().HasTrait(trait)
+	return t.defaultValue.Type().HasTrait(trait)
 }
 
 // IsList returns whether the declaration is a `list` type which defines a parameterized element
@@ -176,9 +182,44 @@ func (t *DeclType) TypeName() string {
 	return t.name
 }
 
-// Zero returns the CEL ref.Val representing the zero value for this object type, if one exists.
-func (t *DeclType) Zero() ref.Val {
-	return t.zeroValue
+// DefaultValue returns the CEL ref.Val representing the default value for this object type,
+// if one exists.
+func (t *DeclType) DefaultValue() ref.Val {
+	return t.defaultValue
+}
+
+// DeclField describes the name, ordinal, and optionality of a field declaration within a type.
+type DeclField struct {
+	Name         string
+	Type         *DeclType
+	Required     bool
+	enumValues   []interface{}
+	defaultValue interface{}
+}
+
+// TypeName returns the string type name of the field.
+func (f *DeclField) TypeName() string {
+	return f.Type.TypeName()
+}
+
+// DefaultValue returns the zero value associated with the field.
+func (f *DeclField) DefaultValue() ref.Val {
+	if f.defaultValue != nil {
+		return types.DefaultTypeAdapter.NativeToValue(f.defaultValue)
+	}
+	return f.Type.DefaultValue()
+}
+
+// EnumValues returns the set of values that this field may take.
+func (f *DeclField) EnumValues() []ref.Val {
+	if f.enumValues == nil || len(f.enumValues) == 0 {
+		return []ref.Val{}
+	}
+	ev := make([]ref.Val, len(f.enumValues))
+	for i, e := range f.enumValues {
+		ev[i] = types.DefaultTypeAdapter.NativeToValue(e)
+	}
+	return ev
 }
 
 // NewRuleTypes returns an Open API Schema-based type-system which is CEL compatible.
@@ -281,14 +322,16 @@ func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, 
 
 	f, found := st.Fields[fieldName]
 	if found {
+		ft := f.Type
 		return &ref.FieldType{
-			Type: f.ExprType(),
+			Type: ft.ExprType(),
 		}, true
 	}
 	// This could be a dynamic map.
 	if st.IsMap() {
+		et := st.ElemType
 		return &ref.FieldType{
-			Type: st.ElemType.ExprType(),
+			Type: et.ExprType(),
 		}, true
 	}
 	return nil, false
@@ -315,6 +358,17 @@ func (rt *RuleTypes) NativeToValue(val interface{}) ref.Val {
 	}
 }
 
+// TypeNames returns the list of type names declared within the RuleTypes object.
+func (rt *RuleTypes) TypeNames() []string {
+	typeNames := make([]string, len(rt.ruleSchemaDeclTypes.types))
+	i := 0
+	for name := range rt.ruleSchemaDeclTypes.types {
+		typeNames[i] = name
+		i++
+	}
+	return typeNames
+}
+
 func (rt *RuleTypes) findSchemaType(typeName string) (*DeclType, bool) {
 	declType, found := rt.ruleSchemaDeclTypes.types[typeName]
 	if found {
@@ -334,8 +388,8 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 		if declType.IsObject() {
 			obj := v.ConvertToObject(declType)
 			for name, f := range obj.fieldMap {
-				fieldType := declType.Fields[name]
-				f.Ref = rt.convertToCustomType(f.Ref, fieldType)
+				field := declType.Fields[name]
+				f.Ref = rt.convertToCustomType(f.Ref, field.Type)
 			}
 			dyn.Value = obj
 			return dyn
@@ -361,10 +415,8 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
 	root := schema.DeclType()
 	root.AssignTypeName(kind)
-	types := map[string]*DeclType{
-		kind: root,
-	}
-	err := buildDeclTypes(kind, root, types)
+	types := map[string]*DeclType{}
+	err := buildDeclTypes(root.TypeName(), root, types)
 	if err != nil {
 		return nil, err
 	}
@@ -390,12 +442,10 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 			return err
 		}
 		types[t.TypeName()] = t
-		for name, declType := range t.Fields {
-			if declType == nil {
-				continue
-			}
+		for name, field := range t.Fields {
+			ft := field.Type
 			fieldPath := fmt.Sprintf("%s.%s", path, name)
-			err := buildDeclTypes(fieldPath, declType, types)
+			err := buildDeclTypes(fieldPath, ft, types)
 			if err != nil {
 				return err
 			}
@@ -404,14 +454,16 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 	// Map element properties to type names if needed.
 	if t.IsMap() {
 		types[path] = t
+		et := t.ElemType
 		mapElemPath := fmt.Sprintf("%s.@elem", path)
-		return buildDeclTypes(mapElemPath, t.ElemType, types)
+		return buildDeclTypes(mapElemPath, et, types)
 	}
 	// List element properties.
 	if t.IsList() {
 		types[path] = t
+		et := t.ElemType
 		listIdxPath := fmt.Sprintf("%s.@idx", path)
-		return buildDeclTypes(listIdxPath, t.ElemType, types)
+		return buildDeclTypes(listIdxPath, et, types)
 	}
 	return nil
 }

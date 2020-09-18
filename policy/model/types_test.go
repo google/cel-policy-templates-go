@@ -20,6 +20,8 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func TestTypes_ListType(t *testing.T) {
@@ -30,7 +32,7 @@ func TestTypes_ListType(t *testing.T) {
 	if list.TypeName() != "list" {
 		t.Errorf("got %s, wanted list", list.TypeName())
 	}
-	if list.Zero() == nil {
+	if list.DefaultValue() == nil {
 		t.Error("got nil zero value for list type")
 	}
 	if list.ElemType.TypeName() != "string" {
@@ -49,7 +51,7 @@ func TestTypes_MapType(t *testing.T) {
 	if mp.TypeName() != "map" {
 		t.Errorf("got %s, wanted map", mp.TypeName())
 	}
-	if mp.Zero() == nil {
+	if mp.DefaultValue() == nil {
 		t.Error("got nil zero value for map type")
 	}
 	if mp.KeyType.TypeName() != "string" {
@@ -63,85 +65,85 @@ func TestTypes_MapType(t *testing.T) {
 	}
 }
 
-func TestTypes_RuleTypes(t *testing.T) {
-	// Manual construction of a schema with the following definition:
-	//
-	// schema:
-	//   type: object
-	//   properties:
-	//     name:
-	//       type: string
-	//     nested:
-	//       type: object
-	//       properties:
-	//         subname:
-	//           type: string
-	//         flags:
-	//           type: object
-	//           additionalProperties:
-	//             type: boolean
-	//         dates:
-	//           type: array
-	//           items:
-	//             type: string
-	//             format: date-time
-	//     value:
-	//       type: integer
-	//       format: int64
-	nameField := NewOpenAPISchema()
-	nameField.Type = "string"
-	valueField := NewOpenAPISchema()
-	valueField.Type = "integer"
-	valueField.Format = "int64"
-	nestedObjField := NewOpenAPISchema()
-	nestedObjField.Type = "object"
-	nestedObjField.Properties["subname"] = NewOpenAPISchema()
-	nestedObjField.Properties["subname"].Type = "string"
-	nestedObjField.Properties["flags"] = NewOpenAPISchema()
-	nestedObjField.Properties["flags"].Type = "object"
-	nestedObjField.Properties["flags"].AdditionalProperties = NewOpenAPISchema()
-	nestedObjField.Properties["flags"].AdditionalProperties.Type = "boolean"
-	nestedObjField.Properties["dates"] = NewOpenAPISchema()
-	nestedObjField.Properties["dates"].Type = "array"
-	nestedObjField.Properties["dates"].Items = NewOpenAPISchema()
-	nestedObjField.Properties["dates"].Items.Type = "string"
-	nestedObjField.Properties["dates"].Items.Format = "date-time"
-	testSchema := NewOpenAPISchema()
-	testSchema.Type = "object"
-	testSchema.Properties["name"] = nameField
-	testSchema.Properties["value"] = valueField
-	testSchema.Properties["nested"] = nestedObjField
-
+func TestTypes_RuleTypes_TypeNames(t *testing.T) {
 	stdEnv, _ := cel.NewEnv()
 	reg := NewRegistry(stdEnv)
-	rt, err := NewRuleTypes("mock_template", testSchema, reg)
+	ts := testSchema()
+	rt, err := NewRuleTypes("mock_template", ts, reg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nestedFieldType, found := rt.FindFieldType("mock_template", "nested")
-	if !found {
-		t.Fatal("got field not found for 'mock_template.nested', wanted found")
+	cust := ts.DeclType()
+	nested, _ := cust.FindField("nested")
+	dates, _ := nested.Type.FindField("dates")
+	flags, _ := nested.Type.FindField("flags")
+	// This is the type name that is assigned by the NewRuleTypes call, which may be informed
+	// by the template name itself and of which the schema should not know directly.
+	nested.Type.AssignTypeName("CustomObject.nested")
+	expected := map[string]*DeclType{
+		"CustomObject":              cust,
+		"CustomObject.nested":       nested.Type,
+		"CustomObject.nested.dates": dates.Type,
+		"CustomObject.nested.flags": flags.Type,
 	}
-	if nestedFieldType.Type.GetMessageType() != "mock_template.nested" {
+	actual := rt.TypeNames()
+	if len(actual) != len(expected) {
+		t.Errorf("got different type set. got=%v, wanted=%v", actual, expected)
+	}
+	for exp := range expected {
+		found := false
+		for _, act := range actual {
+			if act == exp {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing expected type: %s", exp)
+		}
+	}
+	for exp, expType := range expected {
+		tf, found := rt.FindType(exp)
+		if !found {
+			t.Errorf("missing type in rule types: %s", exp)
+		}
+		if !proto.Equal(expType.ExprType(), tf) {
+			t.Errorf("incompatible CEL types. got=%v, wanted=%v", tf, expType.ExprType())
+		}
+	}
+}
+
+func TestTypes_RuleTypes_TypeFieldMapping(t *testing.T) {
+	stdEnv, _ := cel.NewEnv()
+	reg := NewRegistry(stdEnv)
+	rt, err := NewRuleTypes("mock_template", testSchema(), reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nestedFieldType, found := rt.FindFieldType("CustomObject", "nested")
+	if !found {
+		t.Fatal("got field not found for 'CustomObject.nested', wanted found")
+	}
+	if nestedFieldType.Type.GetMessageType() != "CustomObject.nested" {
 		t.Errorf("got field type %v, wanted mock_template.nested", nestedFieldType.Type)
 	}
-	subnameFieldType, found := rt.FindFieldType("mock_template.nested", "subname")
+	subnameFieldType, found := rt.FindFieldType("CustomObject.nested", "subname")
 	if !found {
-		t.Fatal("got field not found for 'mock_template.nested.subname', wanted found")
+		t.Fatal("got field not found for 'CustomObject.nested.subname', wanted found")
 	}
 	if subnameFieldType.Type.GetPrimitive() != exprpb.Type_STRING {
 		t.Errorf("got field type %v, wanted string", subnameFieldType.Type)
 	}
-	flagsFieldType, found := rt.FindFieldType("mock_template.nested", "flags")
+	flagsFieldType, found := rt.FindFieldType("CustomObject.nested", "flags")
 	if !found {
-		t.Fatal("got field not found for 'mock_template.nested.flags', wanted found")
+		t.Fatal("got field not found for 'CustomObject.nested.flags', wanted found")
 	}
 	if flagsFieldType.Type.GetMapType() == nil {
 		t.Errorf("got field type %v, wanted map", flagsFieldType.Type)
 	}
-	flagFieldType, found := rt.FindFieldType("mock_template.nested.flags", "my_flag")
+	flagFieldType, found := rt.FindFieldType("CustomObject.nested.flags", "my_flag")
 	if !found {
-		t.Fatal("got field not found for 'mock_template.nested.flags.my_flag', wanted found")
+		t.Fatal("got field not found for 'CustomObject.nested.flags.my_flag', wanted found")
 	}
 	if flagFieldType.Type.GetPrimitive() != exprpb.Type_BOOL {
 		t.Errorf("got field type %v, wanted bool", flagFieldType.Type)

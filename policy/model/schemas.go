@@ -74,9 +74,20 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 		if s.AdditionalProperties != nil {
 			return NewMapType(StringType, s.AdditionalProperties.DeclType())
 		}
-		fields := make(map[string]*DeclType, len(s.Properties))
+		fields := make(map[string]*DeclField, len(s.Properties))
+		required := make(map[string]struct{}, len(s.Required))
+		for _, name := range s.Required {
+			required[name] = struct{}{}
+		}
 		for name, prop := range s.Properties {
-			fields[name] = prop.DeclType()
+			_, isReq := required[name]
+			fields[name] = &DeclField{
+				Name:         name,
+				Required:     isReq,
+				Type:         prop.DeclType(),
+				defaultValue: prop.DefaultValue,
+				enumValues:   prop.Enum,
+			}
 		}
 		customType, found := s.Metadata["custom_type"]
 		if !found {
@@ -100,6 +111,7 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 			return UintType
 		}
 	}
+
 	return declType
 }
 

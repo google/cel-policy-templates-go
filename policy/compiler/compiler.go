@@ -254,7 +254,7 @@ func (ec *envCompiler) collectTypes(env *model.Env, typ *model.DeclType) {
 			env.Types[name] = typ
 		}
 		for _, f := range typ.Fields {
-			ec.collectTypes(env, f)
+			ec.collectTypes(env, f.Type)
 		}
 	}
 	if typ.IsMap() {
@@ -759,12 +759,6 @@ func (tc *templateCompiler) compileTerms(dyn *model.DynValue,
 		term := model.NewTerm(t.Ref.ID, t.Name, termAst)
 		if termAst != nil {
 			termType = termAst.ResultType()
-			for _, varName := range getVars(termAst) {
-				input, found := termMap[varName]
-				if found {
-					term.InputTerms[varName] = input
-				}
-			}
 		}
 		termMap[t.Name] = term
 		ceval.Terms = append(ceval.Terms, term)
