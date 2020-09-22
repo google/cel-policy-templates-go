@@ -301,11 +301,19 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 	if rt == nil {
 		return nil, false
 	}
-	declType, found := rt.findSchemaType(typeName)
+	declType, found := rt.findDeclType(typeName)
 	if found {
 		return declType.ExprType(), found
 	}
 	return rt.TypeProvider.FindType(typeName)
+}
+
+// FindDeclType returns the CPT type description which can be mapped to a CEL type.
+func (rt *RuleTypes) FindDeclType(typeName string) (*DeclType, bool) {
+	if rt == nil {
+		return nil, false
+	}
+	return rt.findDeclType(typeName)
 }
 
 // FindFieldType returns a field type given a type name and field name, if found.
@@ -315,7 +323,7 @@ func (rt *RuleTypes) FindType(typeName string) (*exprpb.Type, bool) {
 // resolution might more accurately reflect the expected type model. However, in this case
 // concessions were made to align with the existing CEL interfaces.
 func (rt *RuleTypes) FindFieldType(typeName, fieldName string) (*ref.FieldType, bool) {
-	st, found := rt.findSchemaType(typeName)
+	st, found := rt.findDeclType(typeName)
 	if !found {
 		return rt.TypeProvider.FindFieldType(typeName, fieldName)
 	}
@@ -369,7 +377,7 @@ func (rt *RuleTypes) TypeNames() []string {
 	return typeNames
 }
 
-func (rt *RuleTypes) findSchemaType(typeName string) (*DeclType, bool) {
+func (rt *RuleTypes) findDeclType(typeName string) (*DeclType, bool) {
 	declType, found := rt.ruleSchemaDeclTypes.types[typeName]
 	if found {
 		return declType, true
