@@ -190,6 +190,10 @@ properties:
     type: array
     items:
       type: string
+  enumDescriptions:
+    type: array
+    items:
+      type: string
   default: {}
   items:
     $ref: "#openAPISchema"
