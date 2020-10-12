@@ -1091,6 +1091,8 @@ func (dc *dynCompiler) validateTypeDef(dyn *model.DynValue, typeName string) {
 	p, hasProps := m.GetField("properties")
 	ap, hasAdditionalProps := m.GetField("additionalProperties")
 	_, hasItems := m.GetField("items")
+	ed, hasEnumDesc := m.GetField("enumDescriptions")
+	_, hasEnum := m.GetField("enum")
 
 	if hasProps && hasAdditionalProps {
 		dc.reportErrorAtID(ap.Ref.ID,
@@ -1120,6 +1122,10 @@ func (dc *dynCompiler) validateTypeDef(dyn *model.DynValue, typeName string) {
 			dc.reportErrorAtID(ap.Ref.ID,
 				"invalid type. items set, additionalProperties must not be set.")
 		}
+	}
+	if hasEnumDesc && !hasEnum {
+		dc.reportErrorAtID(ed.Ref.ID,
+			"invalid type. enumDescriptions set, enum must be set.")
 	}
 }
 
