@@ -108,13 +108,11 @@ type DeclType struct {
 	defaultValue ref.Val
 }
 
-// AssignTypeName sets the DeclType name to a fully qualified name.
-//
-// A DeclType may start as an anonymous `object` type and then be assigned a more specific type
-// name at compilation time.
+// MaybeAssignTypeName attempts to set the DeclType name to a fully qualified name, if the type
+// is of `object` type.
 //
 // The DeclType must return true for `IsObject` or this assignment will error.
-func (t *DeclType) AssignTypeName(name string) error {
+func (t *DeclType) MaybeAssignTypeName(name string) error {
 	if !t.IsObject() {
 		return fmt.Errorf(
 			"type names may only be assigned to objects: type=%v, name=%s",
@@ -421,10 +419,7 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 }
 
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
-	root := schema.DeclType()
-	root.AssignTypeName(kind)
-	types := map[string]*DeclType{}
-	err := buildDeclTypes(root.TypeName(), root, types)
+	root, types, err := schema.DeclTypes(kind)
 	if err != nil {
 		return nil, err
 	}
@@ -437,43 +432,6 @@ func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvi
 type schemaTypeProvider struct {
 	root  *DeclType
 	types map[string]*DeclType
-}
-
-func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error {
-	// Ensure object types are properly named according to where they appear in the schema.
-	if t.IsObject() {
-		// Hack to ensure that names are uniquely qualified and work well with the type
-		// resolution steps which require fully qualified type names for field resolution
-		// to function properly.
-		err := t.AssignTypeName(path)
-		if err != nil {
-			return err
-		}
-		types[t.TypeName()] = t
-		for name, field := range t.Fields {
-			ft := field.Type
-			fieldPath := fmt.Sprintf("%s.%s", path, name)
-			err := buildDeclTypes(fieldPath, ft, types)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	// Map element properties to type names if needed.
-	if t.IsMap() {
-		types[path] = t
-		et := t.ElemType
-		mapElemPath := fmt.Sprintf("%s.@elem", path)
-		return buildDeclTypes(mapElemPath, et, types)
-	}
-	// List element properties.
-	if t.IsList() {
-		types[path] = t
-		et := t.ElemType
-		listIdxPath := fmt.Sprintf("%s.@idx", path)
-		return buildDeclTypes(listIdxPath, et, types)
-	}
-	return nil
 }
 
 var (
