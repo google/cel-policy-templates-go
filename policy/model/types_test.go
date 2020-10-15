@@ -15,13 +15,12 @@
 package model
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
-
-	"google.golang.org/protobuf/proto"
 )
 
 func TestTypes_ListType(t *testing.T) {
@@ -65,34 +64,30 @@ func TestTypes_MapType(t *testing.T) {
 	}
 }
 
-func TestTypes_RuleTypes_TypeNames(t *testing.T) {
-	stdEnv, _ := cel.NewEnv()
-	reg := NewRegistry(stdEnv)
+func TestTypes_SchemaDeclTypes(t *testing.T) {
 	ts := testSchema()
-	rt, err := NewRuleTypes("mock_template", ts, reg)
+	cust, typeMap, err := ts.DeclTypes("mock_template")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("ts.DeclTypes('mock_template') failed: %v", err)
 	}
-	cust := ts.DeclType()
 	nested, _ := cust.FindField("nested")
 	dates, _ := nested.Type.FindField("dates")
 	flags, _ := nested.Type.FindField("flags")
 	// This is the type name that is assigned by the NewRuleTypes call, which may be informed
 	// by the template name itself and of which the schema should not know directly.
-	nested.Type.AssignTypeName("CustomObject.nested")
-	expected := map[string]*DeclType{
+	nested.Type.MaybeAssignTypeName("CustomObject.nested")
+	expectedTypeMap := map[string]*DeclType{
 		"CustomObject":              cust,
 		"CustomObject.nested":       nested.Type,
 		"CustomObject.nested.dates": dates.Type,
 		"CustomObject.nested.flags": flags.Type,
 	}
-	actual := rt.TypeNames()
-	if len(actual) != len(expected) {
-		t.Errorf("got different type set. got=%v, wanted=%v", actual, expected)
+	if len(typeMap) != len(expectedTypeMap) {
+		t.Errorf("got different type set. got=%v, wanted=%v", typeMap, expectedTypeMap)
 	}
-	for exp := range expected {
+	for exp := range expectedTypeMap {
 		found := false
-		for _, act := range actual {
+		for act := range typeMap {
 			if act == exp {
 				found = true
 				break
@@ -102,18 +97,18 @@ func TestTypes_RuleTypes_TypeNames(t *testing.T) {
 			t.Errorf("missing expected type: %s", exp)
 		}
 	}
-	for exp, expType := range expected {
-		tf, found := rt.FindType(exp)
+	for exp, expType := range expectedTypeMap {
+		actType, found := typeMap[exp]
 		if !found {
 			t.Errorf("missing type in rule types: %s", exp)
 		}
-		if !proto.Equal(expType.ExprType(), tf) {
-			t.Errorf("incompatible CEL types. got=%v, wanted=%v", tf, expType.ExprType())
+		if !reflect.DeepEqual(expType, actType) {
+			t.Errorf("incompatible CEL types. got=%v, wanted=%v", actType, expType)
 		}
 	}
 }
 
-func TestTypes_RuleTypes_TypeFieldMapping(t *testing.T) {
+func TestTypes_RuleTypesFieldMapping(t *testing.T) {
 	stdEnv, _ := cel.NewEnv()
 	reg := NewRegistry(stdEnv)
 	rt, err := NewRuleTypes("mock_template", testSchema(), reg)

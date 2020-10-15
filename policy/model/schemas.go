@@ -15,6 +15,7 @@
 package model
 
 import (
+	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -56,6 +57,18 @@ type OpenAPISchema struct {
 	Required             []string                  `yaml:"required,omitempty"`
 	Properties           map[string]*OpenAPISchema `yaml:"properties,omitempty"`
 	AdditionalProperties *OpenAPISchema            `yaml:"additionalProperties,omitempty"`
+}
+
+// DeclTypes constructs a top-down set of DeclType instances whose name is derived from the root
+// type name provided on the call, if not set to a custom type.
+func (s *OpenAPISchema) DeclTypes(maybeRootType string) (*DeclType, map[string]*DeclType, error) {
+	root := s.DeclType()
+	// If the decl is an "object" type, then replace the type name of "object" with the type name
+	// supplied.
+	root.MaybeAssignTypeName(maybeRootType)
+	types := map[string]*DeclType{}
+	err := buildDeclTypes(root.TypeName(), root, types)
+	return root, types, err
 }
 
 // DeclType returns the CEL Policy Templates type name associated with the schema element.
@@ -133,6 +146,43 @@ func (s *OpenAPISchema) FindProperty(name string) (*OpenAPISchema, bool) {
 		return s.AdditionalProperties, true
 	}
 	return nil, false
+}
+
+func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error {
+	// Ensure object types are properly named according to where they appear in the schema.
+	if t.IsObject() {
+		// Hack to ensure that names are uniquely qualified and work well with the type
+		// resolution steps which require fully qualified type names for field resolution
+		// to function properly.
+		err := t.MaybeAssignTypeName(path)
+		if err != nil {
+			return err
+		}
+		types[t.TypeName()] = t
+		for name, field := range t.Fields {
+			ft := field.Type
+			fieldPath := fmt.Sprintf("%s.%s", path, name)
+			err := buildDeclTypes(fieldPath, ft, types)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	// Map element properties to type names if needed.
+	if t.IsMap() {
+		types[path] = t
+		et := t.ElemType
+		mapElemPath := fmt.Sprintf("%s.@elem", path)
+		return buildDeclTypes(mapElemPath, et, types)
+	}
+	// List element properties.
+	if t.IsList() {
+		types[path] = t
+		et := t.ElemType
+		listIdxPath := fmt.Sprintf("%s.@idx", path)
+		return buildDeclTypes(listIdxPath, et, types)
+	}
+	return nil
 }
 
 var (
