@@ -15,11 +15,13 @@
 package model
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
+
+	"github.com/golang/protobuf/proto"
+
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -102,8 +104,8 @@ func TestTypes_SchemaDeclTypes(t *testing.T) {
 		if !found {
 			t.Errorf("missing type in rule types: %s", exp)
 		}
-		if !reflect.DeepEqual(expType, actType) {
-			t.Errorf("incompatible CEL types. got=%v, wanted=%v", actType, expType)
+		if !proto.Equal(expType.ExprType(), actType.ExprType()) {
+			t.Errorf("incompatible CEL types. got=%v, wanted=%v", actType.ExprType(), expType.ExprType())
 		}
 	}
 }
