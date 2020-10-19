@@ -42,8 +42,7 @@ import (
 )
 
 // NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
-func NewCompiler(reg *model.Registry, l *limits.Limits,
-	evalOpts ...cel.ProgramOption) *Compiler {
+func NewCompiler(reg *model.Registry, l *limits.Limits, evalOpts ...cel.ProgramOption) *Compiler {
 	return &Compiler{
 		evalOpts: evalOpts,
 		reg:      reg,
@@ -63,23 +62,33 @@ type Compiler struct {
 //
 // The resulting model.Env value may be used to extend a base CEL environment with additional
 // variable, function, and type declarations.
-func (c *Compiler) CompileEnv(src *model.Source,
-	parsedEnv *model.ParsedValue) (*model.Env, *cel.Issues) {
+func (c *Compiler) CompileEnv(src *model.Source, parsedEnv *model.ParsedValue) (*model.Env, *cel.Issues) {
 	return c.newEnvCompiler(src, parsedEnv).compile()
 }
 
 // CompileInstance type-checks and validates a parsed representation of a policy instance whose
 // format and validation logic is also determined by policy template referenced in the policy
 // instance 'kind' field.
-func (c *Compiler) CompileInstance(src *model.Source,
-	parsedInst *model.ParsedValue) (*model.Instance, *cel.Issues) {
+func (c *Compiler) CompileInstance(src *model.Source, parsedInst *model.ParsedValue) (*model.Instance, *cel.Issues) {
 	return c.newInstanceCompiler(src, parsedInst).compile()
 }
 
 // CompileTemplate type-checks and validates a parsed representation of a policy template.
-func (c *Compiler) CompileTemplate(src *model.Source,
-	parsedTmpl *model.ParsedValue) (*model.Template, *cel.Issues) {
+func (c *Compiler) CompileTemplate(src *model.Source, parsedTmpl *model.ParsedValue) (*model.Template, *cel.Issues) {
 	return c.newTemplateCompiler(src, parsedTmpl).compile()
+}
+
+// CompileSchema validates a parsed representation of a type schema and produces an OpenAPISchema as output.
+func (c *Compiler) CompileSchema(src *model.Source, parsedSchema *model.ParsedValue) (*model.OpenAPISchema, *cel.Issues) {
+	dc := c.newDynCompiler(src, parsedSchema)
+	dyn := model.NewDynValue(parsedSchema.ID, parsedSchema.Value)
+	schema := model.NewOpenAPISchema()
+	dc.compileOpenAPISchema(dyn, schema, false)
+	errs := dc.errors.GetErrors()
+	if len(errs) > 0 {
+		return nil, cel.NewIssues(dc.errors)
+	}
+	return schema, nil
 }
 
 func (c *Compiler) newEnvCompiler(src *model.Source,
@@ -1011,8 +1020,7 @@ func (dc *dynCompiler) checkSchema(dyn *model.DynValue, schema *model.OpenAPISch
 	}
 }
 
-func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue,
-	schema *model.OpenAPISchema, permitTypeParam bool) {
+func (dc *dynCompiler) compileOpenAPISchema(dyn *model.DynValue, schema *model.OpenAPISchema, permitTypeParam bool) {
 	schema.Title = dc.mapFieldStringValueOrEmpty(dyn, "title")
 	schema.Description = dc.mapFieldStringValueOrEmpty(dyn, "description")
 	schema.Type = dc.mapFieldStringValueOrEmpty(dyn, "type")
