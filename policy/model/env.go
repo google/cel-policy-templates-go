@@ -60,14 +60,14 @@ func (e *Env) ExprEnvOptions() []cel.EnvOption {
 	if len(e.Vars) > 0 {
 		vars := make([]*exprpb.Decl, len(e.Vars))
 		for i, v := range e.Vars {
-			vars[i] = v.exprDecl()
+			vars[i] = v.ExprDecl()
 		}
 		opts = append(opts, cel.Declarations(vars...))
 	}
 	if len(e.Functions) > 0 {
 		funcs := make([]*exprpb.Decl, len(e.Functions))
 		for i, f := range e.Functions {
-			funcs[i] = f.exprDecl()
+			funcs[i] = f.ExprDecl()
 		}
 		opts = append(opts, cel.Declarations(funcs...))
 	}
@@ -88,7 +88,8 @@ type Var struct {
 	Type *DeclType
 }
 
-func (v *Var) exprDecl() *exprpb.Decl {
+// ExprDecl produces a CEL proto declaration for the variable.
+func (v *Var) ExprDecl() *exprpb.Decl {
 	return decls.NewVar(v.Name, v.Type.ExprType())
 }
 
@@ -107,7 +108,8 @@ type Function struct {
 	Overloads []*Overload
 }
 
-func (f *Function) exprDecl() *exprpb.Decl {
+// ExprDecl produces a CEL proto declaration for the function and its overloads.
+func (f *Function) ExprDecl() *exprpb.Decl {
 	overloadDecls := make([]*exprpb.Decl_FunctionDecl_Overload, len(f.Overloads))
 	for i, o := range f.Overloads {
 		overloadDecls[i] = o.overloadDecl()
