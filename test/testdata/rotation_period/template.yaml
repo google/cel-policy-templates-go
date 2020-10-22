@@ -1,0 +1,44 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: PolicyTemplate
+metadata:
+  name: rotation_period
+  namespace: ns
+schema:
+  type: object
+  properties:
+    rotationPeriod:
+      format: google-duration
+      type: string
+
+validator:
+  terms:
+    hundred_years_in_hour: 100 * 365 * 24
+  productions:
+  - match: rule.rotationPeriod.getHours() < 24
+    message: "rotation period must be at least 24 hours."
+  - match: rule.rotationPeriod.getHours() > hundred_years_in_hour
+    message: "rotation period must be less than 100 years."
+
+evaluator:
+  productions:
+  - match: >
+      true
+    decision: violation
+    output:
+      details:
+        template: template.name
+        instance: instance.name

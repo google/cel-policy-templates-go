@@ -70,7 +70,11 @@ func (c *Compiler) CompileEnv(src *model.Source, parsedEnv *model.ParsedValue) (
 // format and validation logic is also determined by policy template referenced in the policy
 // instance 'kind' field.
 func (c *Compiler) CompileInstance(src *model.Source, parsedInst *model.ParsedValue) (*model.Instance, *cel.Issues) {
-	return c.newInstanceCompiler(src, parsedInst).compile()
+	ic := c.newInstanceCompiler(src, parsedInst)
+	if len(ic.errors.GetErrors()) > 0 {
+		return nil, cel.NewIssues(ic.errors)
+	}
+	return ic.compile()
 }
 
 // CompileTemplate type-checks and validates a parsed representation of a policy template.
@@ -1222,8 +1226,7 @@ func (dc *dynCompiler) checkMapSchema(dyn *model.DynValue, schema *model.OpenAPI
 			continue
 		}
 		field := model.NewField(0, prop)
-		field.Ref.Value = dc.convertToSchemaType(dyn.ID,
-			propSchema.DefaultValue, propSchema)
+		field.Ref.Value = dc.convertToSchemaType(dyn.ID, propSchema.DefaultValue, propSchema)
 		dc.checkSchema(field.Ref, propSchema)
 		mv.AddField(field)
 	}
