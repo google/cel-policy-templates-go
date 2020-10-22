@@ -20,8 +20,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 
-	"github.com/golang/protobuf/proto"
-
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -63,50 +61,6 @@ func TestTypes_MapType(t *testing.T) {
 	}
 	if mp.ExprType().GetMapType() == nil {
 		t.Errorf("got %v, wanted CEL map type", mp.ExprType())
-	}
-}
-
-func TestTypes_SchemaDeclTypes(t *testing.T) {
-	ts := testSchema()
-	cust, typeMap, err := ts.DeclTypes("mock_template")
-	if err != nil {
-		t.Fatalf("ts.DeclTypes('mock_template') failed: %v", err)
-	}
-	nested, _ := cust.FindField("nested")
-	dates, _ := nested.Type.FindField("dates")
-	flags, _ := nested.Type.FindField("flags")
-	// This is the type name that is assigned by the NewRuleTypes call, which may be informed
-	// by the template name itself and of which the schema should not know directly.
-	nested.Type.MaybeAssignTypeName("CustomObject.nested")
-	expectedTypeMap := map[string]*DeclType{
-		"CustomObject":              cust,
-		"CustomObject.nested":       nested.Type,
-		"CustomObject.nested.dates": dates.Type,
-		"CustomObject.nested.flags": flags.Type,
-	}
-	if len(typeMap) != len(expectedTypeMap) {
-		t.Errorf("got different type set. got=%v, wanted=%v", typeMap, expectedTypeMap)
-	}
-	for exp := range expectedTypeMap {
-		found := false
-		for act := range typeMap {
-			if act == exp {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing expected type: %s", exp)
-		}
-	}
-	for exp, expType := range expectedTypeMap {
-		actType, found := typeMap[exp]
-		if !found {
-			t.Errorf("missing type in rule types: %s", exp)
-		}
-		if !proto.Equal(expType.ExprType(), actType.ExprType()) {
-			t.Errorf("incompatible CEL types. got=%v, wanted=%v", actType.ExprType(), expType.ExprType())
-		}
 	}
 }
 
