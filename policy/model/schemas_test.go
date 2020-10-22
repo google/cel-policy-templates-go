@@ -18,17 +18,19 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 )
 
-func TestSchema_DeclTypes(t *testing.T) {
+func TestSchemaDeclType(t *testing.T) {
 	ts := testSchema()
 	cust := ts.DeclType()
 	if cust.TypeName() != "CustomObject" {
 		t.Errorf("incorrect type name, got %v, wanted CustomObject", cust.TypeName())
 	}
-	if len(cust.Fields) != 3 {
-		t.Errorf("incorrect number of fields, got %d, wanted 3", len(cust.Fields))
+	if len(cust.Fields) != 4 {
+		t.Errorf("incorrect number of fields, got %d, wanted 4", len(cust.Fields))
 	}
 	for _, f := range cust.Fields {
 		prop, found := ts.FindProperty(f.Name)
@@ -75,6 +77,49 @@ func TestSchema_DeclTypes(t *testing.T) {
 	}
 }
 
+func TestSchemaDeclTypes(t *testing.T) {
+	ts := testSchema()
+	cust, typeMap, err := ts.DeclTypes("mock_template")
+	if err != nil {
+		t.Fatalf("ts.DeclTypes('mock_template') failed: %v", err)
+	}
+	nested, _ := cust.FindField("nested")
+	metadata, _ := cust.FindField("metadata")
+	metadataElem := metadata.Type.ElemType
+	expectedObjTypeMap := map[string]*DeclType{
+		"CustomObject":                cust,
+		"CustomObject.nested":         nested.Type,
+		"CustomObject.metadata.@elem": metadataElem,
+	}
+	objTypeMap := map[string]*DeclType{}
+	for name, t := range typeMap {
+		if t.IsObject() {
+			objTypeMap[name] = t
+		}
+	}
+	if len(objTypeMap) != len(expectedObjTypeMap) {
+		t.Errorf("got different type set. got=%v, wanted=%v", typeMap, expectedObjTypeMap)
+	}
+	for exp, expType := range expectedObjTypeMap {
+		actType, found := objTypeMap[exp]
+		if !found {
+			t.Errorf("missing type in rule types: %s", exp)
+			continue
+		}
+		if !proto.Equal(expType.ExprType(), actType.ExprType()) {
+			t.Errorf("incompatible CEL types. got=%v, wanted=%v", actType.ExprType(), expType.ExprType())
+		}
+	}
+
+	metaExprType := metadata.Type.ExprType()
+	expectedMetaExprType := decls.NewMapType(
+		decls.String,
+		decls.NewObjectType("CustomObject.metadata.@elem"))
+	if !proto.Equal(expectedMetaExprType, metaExprType) {
+		t.Errorf("got metadata CEL type %v, wanted %v", metaExprType, expectedMetaExprType)
+	}
+}
+
 func testSchema() *OpenAPISchema {
 	// Manual construction of a schema with the following definition:
 	//
@@ -102,6 +147,16 @@ func testSchema() *OpenAPISchema {
 	//           items:
 	//             type: string
 	//             format: date-time
+	//      metadata:
+	//        type: object
+	//        additionalProperties:
+	//          type: object
+	//          properties:
+	//            key:
+	//              type: string
+	//            values:
+	//              type: array
+	//              items: string
 	//     value:
 	//       type: integer
 	//       format: int64
@@ -127,6 +182,17 @@ func testSchema() *OpenAPISchema {
 	nestedObjField.Properties["dates"].Items = NewOpenAPISchema()
 	nestedObjField.Properties["dates"].Items.Type = "string"
 	nestedObjField.Properties["dates"].Items.Format = "date-time"
+	metadataKeyValue := NewOpenAPISchema()
+	metadataKeyValue.Type = "object"
+	metadataKeyValue.Properties["key"] = NewOpenAPISchema()
+	metadataKeyValue.Properties["key"].Type = "string"
+	metadataKeyValue.Properties["values"] = NewOpenAPISchema()
+	metadataKeyValue.Properties["values"].Type = "array"
+	metadataKeyValue.Properties["values"].Items = NewOpenAPISchema()
+	metadataKeyValue.Properties["values"].Items.Type = "string"
+	metadataObjField := NewOpenAPISchema()
+	metadataObjField.Type = "object"
+	metadataObjField.AdditionalProperties = metadataKeyValue
 	ts := NewOpenAPISchema()
 	ts.Type = "object"
 	ts.Metadata["custom_type"] = "CustomObject"
@@ -134,5 +200,6 @@ func testSchema() *OpenAPISchema {
 	ts.Properties["name"] = nameField
 	ts.Properties["value"] = valueField
 	ts.Properties["nested"] = nestedObjField
+	ts.Properties["metadata"] = metadataObjField
 	return ts
 }

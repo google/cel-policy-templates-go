@@ -170,17 +170,25 @@ func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) error 
 	}
 	// Map element properties to type names if needed.
 	if t.IsMap() {
-		types[path] = t
 		et := t.ElemType
 		mapElemPath := fmt.Sprintf("%s.@elem", path)
-		return buildDeclTypes(mapElemPath, et, types)
+		err := buildDeclTypes(mapElemPath, et, types)
+		if err != nil {
+			return err
+		}
+		*t = *NewMapType(t.KeyType, et)
+		types[path] = t
 	}
 	// List element properties.
 	if t.IsList() {
-		types[path] = t
 		et := t.ElemType
 		listIdxPath := fmt.Sprintf("%s.@idx", path)
-		return buildDeclTypes(listIdxPath, et, types)
+		err := buildDeclTypes(listIdxPath, et, types)
+		if err != nil {
+			return err
+		}
+		*t = *NewListType(et)
+		types[path] = t
 	}
 	return nil
 }
