@@ -112,18 +112,64 @@ type DeclType struct {
 // is of `object` type.
 //
 // The DeclType must return true for `IsObject` or this assignment will error.
-func (t *DeclType) MaybeAssignTypeName(name string) error {
-	if !t.IsObject() {
-		return fmt.Errorf(
-			"type names may only be assigned to objects: type=%v, name=%s",
-			t, name)
+func (t *DeclType) MaybeAssignTypeName(name string) *DeclType {
+	if t.IsObject() {
+		objUpdated := false
+		if t.name != "object" {
+			name = t.name
+		} else {
+			objUpdated = true
+		}
+		fieldMap := make(map[string]*DeclField, len(t.Fields))
+		for fieldName, field := range t.Fields {
+			fieldType := field.Type
+			fieldTypeName := fmt.Sprintf("%s.%s", name, fieldName)
+			updated := fieldType.MaybeAssignTypeName(fieldTypeName)
+			if updated == fieldType {
+				fieldMap[fieldName] = field
+				continue
+			}
+			objUpdated = true
+			fieldMap[fieldName] = &DeclField{
+				Name:         fieldName,
+				Type:         updated,
+				Required:     field.Required,
+				enumValues:   field.enumValues,
+				defaultValue: field.defaultValue,
+			}
+		}
+		if !objUpdated {
+			return t
+		}
+		return &DeclType{
+			name:         name,
+			Fields:       fieldMap,
+			KeyType:      t.KeyType,
+			ElemType:     t.ElemType,
+			TypeParam:    t.TypeParam,
+			Metadata:     t.Metadata,
+			exprType:     decls.NewObjectType(name),
+			traitMask:    t.traitMask,
+			defaultValue: t.defaultValue,
+		}
 	}
-	if t.name != "object" {
-		return nil
+	if t.IsMap() {
+		elemTypeName := fmt.Sprintf("%s.@elem", name)
+		updated := t.ElemType.MaybeAssignTypeName(elemTypeName)
+		if updated == t.ElemType {
+			return t
+		}
+		return NewMapType(t.KeyType, updated)
 	}
-	t.name = name
-	t.exprType = decls.NewObjectType(name)
-	return nil
+	if t.IsList() {
+		elemTypeName := fmt.Sprintf("%s.@idx", name)
+		updated := t.ElemType.MaybeAssignTypeName(elemTypeName)
+		if updated == t.ElemType {
+			return t
+		}
+		return NewListType(updated)
+	}
+	return t
 }
 
 // ExprType returns the CEL expression type of this declaration.
@@ -184,6 +230,42 @@ func (t *DeclType) TypeName() string {
 // if one exists.
 func (t *DeclType) DefaultValue() ref.Val {
 	return t.defaultValue
+}
+
+// FieldTypeMap constructs a map of the field and object types nested within a given type.
+func FieldTypeMap(path string, t *DeclType) map[string]*DeclType {
+	if t.IsObject() {
+		path = t.TypeName()
+	}
+	types := make(map[string]*DeclType)
+	buildDeclTypes(path, t, types)
+	return types
+}
+
+func buildDeclTypes(path string, t *DeclType, types map[string]*DeclType) {
+	// Ensure object types are properly named according to where they appear in the schema.
+	if t.IsObject() {
+		// Hack to ensure that names are uniquely qualified and work well with the type
+		// resolution steps which require fully qualified type names for field resolution
+		// to function properly.
+		types[t.TypeName()] = t
+		for name, field := range t.Fields {
+			fieldPath := fmt.Sprintf("%s.%s", path, name)
+			buildDeclTypes(fieldPath, field.Type, types)
+		}
+	}
+	// Map element properties to type names if needed.
+	if t.IsMap() {
+		mapElemPath := fmt.Sprintf("%s.@elem", path)
+		buildDeclTypes(mapElemPath, t.ElemType, types)
+		types[path] = t
+	}
+	// List element properties.
+	if t.IsList() {
+		listIdxPath := fmt.Sprintf("%s.@idx", path)
+		buildDeclTypes(listIdxPath, t.ElemType, types)
+		types[path] = t
+	}
 }
 
 // DeclField describes the name, ordinal, and optionality of a field declaration within a type.
@@ -419,10 +501,7 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 }
 
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
-	root, types, err := schema.DeclTypes(kind)
-	if err != nil {
-		return nil, err
-	}
+	root, types := schema.DeclTypes(kind)
 	return &schemaTypeProvider{
 		root:  root,
 		types: types,

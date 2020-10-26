@@ -79,10 +79,7 @@ func TestSchemaDeclType(t *testing.T) {
 
 func TestSchemaDeclTypes(t *testing.T) {
 	ts := testSchema()
-	cust, typeMap, err := ts.DeclTypes("mock_template")
-	if err != nil {
-		t.Fatalf("ts.DeclTypes('mock_template') failed: %v", err)
-	}
+	cust, typeMap := ts.DeclTypes("mock_template")
 	nested, _ := cust.FindField("nested")
 	metadata, _ := cust.FindField("metadata")
 	metadataElem := metadata.Type.ElemType
