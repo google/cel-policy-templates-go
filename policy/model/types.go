@@ -234,7 +234,7 @@ func (t *DeclType) DefaultValue() ref.Val {
 
 // FieldTypeMap constructs a map of the field and object types nested within a given type.
 func FieldTypeMap(path string, t *DeclType) map[string]*DeclType {
-	if t.IsObject() {
+	if t.IsObject() && t.TypeName() != "object" {
 		path = t.TypeName()
 	}
 	types := make(map[string]*DeclType)
@@ -501,7 +501,8 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 }
 
 func newSchemaTypeProvider(kind string, schema *OpenAPISchema) (*schemaTypeProvider, error) {
-	root, types := schema.DeclTypes(kind)
+	root := schema.DeclType().MaybeAssignTypeName(kind)
+	types := FieldTypeMap(kind, root)
 	return &schemaTypeProvider{
 		root:  root,
 		types: types,
