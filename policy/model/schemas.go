@@ -97,14 +97,11 @@ func (s *OpenAPISchema) DeclType() *DeclType {
 				enumValues:   prop.Enum,
 			}
 		}
-		customType, found := s.Metadata["custom_type"]
-		if !found {
+		customType, hasCustomType := s.Metadata["custom_type"]
+		if !hasCustomType {
 			return NewObjectType("object", fields)
 		}
-		if len(fields) != 0 {
-			return NewObjectType(customType, fields)
-		}
-		return NewObjectTypeRef(customType)
+		return NewObjectType(customType, fields)
 	case StringType.TypeName():
 		switch s.Format {
 		case "byte", "binary":
