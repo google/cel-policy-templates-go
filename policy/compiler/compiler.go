@@ -1249,7 +1249,7 @@ func (dc *dynCompiler) convertToPrimitive(dyn *model.DynValue) interface{} {
 func (dc *dynCompiler) convertToSchemaType(id int64, val interface{},
 	schema *model.OpenAPISchema) interface{} {
 	switch v := val.(type) {
-	case bool, float64, int64, uint64:
+	case bool, float64, int64, uint64, time.Time:
 		return v
 	case string, model.PlainTextValue, *model.MultilineStringValue:
 		str := ""

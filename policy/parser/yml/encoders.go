@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-policy-templates-go/policy/model"
@@ -183,6 +184,9 @@ func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 		isPrimitive = true
 		str := strconv.Quote(dyn)
 		enc.write(str).writeLineComment(v.ID)
+	case time.Time:
+		isPrimitive = true
+		enc.write(fmt.Sprintf("%q", dyn.Format(time.RFC3339))).writeLineComment(v.ID)
 	case types.Null:
 		isPrimitive = true
 		enc.writeLineComment(v.ID)

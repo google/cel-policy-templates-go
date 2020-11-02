@@ -16,6 +16,7 @@ package yml
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-policy-templates-go/policy/model"
@@ -205,7 +206,7 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 	var dv interface{}
 	switch v := val.(type) {
 	case bool, float64, int64, string, uint64,
-		*model.MultilineStringValue, model.PlainTextValue, types.Null:
+		*model.MultilineStringValue, model.PlainTextValue, types.Null, time.Time:
 		dv = v
 	default:
 		return valueNotAssignableToType(model.AnyType, v)
