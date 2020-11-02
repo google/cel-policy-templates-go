@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/cel-policy-templates-go/policy/model"
 
@@ -206,6 +207,13 @@ func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {
 		} else {
 			err = ref.assign(node.Value)
 		}
+	case model.TimestampType:
+		val, convErr := time.Parse(time.RFC3339, node.Value)
+		if convErr != nil {
+			p.reportErrorAtID(p.id, convErr.Error())
+		} else {
+			err = ref.assign(val)
+		}
 	default:
 		p.reportErrorAtID(p.id, "unsupported cel type: %v", modelType)
 	}
@@ -261,14 +269,15 @@ func (p *parser) reportErrorAtID(id int64, format string, args ...interface{}) {
 var (
 	// yamlTypes map of the long tag names supported by the Go YAML v3 library.
 	yamlTypes = map[string]*model.DeclType{
-		"!txt":                    model.PlainTextType,
-		"tag:yaml.org,2002:bool":  model.BoolType,
-		"tag:yaml.org,2002:null":  model.NullType,
-		"tag:yaml.org,2002:str":   model.StringType,
-		"tag:yaml.org,2002:int":   model.IntType,
-		"tag:yaml.org,2002:float": model.DoubleType,
-		"tag:yaml.org,2002:seq":   model.ListType,
-		"tag:yaml.org,2002:map":   model.MapType,
+		"!txt":                        model.PlainTextType,
+		"tag:yaml.org,2002:bool":      model.BoolType,
+		"tag:yaml.org,2002:null":      model.NullType,
+		"tag:yaml.org,2002:str":       model.StringType,
+		"tag:yaml.org,2002:int":       model.IntType,
+		"tag:yaml.org,2002:float":     model.DoubleType,
+		"tag:yaml.org,2002:seq":       model.ListType,
+		"tag:yaml.org,2002:map":       model.MapType,
+		"tag:yaml.org,2002:timestamp": model.TimestampType,
 	}
 )
 
