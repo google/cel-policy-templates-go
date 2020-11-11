@@ -494,6 +494,7 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 			elem = rt.convertToCustomType(elem, declType.ElemType)
 			v.Entries[i] = elem
 		}
+		v.Finalize()
 		return dyn
 	default:
 		return dyn
