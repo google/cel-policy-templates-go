@@ -376,9 +376,9 @@ func (eval *evaluator) eval(rule model.Rule,
 	// Fast-path evaluation without ranges.
 	if len(eval.ranges) == 0 {
 		act := eval.actPool.Setup(vars)
-		eval.evalProductions(rule, selector, act, slots)
+		err := eval.evalProductions(rule, selector, act, slots)
 		eval.actPool.Put(act)
-		return nil
+		return err
 	}
 	// Range-based evaluation.
 	var errs []error

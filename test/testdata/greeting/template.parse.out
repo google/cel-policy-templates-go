@@ -87,29 +87,27 @@
     - 148~149~match: 150~"hi.startsWith(\"Goodbye\")"
       151~message: 152~"greeting starts with a farewell word"
       153~details: 154~"hi"
-    - 155~156~match: 157~>
-        rule.conditions.exists(expr, !compile(expr))
-      158~message: 159~"could not compile condition"
-160~evaluator:161~
-  162~terms:163~
-    164~hi: 165~"rule.greeting"
-    166~bye: 167~"rule.farewell"
-    168~after: 169~>
+155~evaluator:156~
+  157~environment: 158~"greeting.v1alpha1.Environment"
+  159~terms:160~
+    161~hi: 162~"rule.greeting"
+    163~bye: 164~"rule.farewell"
+    165~after: 166~>
       rule.duration + duration('5m')
-  170~productions:171~
-    - 172~173~match: 174~"hi != '' && bye == ''"
-      175~decision: 176~"policy.acme.welcome"
-      177~output: 178~"hi"
-    - 179~180~match: 181~"bye != '' && hi == ''"
-      182~decision: 183~"policy.acme.depart"
-      184~output: 185~"bye"
-    - 186~187~match: 188~"hi != '' && bye != ''"
-      189~decisions:190~
-        - 191~192~decision: 193~"policy.acme.welcome"
-          194~output: 195~"hi"
-        - 196~197~decision: 198~"policy.acme.depart"
-          199~output: 200~"bye"
-        - 201~202~decision: 203~"policy.acme.tracing"
-          204~output: 205~"rule.details"
-        - 206~207~decision: 208~"policy.acme.duration"
-          209~output: 210~"after"
+  167~productions:168~
+    - 169~170~match: 171~"hi != '' && bye == ''"
+      172~decision: 173~"policy.acme.welcome"
+      174~output: 175~"hi"
+    - 176~177~match: 178~"bye != '' && hi == ''"
+      179~decision: 180~"policy.acme.depart"
+      181~output: 182~"bye"
+    - 183~184~match: 185~"hi != '' && bye != ''"
+      186~decisions:187~
+        - 188~189~decision: 190~"policy.acme.welcome"
+          191~output: 192~"hi"
+        - 193~194~decision: 195~"policy.acme.depart"
+          196~output: 197~"bye"
+        - 198~199~decision: 200~"policy.acme.tracing"
+          201~output: 202~"rule.details"
+        - 203~204~decision: 205~"policy.acme.duration"
+          206~output: 207~"after"

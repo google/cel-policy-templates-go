@@ -89,10 +89,8 @@ validator:
     - match: hi.startsWith("Goodbye")
       message: greeting starts with a farewell word
       details: hi
-    - match: >
-        rule.conditions.exists(expr, !compile(expr))
-      message: could not compile condition
 evaluator:
+  environment: greeting.v1alpha1.Environment
   terms:
     hi: rule.greeting
     bye: rule.farewell
