@@ -566,8 +566,7 @@ type Field struct {
 // NewListValue returns an empty ListValue instance.
 func NewListValue() *ListValue {
 	return &ListValue{
-		Entries:  []*DynValue{},
-		valueSet: map[ref.Val]struct{}{},
+		Entries: []*DynValue{},
 	}
 }
 
@@ -701,10 +700,13 @@ func (lv *ListValue) Equal(other ref.Val) ref.Val {
 // Finalize inspects the ListValue entries in order to make internal optimizations once all list
 // entries are known.
 func (lv *ListValue) Finalize() {
+	lv.valueSet = make(map[ref.Val]struct{})
 	for _, e := range lv.Entries {
 		switch e.Value.(type) {
 		case bool, float64, int64, string, uint64, types.Null, PlainTextValue:
-			lv.valueSet[e.ExprValue()] = struct{}{}
+			if lv.valueSet != nil {
+				lv.valueSet[e.ExprValue()] = struct{}{}
+			}
 		default:
 			lv.valueSet = nil
 			return
