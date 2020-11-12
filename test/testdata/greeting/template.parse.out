@@ -101,17 +101,13 @@
     - 176~177~match: 178~"bye != '' && hi == ''"
       179~decision: 180~"policy.acme.depart"
       181~output: 182~"bye"
-    - 183~184~match: 185~>
-        rule.conditions.exists(expr, !compile(expr))
-      186~decision: 187~"policy.violation"
-      188~output: 189~"could not compile condition"
-    - 190~191~match: 192~"hi != '' && bye != ''"
-      193~decisions:194~
-        - 195~196~decision: 197~"policy.acme.welcome"
-          198~output: 199~"hi"
-        - 200~201~decision: 202~"policy.acme.depart"
-          203~output: 204~"bye"
-        - 205~206~decision: 207~"policy.acme.tracing"
-          208~output: 209~"rule.details"
-        - 210~211~decision: 212~"policy.acme.duration"
-          213~output: 214~"after"
+    - 183~184~match: 185~"hi != '' && bye != ''"
+      186~decisions:187~
+        - 188~189~decision: 190~"policy.acme.welcome"
+          191~output: 192~"hi"
+        - 193~194~decision: 195~"policy.acme.depart"
+          196~output: 197~"bye"
+        - 198~199~decision: 200~"policy.acme.tracing"
+          201~output: 202~"rule.details"
+        - 203~204~decision: 205~"policy.acme.duration"
+          206~output: 207~"after"

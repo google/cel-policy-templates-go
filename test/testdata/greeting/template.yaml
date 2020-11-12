@@ -103,10 +103,6 @@ evaluator:
     - match: bye != '' && hi == ''
       decision: policy.acme.depart
       output: bye
-    - match: >
-        rule.conditions.exists(expr, !compile(expr))
-      decision: policy.violation
-      output: could not compile condition
     - match: hi != '' && bye != ''
       decisions:
         - decision: policy.acme.welcome

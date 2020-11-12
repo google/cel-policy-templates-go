@@ -23,9 +23,9 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
 	"github.com/google/cel-policy-templates-go/test"
-	"gopkg.in/yaml.v3"
 
 	"github.com/google/cel-go/cel"
+	"gopkg.in/yaml.v3"
 )
 
 func TestCompiler(t *testing.T) {
