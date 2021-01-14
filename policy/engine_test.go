@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/runtime"
@@ -26,9 +27,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/interpreter"
-
-	dpb "github.com/golang/protobuf/ptypes/duration"
-	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 type metadata struct {
@@ -138,7 +136,7 @@ var (
 					"gone": {1999},
 					"next": {2038},
 				},
-				&dpb.Duration{Seconds: 600},
+				time.Duration(600) * time.Second,
 			},
 			opts: []EngineOption{EvaluatorDecisionLimit(4)},
 		},
@@ -263,7 +261,7 @@ var (
 			policy: "timed_contract",
 			input: map[string]interface{}{
 				"resource.name": "/company/warneranimstudios/hello",
-				"request.time":  &tpb.Timestamp{Seconds: 1546416000},
+				"request.time":  time.Unix(1546416000, 0).UTC(),
 			},
 			outputs: []interface{}{},
 		},
@@ -272,7 +270,7 @@ var (
 			policy: "timed_contract",
 			input: map[string]interface{}{
 				"resource.name": "/company/othercust/some/data",
-				"request.time":  &tpb.Timestamp{Seconds: 1546416000},
+				"request.time":  time.Unix(1546416000, 0).UTC(),
 			},
 			outputs: []interface{}{},
 		},
@@ -281,7 +279,7 @@ var (
 			policy: "timed_contract",
 			input: map[string]interface{}{
 				"resource.name": "/company/warneranimstudios/goodbye",
-				"request.time":  &tpb.Timestamp{Seconds: 1646416000},
+				"request.time":  time.Unix(1646416000, 0).UTC(),
 			},
 			outputs: []interface{}{true},
 		},

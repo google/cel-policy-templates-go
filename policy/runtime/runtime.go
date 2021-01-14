@@ -171,10 +171,10 @@ func (t *Template) Validate(src *model.Source, inst *model.Instance) *cel.Issues
 			}
 			f, found := violationMap["field"]
 			if found {
-				field, ok := f.(types.String)
+				field, ok := f.(string)
 				if ok {
 					rule := ruleMap[rules[i]]
-					fieldID := rule.GetFieldID(string(field))
+					fieldID := rule.GetFieldID(field)
 					fieldLoc, found := inst.Meta.LocationByID(fieldID)
 					if found {
 						loc = fieldLoc

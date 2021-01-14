@@ -18,9 +18,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSchemaDeclType(t *testing.T) {

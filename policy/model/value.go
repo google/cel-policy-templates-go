@@ -19,13 +19,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
-
-	dpb "github.com/golang/protobuf/ptypes/duration"
-	tpb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 // EncodeStyle is a hint for string encoding of parsed values.
@@ -141,19 +137,11 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 	case *MultilineStringValue:
 		return celBool(v.Value == other.Value().(string))
 	case time.Duration:
-		otherDuration := other.Value().(*dpb.Duration)
-		otherDur, err := ptypes.Duration(otherDuration)
-		if err != nil {
-			return types.NewErr(err.Error())
-		}
-		return celBool(v == otherDur)
+		otherDuration := other.Value().(time.Duration)
+		return celBool(v == otherDuration)
 	case time.Time:
-		otherTimestamp := other.Value().(*tpb.Timestamp)
-		otherTime, err := ptypes.Timestamp(otherTimestamp)
-		if err != nil {
-			return types.NewErr(err.Error())
-		}
-		return celBool(v.Equal(otherTime))
+		otherTimestamp := other.Value().(time.Time)
+		return celBool(v.Equal(otherTimestamp))
 	default:
 		return celBool(reflect.DeepEqual(v, other.Value()))
 	}
@@ -194,14 +182,9 @@ func exprValue(dv *DynValue) ref.Val {
 	case *MultilineStringValue:
 		return types.String(v.Value)
 	case time.Duration:
-		dbuf := ptypes.DurationProto(v)
-		return types.Duration{Duration: dbuf}
+		return types.Duration{Duration: v}
 	case time.Time:
-		tbuf, err := ptypes.TimestampProto(v)
-		if err != nil {
-			return types.NewErr(err.Error())
-		}
-		return types.Timestamp{Timestamp: tbuf}
+		return types.Timestamp{Time: v}
 	default:
 		return types.NewErr("no such expr type: %T", v)
 	}
@@ -592,7 +575,7 @@ func (lv *ListValue) Add(other ref.Val) ref.Val {
 	for i := 0; i < szLeft; i++ {
 		combo[i+szRight] = oArr.Get(types.Int(i))
 	}
-	return types.NewValueList(types.DefaultTypeAdapter, combo)
+	return types.DefaultTypeAdapter.NativeToValue(combo)
 }
 
 // Append adds another entry into the ListValue.
