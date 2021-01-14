@@ -16,6 +16,7 @@ package model
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
@@ -23,9 +24,8 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
 
-	"github.com/golang/protobuf/proto"
-	dpb "github.com/golang/protobuf/ptypes/duration"
-	tpb "github.com/golang/protobuf/ptypes/timestamp"
+	"google.golang.org/protobuf/proto"
+
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -531,7 +531,7 @@ var (
 
 	// DurationType is equivalent to the CEL 'duration' type.
 	DurationType = newSimpleType("duration", decls.Duration,
-		types.Duration{Duration: &dpb.Duration{}})
+		types.Duration{Duration: time.Duration(0)})
 
 	// DynType is the equivalent of the CEL 'dyn' concept which indicates that the type will be
 	// determined at runtime rather than compile time.
@@ -552,8 +552,7 @@ var (
 	PlainTextType = newSimpleType("string_lit", decls.String, types.String(""))
 
 	// TimestampType corresponds to the well-known protobuf.Timestamp type supported within CEL.
-	TimestampType = newSimpleType("timestamp", decls.Timestamp,
-		types.Timestamp{Timestamp: &tpb.Timestamp{}})
+	TimestampType = newSimpleType("timestamp", decls.Timestamp, types.Timestamp{Time: time.Time{}})
 
 	// UintType is equivalent to the CEL 'uint' type.
 	UintType = newSimpleType("uint", decls.Uint, types.Uint(0))

@@ -36,7 +36,7 @@ import (
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
