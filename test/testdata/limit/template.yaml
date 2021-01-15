@@ -23,11 +23,18 @@ schema:
   properties:
     greeting:
       type: string
-
+    encounters:
+      type: array
+      items:
+        type: string
 evaluator:
   terms:
     hi: rule.greeting
   productions:
     - match: hi != ''
+      decision: policy.acme.welcome
+      output: hi
+    - match: >
+        rule.encounters.exists(encounter, encounter == "vikings")
       decision: policy.acme.welcome
       output: hi

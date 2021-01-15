@@ -18,6 +18,7 @@ metadata:
   name: limit_instance_example
 rules:
   - greeting: "Hello"
+    encounters: ["doga", "dogb", "catc"]
   - greeting: "Good morning"
   - greeting: "Good afternoon"
   - greeting: "Good evening"

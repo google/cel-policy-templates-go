@@ -110,6 +110,15 @@ func RuleLimit(limit int) EngineOption {
 	}
 }
 
+// EvaluatorExprCostLimit sets the evaluator expression cost limit supported by the compilation and
+// runtime components.
+func EvaluatorExprCostLimit(limit int) EngineOption {
+	return func(e *Engine) (*Engine, error) {
+		e.limits.EvaluatorExprCostLimit = limit
+		return e, nil
+	}
+}
+
 // RuntimeTemplateOptions collects a set of runtime specific options to be configured on runtime
 // templates.
 func RuntimeTemplateOptions(rtOpts ...runtime.TemplateOption) EngineOption {

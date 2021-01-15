@@ -46,6 +46,7 @@ func TestCompiler(t *testing.T) {
 	limits.ValidatorTermLimit = 20
 	limits.ValidatorProductionLimit = 15
 	limits.RuleLimit = 4
+	limits.EvaluatorExprCostLimit = 100
 	comp := NewCompiler(reg, limits)
 	for _, tc := range tests {
 		tst := tc
