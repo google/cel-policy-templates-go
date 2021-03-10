@@ -469,9 +469,8 @@ func (rt *RuleTypes) findDeclType(typeName string) (*DeclType, bool) {
 	return nil, false
 }
 
-func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
-	declType *DeclType) *DynValue {
-	switch v := dyn.Value.(type) {
+func (rt *RuleTypes) convertToCustomType(dyn *DynValue, declType *DeclType) *DynValue {
+	switch v := dyn.Value().(type) {
 	case *MapValue:
 		if declType.IsObject() {
 			obj := v.ConvertToObject(declType)
@@ -479,7 +478,7 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 				field := declType.Fields[name]
 				f.Ref = rt.convertToCustomType(f.Ref, field.Type)
 			}
-			dyn.Value = obj
+			dyn.SetValue(obj)
 			return dyn
 		}
 		// TODO: handle complex map types which have non-string keys.
@@ -494,7 +493,6 @@ func (rt *RuleTypes) convertToCustomType(dyn *DynValue,
 			elem = rt.convertToCustomType(elem, declType.ElemType)
 			v.Entries[i] = elem
 		}
-		v.Finalize()
 		return dyn
 	default:
 		return dyn
@@ -530,8 +528,7 @@ var (
 	DoubleType = newSimpleType("double", decls.Double, types.Double(0))
 
 	// DurationType is equivalent to the CEL 'duration' type.
-	DurationType = newSimpleType("duration", decls.Duration,
-		types.Duration{Duration: time.Duration(0)})
+	DurationType = newSimpleType("duration", decls.Duration, types.Duration{Duration: time.Duration(0)})
 
 	// DynType is the equivalent of the CEL 'dyn' concept which indicates that the type will be
 	// determined at runtime rather than compile time.

@@ -38,9 +38,11 @@ schema:
           google_duration:
             type: string
             format: google-duration
+            default: 300s
           google_timestamp:
             type: string
             format: google-datetime
+            default: 1970-01-01T00:00:00Z
 evaluator:
   productions:
     - decision: grant

@@ -143,7 +143,6 @@ func (p *parser) parse(node *yaml.Node, ref objRef) {
 		p.parsePrimitive(node, ref)
 	}
 	ref.encodeStyle(getEncodeStyle(node.Style))
-	ref.finalize()
 }
 
 func (p *parser) parsePrimitive(node *yaml.Node, ref objRef) {

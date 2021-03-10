@@ -17,6 +17,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/google/cel-go/common/types"
@@ -54,12 +55,15 @@ type ParsedValue struct {
 // NewEmptyDynValue returns the zero-valued DynValue.
 func NewEmptyDynValue() *DynValue {
 	// note: 0 is not a valid parse node identifier.
-	return NewDynValue(0, nil)
+	dv, _ := NewDynValue(0, nil)
+	return dv
 }
 
 // NewDynValue returns a DynValue that corresponds to a parse node id and value.
-func NewDynValue(id int64, val interface{}) *DynValue {
-	return &DynValue{ID: id, Value: val}
+func NewDynValue(id int64, val interface{}) (*DynValue, error) {
+	dv := &DynValue{ID: id}
+	err := dv.SetValue(val)
+	return dv, err
 }
 
 // DynValue is a dynamically typed value used to describe unstructured content.
@@ -67,45 +71,15 @@ func NewDynValue(id int64, val interface{}) *DynValue {
 // Template, and whether there are schemas which might enforce a more rigid type definition.
 type DynValue struct {
 	ID          int64
-	Value       interface{}
 	EncodeStyle EncodeStyle
+	value       interface{}
 	exprValue   ref.Val
+	declType    *DeclType
 }
 
 // DeclType returns the policy model type of the dyn value.
 func (dv *DynValue) DeclType() *DeclType {
-	// TODO: set this type at value creation time in the parser builder.
-	switch v := dv.Value.(type) {
-	case bool:
-		return BoolType
-	case []byte:
-		return BytesType
-	case float64:
-		return DoubleType
-	case int64:
-		return IntType
-	case string:
-		return StringType
-	case uint64:
-		return UintType
-	case types.Null:
-		return NullType
-	case time.Duration:
-		return DurationType
-	case time.Time:
-		return TimestampType
-	case PlainTextValue:
-		return PlainTextType
-	case *MultilineStringValue:
-		return StringType
-	case *ListValue:
-		return ListType
-	case *MapValue:
-		return MapType
-	case *ObjectValue:
-		return v.objectType
-	}
-	return unknownType
+	return dv.declType
 }
 
 // ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
@@ -129,7 +103,7 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 	if dvType.TypeName() != otherType.TypeName() {
 		return types.MaybeNoSuchOverloadErr(other)
 	}
-	switch v := dv.Value.(type) {
+	switch v := dv.value.(type) {
 	case ref.Val:
 		return v.Equal(other)
 	case PlainTextValue:
@@ -149,11 +123,20 @@ func (dv *DynValue) Equal(other ref.Val) ref.Val {
 
 // ExprValue converts the DynValue into a CEL value.
 func (dv *DynValue) ExprValue() ref.Val {
-	if dv.exprValue == nil {
-		// TODO: implement eager initialization.
-		dv.exprValue = exprValue(dv)
-	}
 	return dv.exprValue
+}
+
+// Value returns the underlying value held by this reference.
+func (dv *DynValue) Value() interface{} {
+	return dv.value
+}
+
+// SetValue updates the underlying value held by this reference.
+func (dv *DynValue) SetValue(value interface{}) error {
+	dv.value = value
+	var err error
+	dv.exprValue, dv.declType, err = exprValue(value)
+	return err
 }
 
 // Type returns the CEL type for the given value.
@@ -161,32 +144,38 @@ func (dv *DynValue) Type() ref.Type {
 	return dv.ExprValue().Type()
 }
 
-func exprValue(dv *DynValue) ref.Val {
-	switch v := dv.Value.(type) {
-	case ref.Val:
-		return v
+func exprValue(value interface{}) (ref.Val, *DeclType, error) {
+	switch v := value.(type) {
 	case bool:
-		return types.Bool(v)
+		return types.Bool(v), BoolType, nil
 	case []byte:
-		return types.Bytes(v)
+		return types.Bytes(v), BytesType, nil
 	case float64:
-		return types.Double(v)
+		return types.Double(v), DoubleType, nil
 	case int64:
-		return types.Int(v)
+		return types.Int(v), IntType, nil
 	case string:
-		return types.String(v)
+		return types.String(v), StringType, nil
 	case uint64:
-		return types.Uint(v)
+		return types.Uint(v), UintType, nil
 	case PlainTextValue:
-		return types.String(string(v))
+		return types.String(string(v)), PlainTextType, nil
 	case *MultilineStringValue:
-		return types.String(v.Value)
+		return types.String(v.Value), StringType, nil
 	case time.Duration:
-		return types.Duration{Duration: v}
+		return types.Duration{Duration: v}, DurationType, nil
 	case time.Time:
-		return types.Timestamp{Time: v}
+		return types.Timestamp{Time: v}, TimestampType, nil
+	case types.Null:
+		return v, NullType, nil
+	case *ListValue:
+		return v, ListType, nil
+	case *MapValue:
+		return v, MapType, nil
+	case *ObjectValue:
+		return v, v.objectType, nil
 	default:
-		return types.NewErr("no such expr type: %T", v)
+		return nil, unknownType, fmt.Errorf("unsupported type: (%T)%v", v, v)
 	}
 }
 
@@ -331,10 +320,10 @@ func (o *ObjectValue) Equal(other ref.Val) ref.Val {
 		return types.MaybeNoSuchOverloadErr(other)
 	}
 	o2 := other.(traits.Indexer)
-	for name, field := range o.fieldMap {
+	for name := range o.objectType.Fields {
 		k := types.String(name)
+		v := o.Get(k)
 		ov := o2.Get(k)
-		v := field.Ref.ExprValue()
 		vEq := v.Equal(ov)
 		if vEq != types.True {
 			return vEq
@@ -555,15 +544,16 @@ func NewListValue() *ListValue {
 
 // ListValue contains a list of dynamically typed entries.
 type ListValue struct {
-	Entries  []*DynValue
-	valueSet map[ref.Val]struct{}
+	Entries      []*DynValue
+	initValueSet sync.Once
+	valueSet     map[ref.Val]struct{}
 }
 
 // Add concatenates two lists together to produce a new CEL list value.
 func (lv *ListValue) Add(other ref.Val) ref.Val {
 	oArr, isArr := other.(traits.Lister)
 	if !isArr {
-		return types.ValOrErr(other, "unsupported operation")
+		return types.MaybeNoSuchOverloadErr(other)
 	}
 	szRight := len(lv.Entries)
 	szLeft := int(oArr.Size().(types.Int))
@@ -581,6 +571,8 @@ func (lv *ListValue) Add(other ref.Val) ref.Val {
 // Append adds another entry into the ListValue.
 func (lv *ListValue) Append(entry *DynValue) {
 	lv.Entries = append(lv.Entries, entry)
+	// The append resets all previously built indices.
+	lv.initValueSet = sync.Once{}
 }
 
 // Contains returns whether the input `val` is equal to an element in the list.
@@ -591,12 +583,14 @@ func (lv *ListValue) Contains(val ref.Val) ref.Val {
 	if types.IsUnknownOrError(val) {
 		return val
 	}
+	lv.initValueSet.Do(lv.finalizeValueSet)
 	if lv.valueSet != nil {
 		_, found := lv.valueSet[val]
 		if found {
 			return types.True
 		}
-		return types.False
+		// Instead of returning false, ensure that CEL's heterogeneous equality constraint
+		// is satisfied by allowing pair-wise equality behavior to determine the outcome.
 	}
 	var err ref.Val
 	sz := len(lv.Entries)
@@ -605,7 +599,7 @@ func (lv *ListValue) Contains(val ref.Val) ref.Val {
 		cmp := elem.Equal(val)
 		b, ok := cmp.(types.Bool)
 		if !ok && err == nil {
-			err = types.ValOrErr(cmp, "no such overload")
+			err = types.MaybeNoSuchOverloadErr(cmp)
 		}
 		if b == types.True {
 			return types.True
@@ -665,7 +659,7 @@ func (lv *ListValue) ConvertToType(t ref.Type) ref.Val {
 func (lv *ListValue) Equal(other ref.Val) ref.Val {
 	oArr, isArr := other.(traits.Lister)
 	if !isArr {
-		return types.ValOrErr(other, "unsupported operation")
+		return types.MaybeNoSuchOverloadErr(other)
 	}
 	sz := types.Int(len(lv.Entries))
 	if sz != oArr.Size() {
@@ -678,23 +672,6 @@ func (lv *ListValue) Equal(other ref.Val) ref.Val {
 		}
 	}
 	return types.True
-}
-
-// Finalize inspects the ListValue entries in order to make internal optimizations once all list
-// entries are known.
-func (lv *ListValue) Finalize() {
-	lv.valueSet = make(map[ref.Val]struct{})
-	for _, e := range lv.Entries {
-		switch e.Value.(type) {
-		case bool, float64, int64, string, uint64, types.Null, PlainTextValue:
-			if lv.valueSet != nil {
-				lv.valueSet[e.ExprValue()] = struct{}{}
-			}
-		default:
-			lv.valueSet = nil
-			return
-		}
-	}
 }
 
 // Get returns the value at the given index.
@@ -733,6 +710,24 @@ func (lv *ListValue) Type() ref.Type {
 // Value returns the Go-native value.
 func (lv *ListValue) Value() interface{} {
 	return lv
+}
+
+// finalizeValueSet inspects the ListValue entries in order to make internal optimizations once all list
+// entries are known.
+func (lv *ListValue) finalizeValueSet() {
+	valueSet := make(map[ref.Val]struct{})
+	for _, e := range lv.Entries {
+		switch e.value.(type) {
+		case bool, float64, int64, string, uint64, types.Null, PlainTextValue:
+			if valueSet != nil {
+				valueSet[e.ExprValue()] = struct{}{}
+			}
+		default:
+			lv.valueSet = nil
+			return
+		}
+	}
+	lv.valueSet = valueSet
 }
 
 type baseVal struct{}

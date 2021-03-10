@@ -41,12 +41,13 @@ func TestBuilders_ModelMapValue(t *testing.T) {
 	m0.assign("user:wiley@acme.co")
 
 	role := model.NewField(2, "role")
-	role.Ref = model.NewDynValue(3, "role/storage.bucket.admin")
+	role.Ref, _ = model.NewDynValue(3, "role/storage.bucket.admin")
 
 	members := model.NewField(4, "members")
 	memberList := model.NewListValue()
-	memberList.Append(model.NewDynValue(6, "user:wiley@acme.co"))
-	members.Ref = model.NewDynValue(5, memberList)
+	elem, _ := model.NewDynValue(6, "user:wiley@acme.co")
+	memberList.Append(elem)
+	members.Ref, _ = model.NewDynValue(5, memberList)
 
 	want := model.NewMapValue()
 	want.AddField(role)

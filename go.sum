@@ -34,8 +34,8 @@ github.com/golang/protobuf v1.4.1 h1:ZFgWrT+bLgsYPirOnRfKLYJLvssAegOj/hgyMFdJZe0
 github.com/golang/protobuf v1.4.1/go.mod h1:U8fpvMrcmy5pZrNK1lt4xCsGvpyWQ/VVv6QDs8UjoX8=
 github.com/golang/protobuf v1.4.3 h1:JjCZWpVbqXDqFVmTfYWEVTMIYrL/NPdPSCHPJ0T/raM=
 github.com/golang/protobuf v1.4.3/go.mod h1:oDoupMAO8OvCJWAcko0GGGIgR6R6ocIYbsSw735rRwI=
-github.com/google/cel-go v0.7.0 h1:J0J8RSCJW+SdB53YPwPSm2m1Kfz1tqGXdwMuIAVRU9o=
-github.com/google/cel-go v0.7.0/go.mod h1:4EtyFAHT5xNr0Msu0MJjyGxPUgdr9DlcaPyzLt/kkt8=
+github.com/google/cel-go v0.7.2 h1:FoLWxW4h8SV1UEOwth7xOU0tpeY7l58ycOs00xs6eu8=
+github.com/google/cel-go v0.7.2/go.mod h1:4EtyFAHT5xNr0Msu0MJjyGxPUgdr9DlcaPyzLt/kkt8=
 github.com/google/cel-spec v0.5.0/go.mod h1:Nwjgxy5CbjlPrtCWjeDjUyKMl8w41YBYGjsyDdqk0xA=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=

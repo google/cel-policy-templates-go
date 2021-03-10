@@ -133,7 +133,7 @@ func (c *CustomRule) GetFieldID(field string) int64 {
 	for _, path := range paths {
 		var f *Field
 		var ok bool
-		switch v := val.Value.(type) {
+		switch v := val.Value().(type) {
 		case *ObjectValue:
 			f, ok = v.GetField(path)
 		case *MapValue:

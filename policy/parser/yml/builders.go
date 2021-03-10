@@ -52,9 +52,6 @@ type objRef interface {
 	// If the object is not a list or the index is not between 0 and the length of the list, the
 	// function will return an error.
 	entry(idx interface{}) (objRef, error)
-
-	// finalize indicates that the value has been fully parsed.
-	finalize()
 }
 
 // newBaseBuilder returns a base builder which implements the core methods of the objRef interface.
@@ -93,9 +90,6 @@ func (b *baseBuilder) field(id int64, name string) (objRef, error) {
 func (b *baseBuilder) entry(idx interface{}) (objRef, error) {
 	return nil, typeNotAssignableToType(b.declType, model.ListType)
 }
-
-// finalize is a noop implementation of the objRef interface method.
-func (b *baseBuilder) finalize() {}
 
 func newParsedValueBuilder(pv *model.ParsedValue) *parsedValueBuilder {
 	pv.Value = model.NewMapValue()
@@ -211,8 +205,7 @@ func (b *dynValueBuilder) assign(val interface{}) error {
 	default:
 		return valueNotAssignableToType(model.AnyType, v)
 	}
-	b.dyn.Value = dv
-	return nil
+	return b.dyn.SetValue(dv)
 }
 
 func (b *dynValueBuilder) encodeStyle(value model.EncodeStyle) {
@@ -225,7 +218,10 @@ func (b *dynValueBuilder) initMap() error {
 	}
 	if b.mb == nil {
 		m := model.NewMapValue()
-		b.dyn.Value = m
+		err := b.dyn.SetValue(m)
+		if err != nil {
+			return err
+		}
 		b.mb = newMapBuilder(m)
 	}
 	return nil
@@ -247,7 +243,10 @@ func (b *dynValueBuilder) initList() error {
 	}
 	if b.lb == nil {
 		lv := model.NewListValue()
-		b.dyn.Value = lv
+		err := b.dyn.SetValue(lv)
+		if err != nil {
+			return err
+		}
 		b.lb = newListBuilder(lv)
 	}
 	return nil
@@ -261,13 +260,6 @@ func (b *dynValueBuilder) entry(idx interface{}) (objRef, error) {
 		return nil, noSuchProperty(model.AnyType, "[]")
 	}
 	return b.lb.entry(idx)
-}
-
-// finalize calls the Finalize method of model.ValueNode instances that support finalizing.
-func (b *dynValueBuilder) finalize() {
-	if b.lb != nil {
-		b.lb.listVal.Finalize()
-	}
 }
 
 // helper methods for formatting builder-related error messages.
