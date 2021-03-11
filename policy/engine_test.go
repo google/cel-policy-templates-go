@@ -148,6 +148,15 @@ var (
 				RuleLimit(10),
 			},
 		},
+		// Map ranges
+		{
+			name:   "map_ranges_behavior",
+			policy: "map_ranges",
+			input:  map[string]interface{}{},
+			outputs: []interface{}{
+				"com.google",
+			},
+		},
 		// Multiple ranges
 		{
 			name:   "multiple_ranges_behavior",
