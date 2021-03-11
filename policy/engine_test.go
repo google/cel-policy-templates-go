@@ -103,6 +103,10 @@ var (
 					Message: "package unminted-fail: not verifiably built",
 				},
 			},
+			opts: []EngineOption{
+				EvaluatorTermLimit(8),
+				EvaluatorProductionLimit(5),
+			},
 		},
 		// Dependent ranges
 		{
@@ -138,7 +142,11 @@ var (
 				},
 				time.Duration(600) * time.Second,
 			},
-			opts: []EngineOption{EvaluatorDecisionLimit(4)},
+			opts: []EngineOption{
+				ValidatorTermLimit(12),
+				EvaluatorDecisionLimit(4),
+				RuleLimit(10),
+			},
 		},
 		// Multiple ranges
 		{
@@ -165,6 +173,7 @@ var (
 				"resource.labels": map[string]string{},
 			},
 			outputs: []interface{}{},
+			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_prefix_diff_location",
@@ -176,6 +185,7 @@ var (
 				"resource.labels": map[string]string{},
 			},
 			outputs: []interface{}{true},
+			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 			selectorsOutputs: []struct {
 				selector model.DecisionSelector
 				outputs  []interface{}
@@ -228,6 +238,7 @@ var (
 				},
 			},
 			outputs: []interface{}{},
+			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_label_diff_location",
@@ -241,6 +252,7 @@ var (
 				},
 			},
 			outputs: []interface{}{true},
+			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_diff_location_not_sensitive",
@@ -254,6 +266,7 @@ var (
 				},
 			},
 			outputs: []interface{}{},
+			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		// Timed contracts
 		{
@@ -264,6 +277,7 @@ var (
 				"request.time":  time.Unix(1546416000, 0).UTC(),
 			},
 			outputs: []interface{}{},
+			opts:    []EngineOption{RuleLimit(-1)},
 		},
 		{
 			name:   "timed_contract_no_match",
@@ -273,6 +287,7 @@ var (
 				"request.time":  time.Unix(1546416000, 0).UTC(),
 			},
 			outputs: []interface{}{},
+			opts:    []EngineOption{RuleLimit(-1)},
 		},
 		{
 			name:   "timed_contract_invalid",
@@ -282,6 +297,7 @@ var (
 				"request.time":  time.Unix(1646416000, 0).UTC(),
 			},
 			outputs: []interface{}{true},
+			opts:    []EngineOption{RuleLimit(-1)},
 		},
 		// Restricted Destinations
 		{
@@ -362,6 +378,7 @@ var (
 					},
 				},
 			},
+			opts: []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		// Resource Types
 		{
@@ -416,6 +433,12 @@ func TestEngine(t *testing.T) {
 				StandardExprEnv(env),
 				Selectors(labelSelector),
 				RangeLimit(1),
+				ValidatorProductionLimit(5),
+				ValidatorTermLimit(10),
+				EvaluatorProductionLimit(3),
+				EvaluatorTermLimit(6),
+				EvaluatorExprCostLimit(100),
+				RuleLimit(1),
 				RuntimeTemplateOptions(
 					runtime.Functions(test.Funcs...),
 					runtime.NewCollectAggregator("policy.violation"),
