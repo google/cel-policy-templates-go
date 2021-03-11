@@ -1,0 +1,35 @@
+1~# Copyright 2021 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+2~apiVersion: 3~"policy.acme.co/v1"
+4~kind: 5~"PolicyTemplate"
+6~metadata:7~
+  8~name: 9~"map_ranges"
+10~evaluator:11~
+  12~description: 13~"iterate over a set of key, value pairs"
+  14~ranges:15~
+    - 16~17~key: 18~"k"
+      19~value: 20~"v"
+      21~in: 22~>
+        {'com.google': 300,
+         'com.youtube': 200,
+         'com.nest': 50,
+         'com.fb': 250}
+  23~terms:24~
+    25~google_owned: 26~>
+      ['com.google', 'com.youtube', 'com.nest']
+  27~productions:28~
+    - 29~30~match: 31~"k in google_owned && v > 200"
+      32~decision: 33~"policy.report"
+      34~output: 35~"k"
