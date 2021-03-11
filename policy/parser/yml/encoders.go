@@ -99,7 +99,7 @@ func (enc *encoder) writeNestedValue(v *model.DynValue) *encoder {
 }
 
 func (enc *encoder) writeInlineValue(v *model.DynValue) *encoder {
-	switch val := v.Value.(type) {
+	switch val := v.Value().(type) {
 	case *model.MapValue:
 		enc.renderID(v.ID).writeHeadComment(v.ID)
 		enc.write("{")
@@ -139,7 +139,7 @@ func (enc *encoder) writeValue(v *model.DynValue) *encoder {
 func (enc *encoder) writeValueInternal(v *model.DynValue, eol bool) *encoder {
 	enc.renderID(v.ID).writeHeadComment(v.ID)
 	isPrimitive := false
-	switch dyn := v.Value.(type) {
+	switch dyn := v.Value().(type) {
 	case *model.ListValue:
 		if eol {
 			enc.eol()
@@ -225,7 +225,7 @@ func (enc *encoder) writeFieldName(id int64, field string) *encoder {
 }
 
 func (enc *encoder) writeFieldValue(val *model.DynValue) *encoder {
-	switch val.Value.(type) {
+	switch val.Value().(type) {
 	case *model.ListValue, *model.MapValue:
 		enc.writeNestedValue(val)
 	default:

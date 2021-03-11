@@ -92,6 +92,7 @@ validator:
 evaluator:
   environment: greeting.v1alpha1.Environment
   terms:
+    time: 2020-01-01T00:00:00Z
     hi: rule.greeting
     bye: rule.farewell
     after: >

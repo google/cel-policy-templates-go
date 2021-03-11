@@ -102,24 +102,24 @@ func TestTypes_RuleTypesFieldMapping(t *testing.T) {
 
 	// Manually constructed instance of the schema.
 	name := NewField(1, "name")
-	name.Ref = NewDynValue(2, "test-instance")
+	name.Ref = testValue(t, 2, "test-instance")
 	nestedVal := NewMapValue()
 	flags := NewField(5, "flags")
 	flagsVal := NewMapValue()
 	myFlag := NewField(6, "my_flag")
-	myFlag.Ref = NewDynValue(7, true)
+	myFlag.Ref = testValue(t, 7, true)
 	flagsVal.AddField(myFlag)
-	flags.Ref = NewDynValue(8, flagsVal)
+	flags.Ref = testValue(t, 8, flagsVal)
 	dates := NewField(9, "dates")
-	dates.Ref = NewDynValue(10, NewListValue())
+	dates.Ref = testValue(t, 10, NewListValue())
 	nestedVal.AddField(flags)
 	nestedVal.AddField(dates)
 	nested := NewField(3, "nested")
-	nested.Ref = NewDynValue(4, nestedVal)
+	nested.Ref = testValue(t, 4, nestedVal)
 	mapVal := NewMapValue()
 	mapVal.AddField(name)
 	mapVal.AddField(nested)
-	rule := rt.ConvertToRule(NewDynValue(11, mapVal))
+	rule := rt.ConvertToRule(testValue(t, 11, mapVal))
 	if rule == nil {
 		t.Error("map could not be converted to rule")
 	}
@@ -143,4 +143,13 @@ func TestTypes_RuleTypesFieldMapping(t *testing.T) {
 	if helloVal.Equal(types.String("hello")) != types.True {
 		t.Errorf("got %v, wanted types.String('hello')", helloVal)
 	}
+}
+
+func testValue(t *testing.T, id int64, val interface{}) *DynValue {
+	t.Helper()
+	dv, err := NewDynValue(id, val)
+	if err != nil {
+		t.Fatalf("model.NewDynValue(%d, %v) failed: %v", id, val, err)
+	}
+	return dv
 }

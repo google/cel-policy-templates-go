@@ -38,13 +38,15 @@
           48~google_duration:49~
             50~type: 51~"string"
             52~format: 53~"google-duration"
-          54~google_timestamp:55~
-            56~type: 57~"string"
-            58~format: 59~"google-datetime"
-60~evaluator:61~
-  62~productions:63~
-    - 64~65~decision: 66~"grant"
-      67~output: 68~>
+            54~default: 55~"300s"
+          56~google_timestamp:57~
+            58~type: 59~"string"
+            60~format: 61~"google-datetime"
+            62~default: 63~"1970-01-01T00:00:00Z"
+64~evaluator:65~
+  66~productions:67~
+    - 68~69~decision: 70~"grant"
+      71~output: 72~>
         string(rule.int + int(rule.uint)) + " " +
         string(duration("6s") + rule.google_duration) + " " +
         string(duration("86400s") + rule.google_timestamp))
