@@ -57,13 +57,13 @@ func NewTemplate(res model.Resolver,
 	}
 	if mdl.Validator != nil {
 		termCnt := len(mdl.Validator.Terms)
-		if termCnt > t.limits.ValidatorTermLimit {
+		if t.limits.ValidatorTermLimit >= 0 && termCnt > t.limits.ValidatorTermLimit {
 			return nil, fmt.Errorf(
 				"validator term limit set to %d, but %d found",
 				t.limits.ValidatorTermLimit, termCnt)
 		}
 		prodCnt := len(mdl.Validator.Productions)
-		if prodCnt > t.limits.ValidatorProductionLimit {
+		if t.limits.ValidatorProductionLimit >= 0 && prodCnt > t.limits.ValidatorProductionLimit {
 			return nil, fmt.Errorf(
 				"validator production limit set to %d, but %d found",
 				t.limits.ValidatorProductionLimit, prodCnt)
@@ -76,13 +76,13 @@ func NewTemplate(res model.Resolver,
 	}
 	if mdl.Evaluator != nil {
 		termCnt := len(mdl.Evaluator.Terms)
-		if termCnt > t.limits.EvaluatorTermLimit {
+		if t.limits.EvaluatorTermLimit >= 0 && termCnt > t.limits.EvaluatorTermLimit {
 			return nil, fmt.Errorf(
 				"evaluator term limit set to %d, but %d found",
 				t.limits.EvaluatorTermLimit, termCnt)
 		}
 		prodCnt := len(mdl.Evaluator.Productions)
-		if prodCnt > t.limits.EvaluatorProductionLimit {
+		if t.limits.EvaluatorProductionLimit >= 0 && prodCnt > t.limits.EvaluatorProductionLimit {
 			return nil, fmt.Errorf(
 				"evaluator production limit set to %d, but %d found",
 				t.limits.EvaluatorProductionLimit, prodCnt)
@@ -221,7 +221,7 @@ func (t *Template) evalInternal(eval *evaluator,
 		return slotsToDecisions(slots), nil
 	}
 	// One or more rules present in the policy.
-	if len(inst.Rules) > t.limits.RuleLimit {
+	if t.limits.RuleLimit >= 0 && len(inst.Rules) > t.limits.RuleLimit {
 		return nil, fmt.Errorf(
 			"rule limit set to %d, but %d found",
 			t.limits.RuleLimit, len(inst.Rules))
@@ -247,7 +247,7 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		return nil, err
 	}
 	rangeCnt := len(mdl.Ranges)
-	if rangeCnt > t.limits.RangeLimit {
+	if t.limits.RangeLimit >= 0 && rangeCnt > t.limits.RangeLimit {
 		return nil, fmt.Errorf(
 			"range limit set to %d, but %d found",
 			t.limits.RangeLimit, rangeCnt)
@@ -300,7 +300,7 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 		_, max := cel.EstimateCost(match)
 		cost = addAndCap(cost, max)
 		decCnt := len(p.Decisions)
-		if decCnt > t.limits.EvaluatorDecisionLimit {
+		if t.limits.EvaluatorDecisionLimit >= 0 && decCnt > t.limits.EvaluatorDecisionLimit {
 			return nil, fmt.Errorf(
 				"decision limit set to %d, but %d found",
 				t.limits.EvaluatorDecisionLimit, decCnt)
@@ -337,9 +337,7 @@ func (t *Template) newEvaluator(mdl *model.Evaluator,
 	}
 	// Cost is greater than the limit.
 	if exprCostLimit >= 0 && cost > int64(exprCostLimit) {
-		return nil, fmt.Errorf(
-			"evaluator expression cost limit set to %d, but %d found",
-			exprCostLimit, cost)
+		return nil, fmt.Errorf("evaluator expression cost limit set to %d, but %d found", exprCostLimit, cost)
 	}
 	eval := &evaluator{
 		mdl:     mdl,

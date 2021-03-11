@@ -43,11 +43,15 @@ type Limits struct {
 
 	// EvaluatorTermLimit limits the number of terms which may appear within a template evaluator.
 	//
+	// A negative limit value indicates an unlimited number of terms.
+	//
 	// Defaults to 20.
 	EvaluatorTermLimit int
 
 	// EvaluatorProductionLimit limits the number of productions which may appear within
 	// a template evaluator.
+	//
+	// A negative limit value indicates an unlimited number of productions.
 	//
 	// Defaults to 10.
 	EvaluatorProductionLimit int
@@ -55,10 +59,14 @@ type Limits struct {
 	// EvaluatorDecisionLimit limits the number of decisions which may appear within a single
 	// production.
 	//
+	// A negative limit value indicates an unlimited number of decisions.
+	//
 	// Defaults to 3.
 	EvaluatorDecisionLimit int
 
 	// ValidatorTermLimit limits the number of terms which may appear within a template validator.
+	//
+	// A negative limit value indicates an unlimited number of terms.
 	//
 	// Defaults to 40.
 	ValidatorTermLimit int
@@ -66,18 +74,23 @@ type Limits struct {
 	// ValidatorProductionLimit limits the number of productions which may appear within a template
 	// validator.
 	//
+	// A negative limit value indicates an unlimited number of productions.
+	//
 	// Defaults to 20.
 	ValidatorProductionLimit int
 
 	// RuleLimit limits the number of rules which may appear within a policy instance.
+	//
+	// A negative limit value indicates an unlimited number of rules.
 	//
 	// Defaults to 10.
 	RuleLimit int
 
 	// EvaluatorExprCostLimit limits the total cost of expressions which may appear within a
 	// template evaluator. The cost is for evaluating the expressions and is computed heuristically.
+	//
 	// A negative limit value is equivalent to unlimited.
-
+	//
 	// Defaults to -1.
 	EvaluatorExprCostLimit int
 }
