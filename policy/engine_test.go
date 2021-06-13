@@ -64,6 +64,21 @@ var (
 			outputs  []interface{}
 		}
 	}{
+		{
+			name:   "validator_with_custom_function_test",
+			policy: "validator_with_custom_function",
+			input: map[string]interface{}{
+				"port": "22",
+			},
+			opts: []EngineOption{
+				ValidatorProductionLimit(8),
+				ValidatorTermLimit(15),
+				EvaluatorTermLimit(15),
+			},
+			outputs: []interface{}{
+				"22-60",
+			},
+		},
 		// Binauthz
 		{
 			name:   "binauthz_package_violations",

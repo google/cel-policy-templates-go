@@ -16,6 +16,9 @@
 package test
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
@@ -41,6 +44,18 @@ var (
 				decls.String,
 			),
 		),
+		decls.NewFunction("rangeLow",
+			decls.NewOverload("range_low",
+				[]*exprpb.Type{decls.String},
+				decls.Int,
+			),
+		),
+		decls.NewFunction("rangeHigh",
+			decls.NewOverload("range_high",
+				[]*exprpb.Type{decls.String},
+				decls.Int,
+			),
+		),
 	)
 
 	// Funcs are the custom function implementations used within templates.
@@ -57,6 +72,50 @@ var (
 				default:
 					return types.String("ir")
 				}
+			},
+		},
+		{
+			Operator: "range_low",
+			Unary: func(arg ref.Val) ref.Val {
+				r := arg.(types.String).Value().(string)
+				r = strings.TrimSpace(r)
+				if r == "" {
+					return types.Int(0)
+				}
+				if strings.Contains(r, "-") {
+					rs := strings.Split(r, "-")
+					if len(rs) != 2 {
+						return types.ValOrErr(arg, "invalid port")
+					}
+					r = rs[0]
+				}
+				v, err := strconv.Atoi(r)
+				if err != nil {
+					return types.ValOrErr(arg, "invalid port")
+				}
+				return types.Int(v)
+			},
+		},
+		{
+			Operator: "range_high",
+			Unary: func(arg ref.Val) ref.Val {
+				r := arg.(types.String).Value().(string)
+				r = strings.TrimSpace(r)
+				if r == "" {
+					return types.Int(65535)
+				}
+				if strings.Contains(r, "-") {
+					rs := strings.Split(r, "-")
+					if len(rs) != 2 {
+						return types.ValOrErr(arg, "invalid port")
+					}
+					r = rs[1]
+				}
+				v, err := strconv.Atoi(r)
+				if err != nil {
+					return types.ValOrErr(arg, "invalid port")
+				}
+				return types.Int(v)
 			},
 		},
 	}

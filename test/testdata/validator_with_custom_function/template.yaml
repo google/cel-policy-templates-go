@@ -1,0 +1,27 @@
+apiVersion: policy.acme.co/v1
+kind: PolicyTemplate
+metadata:
+  name: validator_with_custom_function
+schema:
+  type: object
+  description: Policy with validator referencing to custom function.
+  properties:
+    port:
+      description: >
+        port contains a string which could be a range ex : "22-44" or "22".
+        It has to be a positive number and less than 65535
+      type: string
+validator:
+  productions:
+  - match: >
+      has(rule.port) && (
+        rangeLow(rule.port) < 0
+        || rangeHigh(rule.port) > 65535
+        || rangeLow(rule.port) > rangeHigh(rule.port))
+    message: "invalid port. allowed port range is [0, 65535]"
+
+evaluator:
+  productions:
+  - match: rule.port != ''
+    decision: policy.report
+    output: rule.port

@@ -33,7 +33,6 @@ import (
 type Engine struct {
 	*model.Registry
 	rwMux     sync.RWMutex
-	evalOpts  []cel.ProgramOption
 	rtOpts    []runtime.TemplateOption
 	selectors []Selector
 	limits    *limits.Limits
@@ -51,7 +50,6 @@ func NewEngine(opts ...EngineOption) (*Engine, error) {
 	// TODO: Make the base environment more easily configurable.
 	e := &Engine{
 		Registry:  model.NewRegistry(stdEnv),
-		evalOpts:  []cel.ProgramOption{},
 		rtOpts:    []runtime.TemplateOption{},
 		selectors: []Selector{},
 		limits:    limits.NewLimits(),
@@ -115,7 +113,6 @@ func (e *Engine) SetTemplate(name string, tmpl *model.Template) error {
 	}
 	rtOpts := []runtime.TemplateOption{
 		runtime.Limits(e.limits),
-		runtime.ExprOptions(e.evalOpts...),
 	}
 	rtOpts = append(rtOpts, e.rtOpts...)
 	rtTmpl, err := runtime.NewTemplate(e.Registry, tmpl, rtOpts...)
@@ -132,7 +129,7 @@ func (e *Engine) CompileEnv(src *model.Source) (*model.Env, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
+	c := compiler.NewCompiler(e.Registry, e.limits, e.rtOpts...)
 	return c.CompileEnv(src, ast)
 }
 
@@ -144,7 +141,7 @@ func (e *Engine) CompileInstance(src *model.Source) (*model.Instance, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
+	c := compiler.NewCompiler(e.Registry, e.limits, e.rtOpts...)
 	return c.CompileInstance(src, ast)
 }
 
@@ -154,7 +151,7 @@ func (e *Engine) CompileTemplate(src *model.Source) (*model.Template, *Issues) {
 	if iss.Err() != nil {
 		return nil, iss
 	}
-	c := compiler.NewCompiler(e.Registry, e.limits, e.evalOpts...)
+	c := compiler.NewCompiler(e.Registry, e.limits, e.rtOpts...)
 	return c.CompileTemplate(src, ast)
 }
 
