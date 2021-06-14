@@ -1,6 +1,6 @@
-ERROR: ../../test/testdata/validator_with_custom_function/template.invalid_function.yaml:16:23: undeclared reference to 'invalidFunc' (in container '')
-         |   - match: invalidFunc(rule.port) < 0
-         | ......................^
-        ERROR: ../../test/testdata/validator_with_custom_function/template.invalid_function.yaml:17:15: undeclared reference to 'invalidFunc' (in container '')
-         |     message: "invalidFunc"
-         | ..............^
+ERROR: ../../test/testdata/validator_with_custom_function/template.invalid_function.yaml:30:23: undeclared reference to 'invalidFunc' (in container '')
+ |   - match: invalidFunc(rule.port) < 0
+ | ......................^
+ERROR: ../../test/testdata/validator_with_custom_function/template.invalid_function.yaml:31:15: undeclared reference to 'invalidFunc' (in container '')
+ |     message: "invalidFunc"
+ | ..............^
