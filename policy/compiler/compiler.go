@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package compiler contains a suite of tools for convering parsed representations of CEL Policy
+// Package compiler contains a suite of tools for covering parsed representations of CEL Policy
 // Template sources into type-checked and validated in-memory representations.
 package compiler
 
@@ -42,20 +42,20 @@ import (
 )
 
 // NewCompiler creates a new Compiler instance with the given Registry and CEL evaluation options.
-func NewCompiler(reg *model.Registry, l *limits.Limits, evalOpts ...cel.ProgramOption) *Compiler {
+func NewCompiler(reg *model.Registry, l *limits.Limits, rtOpts ...runtime.TemplateOption) *Compiler {
 	return &Compiler{
-		evalOpts: evalOpts,
-		reg:      reg,
-		limits:   l,
+		rtOpts: rtOpts,
+		reg:    reg,
+		limits: l,
 	}
 }
 
 // Compiler type-checks and compiles a raw model.ParsedValue into a strongly typed in-memory
 // representation of a template or policy instance.
 type Compiler struct {
-	evalOpts []cel.ProgramOption
-	reg      *model.Registry
-	limits   *limits.Limits
+	rtOpts []runtime.TemplateOption
+	reg    *model.Registry
+	limits *limits.Limits
 }
 
 // CompileEnv type-checks and builds model.Env instance from a parsed representation.
@@ -149,7 +149,7 @@ func (c *Compiler) newInstanceCompiler(src *model.Source, parsedInst *model.Pars
 		dyn:         dyn,
 		rt:          tmpl.RuleTypes,
 		tmpl:        tmpl,
-		evalOpts:    c.evalOpts,
+		rtOpts:      c.rtOpts,
 	}, nil
 }
 
@@ -305,10 +305,10 @@ func (ec *envCompiler) collectTypes(env *model.Env, typ *model.DeclType) {
 
 type instanceCompiler struct {
 	*dynCompiler
-	dyn      *model.DynValue
-	rt       *model.RuleTypes
-	tmpl     *model.Template
-	evalOpts []cel.ProgramOption
+	dyn    *model.DynValue
+	rt     *model.RuleTypes
+	tmpl   *model.Template
+	rtOpts []runtime.TemplateOption
 }
 
 func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
@@ -349,11 +349,11 @@ func (ic *instanceCompiler) compile() (*model.Instance, *cel.Issues) {
 			"rule limit set to %d, but %d found",
 			ic.limits.RuleLimit, len(cinst.Rules))
 	}
+	rtOpts := append([]runtime.TemplateOption{runtime.Limits(ic.limits)}, ic.rtOpts...)
 	exec, err := runtime.NewTemplate(
 		ic.reg,
 		ic.tmpl,
-		runtime.Limits(ic.limits),
-		runtime.ExprOptions(ic.evalOpts...))
+		rtOpts...)
 	if err != nil {
 		// report the error
 		ic.reportError(err.Error())

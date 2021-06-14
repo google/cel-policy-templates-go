@@ -22,6 +22,7 @@ import (
 	"github.com/google/cel-policy-templates-go/policy/limits"
 	"github.com/google/cel-policy-templates-go/policy/model"
 	"github.com/google/cel-policy-templates-go/policy/parser"
+	"github.com/google/cel-policy-templates-go/policy/runtime"
 	"github.com/google/cel-policy-templates-go/test"
 
 	"github.com/google/cel-go/cel"
@@ -47,7 +48,8 @@ func TestCompiler(t *testing.T) {
 	limits.ValidatorProductionLimit = 15
 	limits.RuleLimit = 4
 	limits.EvaluatorExprCostLimit = 100
-	comp := NewCompiler(reg, limits)
+	rtOpts := []runtime.TemplateOption{runtime.Functions(test.Funcs...)}
+	comp := NewCompiler(reg, limits, rtOpts...)
 	for _, tc := range tests {
 		tst := tc
 		t.Run(tst.ID, func(tt *testing.T) {

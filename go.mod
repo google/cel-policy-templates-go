@@ -1,9 +1,9 @@
 module github.com/google/cel-policy-templates-go
 
-go 1.12
+go 1.13
 
 require (
-	github.com/google/cel-go v0.7.2
+	github.com/google/cel-go v0.7.3
 	github.com/kr/pretty v0.1.0 // indirect
 	google.golang.org/genproto v0.0.0-20210113195801-ae06605f4595
 	google.golang.org/protobuf v1.25.0
