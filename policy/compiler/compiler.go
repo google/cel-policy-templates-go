@@ -917,9 +917,9 @@ func (tc *templateCompiler) compileExprString(id int64,
 	ast, iss := env.ParseSource(relSrc)
 	if iss.Err() == nil {
 		// If the expression parses, then it's probably CEL.
-		// Report type-check issues if they are encountered.
+		// Report type-check issues if they are encountered and strict flag is true.
 		ast, iss = env.Check(ast)
-		if iss.Err() != nil {
+		if iss.Err() != nil && strict {
 			tc.reportIssues(iss)
 			return nil
 		}
