@@ -23,9 +23,6 @@ import (
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/testing/protocmp"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestConvertToType(t *testing.T) {
@@ -76,44 +73,6 @@ func TestEqual(t *testing.T) {
 		if dv.Equal(dv.ExprValue()) != types.True {
 			t.Errorf("got %v, wanted dyn value %v equal to itself", dv.Equal(dv.ExprValue()), dv.ExprValue())
 		}
-	}
-}
-
-func TestListValueConvertToNativeJSON(t *testing.T) {
-	mv := NewMapValue()
-	f := NewField(1, "first")
-	err := f.Ref.SetValue("nested")
-	if err != nil {
-		t.Fatalf("f.Ref.SetValue('nested') failed: %v", err)
-	}
-	mv.AddField(f)
-	lv := NewListValue()
-	lv.Append(testValue(t, 3, mv))
-	lv.Append(testValue(t, 4, "second"))
-	lv.Append(testValue(t, 5, "third"))
-
-	wantList, err := structpb.NewList([]interface{}{
-		map[string]interface{}{
-			"first": "nested",
-		},
-		"second",
-		"third",
-	})
-	gotList, err := lv.ConvertToNative(jsonListValueType)
-	if err != nil {
-		t.Fatalf("lv.ConvertToNative(jsonListValueType) failed: %v", err)
-	}
-	if diff := cmp.Diff(gotList.(*structpb.ListValue), wantList, protocmp.Transform()); diff != "" {
-		t.Errorf("JSON conversion of list value failed with diff: %v\n got %v, wanted %v", diff, gotList, wantList)
-	}
-
-	wantValue := structpb.NewListValue(wantList)
-	gotValue, err := lv.ConvertToNative(jsonValueType)
-	if err != nil {
-		t.Fatalf("lv.ConvertToNative(jsonValueType) failed: %v", err)
-	}
-	if diff := cmp.Diff(gotValue.(*structpb.Value), wantValue, protocmp.Transform()); diff != "" {
-		t.Errorf("JSON conversion of list value failed with diff: %v\n got %v, wanted %v", diff, gotValue, wantValue)
 	}
 }
 

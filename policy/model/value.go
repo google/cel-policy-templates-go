@@ -23,7 +23,6 @@ import (
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // EncodeStyle is a hint for string encoding of parsed values.
@@ -210,19 +209,6 @@ func (sv *structValue) AddField(field *Field) {
 
 // ConvertToNative converts the MapValue type to a native go types.
 func (sv *structValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	// Support JSON proto conversions.
-	if typeDesc == jsonValueType || typeDesc == jsonStructType {
-		jsonEntries, err := sv.ConvertToNative(jsonStructEntriesType)
-		if err != nil {
-			return nil, err
-		}
-		jsonStruct := &structpb.Struct{Fields: jsonEntries.(map[string]*structpb.Value)}
-		if typeDesc == jsonStructType {
-			return jsonStruct, nil
-		}
-		return structpb.NewStructValue(jsonStruct), nil
-	}
-
 	if typeDesc.Kind() != reflect.Map &&
 		typeDesc.Kind() != reflect.Struct &&
 		typeDesc.Kind() != reflect.Ptr &&
@@ -628,19 +614,6 @@ func (lv *ListValue) Contains(val ref.Val) ref.Val {
 // ConvertToNative is an implementation of the CEL ref.Val method used to adapt between CEL types
 // and Go-native array-like types.
 func (lv *ListValue) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	// Support protobuf JSON type conversions.
-	if typeDesc == jsonValueType || typeDesc == jsonListValueType {
-		jsonValues, err := lv.ConvertToNative(jsonListEntriesValueType)
-		if err != nil {
-			return nil, err
-		}
-		jsonList := &structpb.ListValue{Values: jsonValues.([]*structpb.Value)}
-		if typeDesc == jsonListValueType {
-			return jsonList, nil
-		}
-		return structpb.NewListValue(jsonList), nil
-	}
-
 	// Non-list conversion.
 	if typeDesc.Kind() != reflect.Slice &&
 		typeDesc.Kind() != reflect.Array &&
@@ -806,12 +779,4 @@ func celBool(pred bool) ref.Val {
 	return types.False
 }
 
-var (
-	unknownType = &DeclType{name: "unknown"}
-
-	jsonValueType            = reflect.TypeOf(&structpb.Value{})
-	jsonListValueType        = reflect.TypeOf(&structpb.ListValue{})
-	jsonListEntriesValueType = reflect.TypeOf([]*structpb.Value{})
-	jsonStructType           = reflect.TypeOf(&structpb.Struct{})
-	jsonStructEntriesType    = reflect.TypeOf(map[string]*structpb.Value{})
-)
+var unknownType = &DeclType{name: "unknown"}
