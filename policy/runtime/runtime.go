@@ -16,6 +16,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -360,17 +361,17 @@ func addAndCap(cost, addend int64) int64 {
 }
 
 func (t *Template) newEnv(name string) (*cel.Env, error) {
-	env := stdEnv
-	if name != "" {
-		mdlEnv, found := t.res.FindEnv(name)
-		if !found {
-			return nil, fmt.Errorf("no such environment: %s", name)
+	mdlEnv, mdlEnvFound := t.res.FindEnv(name)
+	exprEnv, exprEnvFound := t.res.FindExprEnv(name)
+	if !mdlEnvFound || !exprEnvFound {
+		if name == "" {
+			return nil, errors.New("missing default environment")
 		}
-		var err error
-		env, err = env.Extend(mdlEnv.ExprEnvOptions()...)
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("no such environment: %s", name)
+	}
+	env, err := exprEnv.Extend(mdlEnv.ExprEnvOptions()...)
+	if err != nil {
+		return nil, err
 	}
 	if t.mdl.RuleTypes == nil {
 		return env, nil
@@ -856,11 +857,6 @@ func (pool *evalActivationPool) Setup(vars interpreter.Activation) *evaluatorAct
 }
 
 var (
-	stdEnv      *cel.Env
 	mapStrIface = reflect.TypeOf(map[string]interface{}{})
 	noVars      = interpreter.EmptyActivation()
 )
-
-func init() {
-	stdEnv, _ = cel.NewEnv()
-}

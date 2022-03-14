@@ -44,6 +44,11 @@ func Selectors(selectors ...Selector) EngineOption {
 func StandardExprEnv(exprEnv *cel.Env) EngineOption {
 	return func(e *Engine) (*Engine, error) {
 		e.Registry = model.NewRegistry(exprEnv)
+		// Set the default environment
+		err := e.Registry.SetEnv("", model.NewEnv(""))
+		if err != nil {
+			return nil, err
+		}
 		return e, nil
 	}
 }
