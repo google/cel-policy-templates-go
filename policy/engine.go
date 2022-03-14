@@ -47,7 +47,6 @@ type Engine struct {
 // engine construction if either is intended to be supported within the configured templates and
 // instances.
 func NewEngine(opts ...EngineOption) (*Engine, error) {
-	// TODO: Make the base environment more easily configurable.
 	e := &Engine{
 		Registry:  model.NewRegistry(stdEnv),
 		rtOpts:    []runtime.TemplateOption{},
@@ -57,7 +56,11 @@ func NewEngine(opts ...EngineOption) (*Engine, error) {
 		runtimes:  map[string]*runtime.Template{},
 		actPool:   newActivationPool(),
 	}
-	var err error
+	// Set the default environment
+	err := e.Registry.SetEnv("", model.NewEnv(""))
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		e, err = opt(e)
 		if err != nil {

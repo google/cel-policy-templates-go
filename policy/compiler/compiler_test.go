@@ -38,6 +38,7 @@ func TestCompiler(t *testing.T) {
 
 	stdEnv, _ := cel.NewEnv(test.Decls)
 	reg := model.NewRegistry(stdEnv)
+	reg.SetEnv("", model.NewEnv(""))
 	reg.SetSchema("#address_type", addressSchema)
 	limits := limits.NewLimits()
 	limits.RangeLimit = 1
