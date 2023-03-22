@@ -197,7 +197,6 @@ var (
 				"resource.labels": map[string]string{},
 			},
 			outputs: []interface{}{},
-			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_prefix_diff_location",
@@ -209,7 +208,6 @@ var (
 				"resource.labels": map[string]string{},
 			},
 			outputs: []interface{}{true},
-			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 			selectorsOutputs: []struct {
 				selector model.DecisionSelector
 				outputs  []interface{}
@@ -262,7 +260,6 @@ var (
 				},
 			},
 			outputs: []interface{}{},
-			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_label_diff_location",
@@ -276,7 +273,6 @@ var (
 				},
 			},
 			outputs: []interface{}{true},
-			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		{
 			name:   "sensitive_data_diff_location_not_sensitive",
@@ -290,7 +286,6 @@ var (
 				},
 			},
 			outputs: []interface{}{},
-			opts:    []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		// Timed contracts
 		{
@@ -402,7 +397,6 @@ var (
 					},
 				},
 			},
-			opts: []EngineOption{EvaluatorExprCostLimit(-1)},
 		},
 		// Resource Types
 		{
@@ -461,7 +455,6 @@ func TestEngine(t *testing.T) {
 				ValidatorTermLimit(10),
 				EvaluatorProductionLimit(3),
 				EvaluatorTermLimit(6),
-				EvaluatorExprCostLimit(100),
 				RuleLimit(1),
 				RuntimeTemplateOptions(
 					runtime.Functions(test.Funcs...),
