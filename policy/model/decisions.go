@@ -280,10 +280,7 @@ func logicallyMergeUnkErr(value, other ref.Val) ref.Val {
 	vUnk := types.IsUnknown(value)
 	oUnk := types.IsUnknown(other)
 	if vUnk && oUnk {
-		merged := types.Unknown{}
-		merged = append(merged, value.(types.Unknown)...)
-		merged = append(merged, other.(types.Unknown)...)
-		return merged
+		return types.MergeUnknowns(value.(*types.Unknown), other.(*types.Unknown))
 	}
 	if vUnk {
 		return value
@@ -297,7 +294,5 @@ func logicallyMergeUnkErr(value, other ref.Val) ref.Val {
 	if types.IsError(other) {
 		return other
 	}
-	return types.NewErr(
-		"got values (%v, %v), wanted boolean values",
-		value, other)
+	return types.NewErr("got values (%v, %v), wanted boolean values", value, other)
 }
