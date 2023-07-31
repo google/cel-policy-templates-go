@@ -50,8 +50,8 @@ func TestBoolDecisionValue_And(t *testing.T) {
 		{
 			name:   "init_true_end_unk",
 			value:  types.True,
-			ands:   []ref.Val{types.True, types.Unknown{1}, types.NewErr("err"), types.Unknown{2}},
-			result: types.Unknown{1, 2},
+			ands:   []ref.Val{types.True, types.NewUnknown(1, nil), types.NewErr("err"), types.NewUnknown(2, nil)},
+			result: types.MergeUnknowns(types.NewUnknown(1, nil), types.NewUnknown(2, nil)),
 		},
 	}
 	for _, tst := range tests {
@@ -79,7 +79,7 @@ func TestBoolDecisionValue_Or(t *testing.T) {
 		{
 			name:   "init_false_end_true",
 			value:  types.False,
-			ors:    []ref.Val{types.NewErr("err"), types.Unknown{1}, types.True},
+			ors:    []ref.Val{types.NewErr("err"), types.NewUnknown(1, nil), types.True},
 			result: types.True,
 		},
 		{
@@ -97,8 +97,8 @@ func TestBoolDecisionValue_Or(t *testing.T) {
 		{
 			name:   "init_false_end_unk",
 			value:  types.False,
-			ors:    []ref.Val{types.False, types.Unknown{1}, types.NewErr("err"), types.Unknown{2}},
-			result: types.Unknown{1, 2},
+			ors:    []ref.Val{types.False, types.NewUnknown(1, nil), types.NewErr("err"), types.NewUnknown(2, nil)},
+			result: types.MergeUnknowns(types.NewUnknown(1, nil), types.NewUnknown(2, nil)),
 		},
 	}
 	for _, tst := range tests {
